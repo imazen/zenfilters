@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -16,7 +17,7 @@ impl Filter for HueRotate {
         ChannelAccess::CHROMA_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         let rad = self.degrees.to_radians();
         if rad.abs() < 1e-6 {
             return;
@@ -45,7 +46,7 @@ mod tests {
         planes.b[0] = 0.05;
         let a_orig = planes.a[0];
         let b_orig = planes.b[0];
-        HueRotate { degrees: 0.0 }.apply(&mut planes);
+        HueRotate { degrees: 0.0 }.apply(&mut planes, &mut FilterContext::new());
         assert!((planes.a[0] - a_orig).abs() < 1e-6);
         assert!((planes.b[0] - b_orig).abs() < 1e-6);
     }
@@ -55,7 +56,7 @@ mod tests {
         let mut planes = OklabPlanes::new(1, 1);
         planes.a[0] = 0.1;
         planes.b[0] = 0.05;
-        HueRotate { degrees: 360.0 }.apply(&mut planes);
+        HueRotate { degrees: 360.0 }.apply(&mut planes, &mut FilterContext::new());
         assert!((planes.a[0] - 0.1).abs() < 1e-5);
         assert!((planes.b[0] - 0.05).abs() < 1e-5);
     }
@@ -66,7 +67,7 @@ mod tests {
         planes.a[0] = 0.1;
         planes.b[0] = 0.05;
         let c_before = (0.1f32 * 0.1 + 0.05 * 0.05).sqrt();
-        HueRotate { degrees: 90.0 }.apply(&mut planes);
+        HueRotate { degrees: 90.0 }.apply(&mut planes, &mut FilterContext::new());
         let c_after = (planes.a[0] * planes.a[0] + planes.b[0] * planes.b[0]).sqrt();
         assert!((c_before - c_after).abs() < 1e-6);
     }

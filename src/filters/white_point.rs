@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -17,7 +18,7 @@ impl Filter for WhitePoint {
         ChannelAccess::L_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if (self.level - 1.0).abs() < 1e-6 {
             return;
         }
@@ -38,7 +39,7 @@ mod tests {
         planes.l[0] = 0.5;
         planes.l[1] = 0.9;
         let original = planes.l.clone();
-        WhitePoint { level: 1.0 }.apply(&mut planes);
+        WhitePoint { level: 1.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 
@@ -46,7 +47,7 @@ mod tests {
     fn below_one_brightens() {
         let mut planes = OklabPlanes::new(1, 1);
         planes.l[0] = 0.5;
-        WhitePoint { level: 0.8 }.apply(&mut planes);
+        WhitePoint { level: 0.8 }.apply(&mut planes, &mut FilterContext::new());
         assert!(planes.l[0] > 0.5);
     }
 }

@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::simd;
@@ -16,7 +17,7 @@ impl Filter for Tint {
         ChannelAccess::CHROMA_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.shift.abs() < 1e-6 {
             return;
         }
@@ -34,7 +35,7 @@ mod tests {
         let mut planes = OklabPlanes::new(2, 1);
         planes.a[0] = 0.05;
         let original = planes.a.clone();
-        Tint { shift: 0.0 }.apply(&mut planes);
+        Tint { shift: 0.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.a, original);
     }
 
@@ -42,7 +43,7 @@ mod tests {
     fn positive_shifts_magenta() {
         let mut planes = OklabPlanes::new(1, 1);
         planes.a[0] = 0.0;
-        Tint { shift: 1.0 }.apply(&mut planes);
+        Tint { shift: 1.0 }.apply(&mut planes, &mut FilterContext::new());
         assert!(planes.a[0] > 0.0, "positive shift should increase a");
     }
 }

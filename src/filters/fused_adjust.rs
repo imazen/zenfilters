@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -78,7 +79,7 @@ impl Filter for FusedAdjust {
         ChannelAccess::L_AND_CHROMA
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.is_identity() {
             return;
         }
@@ -191,7 +192,7 @@ mod tests {
         }
         let l_orig = planes.l.clone();
         let a_orig = planes.a.clone();
-        FusedAdjust::new().apply(&mut planes);
+        FusedAdjust::new().apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, l_orig);
         assert_eq!(planes.a, a_orig);
     }
@@ -210,9 +211,10 @@ mod tests {
 
         let mut fused = FusedAdjust::new();
         fused.exposure = 1.0;
-        fused.apply(&mut planes_fused);
+        fused.apply(&mut planes_fused, &mut FilterContext::new());
 
-        crate::filters::Exposure { stops: 1.0 }.apply(&mut planes_standalone);
+        crate::filters::Exposure { stops: 1.0 }
+            .apply(&mut planes_standalone, &mut FilterContext::new());
 
         for i in 0..planes_fused.l.len() {
             assert!(

@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::simd;
@@ -17,7 +18,7 @@ impl Filter for Saturation {
         ChannelAccess::CHROMA_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if (self.factor - 1.0).abs() < 1e-6 {
             return;
         }
@@ -37,7 +38,7 @@ mod tests {
             *v = 0.1;
         }
         let original = planes.a.clone();
-        Saturation { factor: 1.0 }.apply(&mut planes);
+        Saturation { factor: 1.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.a, original);
     }
 
@@ -50,7 +51,7 @@ mod tests {
         for v in &mut planes.b {
             *v = -0.05;
         }
-        Saturation { factor: 0.0 }.apply(&mut planes);
+        Saturation { factor: 0.0 }.apply(&mut planes, &mut FilterContext::new());
         for &v in &planes.a {
             assert!(v.abs() < 1e-6);
         }
@@ -66,7 +67,7 @@ mod tests {
             *v = 0.5;
         }
         let original = planes.l.clone();
-        Saturation { factor: 2.0 }.apply(&mut planes);
+        Saturation { factor: 2.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 }

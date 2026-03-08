@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::simd;
@@ -15,7 +16,7 @@ impl Filter for Invert {
         ChannelAccess::L_AND_CHROMA
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         // L' = 1.0 - L = -1 * L + 1.0
         simd::scale_plane(&mut planes.l, -1.0);
         simd::offset_plane(&mut planes.l, 1.0);
@@ -36,7 +37,7 @@ mod tests {
             *v = i as f32 / 16.0;
         }
         let orig_l: Vec<f32> = planes.l.clone();
-        Invert.apply(&mut planes);
+        Invert.apply(&mut planes, &mut FilterContext::new());
         for (i, &v) in planes.l.iter().enumerate() {
             let expected = 1.0 - orig_l[i];
             assert!(
@@ -57,7 +58,7 @@ mod tests {
         }
         let orig_a: Vec<f32> = planes.a.clone();
         let orig_b: Vec<f32> = planes.b.clone();
-        Invert.apply(&mut planes);
+        Invert.apply(&mut planes, &mut FilterContext::new());
         for (i, &v) in planes.a.iter().enumerate() {
             assert!(
                 (v + orig_a[i]).abs() < 1e-5,
@@ -90,8 +91,8 @@ mod tests {
         let orig_a = planes.a.clone();
         let orig_b = planes.b.clone();
 
-        Invert.apply(&mut planes);
-        Invert.apply(&mut planes);
+        Invert.apply(&mut planes, &mut FilterContext::new());
+        Invert.apply(&mut planes, &mut FilterContext::new());
 
         for i in 0..planes.pixel_count() {
             assert!((planes.l[i] - orig_l[i]).abs() < 1e-4, "L[{i}] roundtrip");

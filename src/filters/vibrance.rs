@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -29,7 +30,7 @@ impl Filter for Vibrance {
         ChannelAccess::CHROMA_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.amount.abs() < 1e-6 {
             return;
         }
@@ -66,7 +67,7 @@ mod tests {
             amount: 0.0,
             ..Default::default()
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.a, a_orig);
         assert_eq!(planes.b, b_orig);
     }
@@ -88,7 +89,7 @@ mod tests {
             amount: 0.5,
             protection: 2.0,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
 
         let c0_after = (planes.a[0] * planes.a[0] + planes.b[0] * planes.b[0]).sqrt();
         let c1_after = (planes.a[1] * planes.a[1] + planes.b[1] * planes.b[1]).sqrt();

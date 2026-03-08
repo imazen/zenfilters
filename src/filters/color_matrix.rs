@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use zenpixels_convert::oklab;
@@ -37,7 +38,7 @@ impl Filter for ColorMatrix {
         ChannelAccess::ALL
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         // We need BT.709 matrices for the Oklab↔RGB round-trip.
         // These are the same matrices used in scatter_gather for BT.709.
         let m1_inv = oklab::lms_to_rgb_matrix(zenpixels::ColorPrimaries::Bt709)
@@ -95,7 +96,7 @@ mod tests {
         ColorMatrix {
             matrix: ColorMatrix::IDENTITY,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
 
         for i in 0..planes.pixel_count() {
             assert!(
@@ -151,7 +152,7 @@ mod tests {
             *v = -0.03;
         }
 
-        ColorMatrix { matrix: m }.apply(&mut planes);
+        ColorMatrix { matrix: m }.apply(&mut planes, &mut FilterContext::new());
 
         // After grayscale matrix, chroma should be near zero
         for i in 0..planes.pixel_count() {
@@ -182,7 +183,7 @@ mod tests {
         }
         let orig_l = planes.l[0];
 
-        ColorMatrix { matrix: m }.apply(&mut planes);
+        ColorMatrix { matrix: m }.apply(&mut planes, &mut FilterContext::new());
 
         // L should increase (brighter)
         assert!(

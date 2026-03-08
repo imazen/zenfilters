@@ -17,6 +17,7 @@ use zenpixels::{
 };
 use zenpixels_convert::RowConverter;
 
+use crate::context::FilterContext;
 use crate::pipeline::{Pipeline, PipelineError};
 use crate::planes::OklabPlanes;
 use crate::scatter_gather::{gather_from_oklab, scatter_to_oklab};
@@ -113,6 +114,7 @@ pub fn apply_to_buffer(
     pipeline: &Pipeline,
     input: &PixelBuffer,
     convert_back: bool,
+    ctx: &mut FilterContext,
 ) -> Result<PixelBuffer, ConvenienceError> {
     let desc = input.descriptor();
     let width = input.width();
@@ -150,7 +152,7 @@ pub fn apply_to_buffer(
     scatter_to_oklab(linear_f32, &mut planes, channels, &m1, reference_white);
 
     // Step 4: Apply filters
-    pipeline.apply_planar(&mut planes);
+    pipeline.apply_planar(&mut planes, ctx);
 
     // Step 5: Gather back to interleaved linear RGB
     let n = (width as usize) * (height as usize) * (channels as usize);
@@ -237,19 +239,35 @@ fn convert_buffer_bytes(
 /// Extension trait for [`Pipeline`] that adds buffer convenience methods.
 pub trait PipelineBufferExt {
     /// Apply this pipeline to a `PixelBuffer`, converting back to original format.
-    fn apply_buffer(&self, input: &PixelBuffer) -> Result<PixelBuffer, ConvenienceError>;
+    fn apply_buffer(
+        &self,
+        input: &PixelBuffer,
+        ctx: &mut FilterContext,
+    ) -> Result<PixelBuffer, ConvenienceError>;
 
     /// Apply this pipeline to a `PixelBuffer`, returning linear f32 RGB(A).
-    fn apply_buffer_linear(&self, input: &PixelBuffer) -> Result<PixelBuffer, ConvenienceError>;
+    fn apply_buffer_linear(
+        &self,
+        input: &PixelBuffer,
+        ctx: &mut FilterContext,
+    ) -> Result<PixelBuffer, ConvenienceError>;
 }
 
 impl PipelineBufferExt for Pipeline {
-    fn apply_buffer(&self, input: &PixelBuffer) -> Result<PixelBuffer, ConvenienceError> {
-        apply_to_buffer(self, input, true)
+    fn apply_buffer(
+        &self,
+        input: &PixelBuffer,
+        ctx: &mut FilterContext,
+    ) -> Result<PixelBuffer, ConvenienceError> {
+        apply_to_buffer(self, input, true, ctx)
     }
 
-    fn apply_buffer_linear(&self, input: &PixelBuffer) -> Result<PixelBuffer, ConvenienceError> {
-        apply_to_buffer(self, input, false)
+    fn apply_buffer_linear(
+        &self,
+        input: &PixelBuffer,
+        ctx: &mut FilterContext,
+    ) -> Result<PixelBuffer, ConvenienceError> {
+        apply_to_buffer(self, input, false, ctx)
     }
 }
 
@@ -309,7 +327,7 @@ mod tests {
         })
         .unwrap();
 
-        let output = apply_to_buffer(&pipeline, &input, true).unwrap();
+        let output = apply_to_buffer(&pipeline, &input, true, &mut FilterContext::new()).unwrap();
         assert_eq!(output.descriptor(), input.descriptor());
         assert_eq!(output.width(), input.width());
         assert_eq!(output.height(), input.height());
@@ -333,7 +351,7 @@ mod tests {
         let input = make_srgba_u8_buffer(16, 16);
         let pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
 
-        let output = apply_to_buffer(&pipeline, &input, true).unwrap();
+        let output = apply_to_buffer(&pipeline, &input, true, &mut FilterContext::new()).unwrap();
         assert_eq!(output.descriptor(), input.descriptor());
 
         let src = input.copy_to_contiguous_bytes();
@@ -355,7 +373,7 @@ mod tests {
         })
         .unwrap();
 
-        let output = apply_to_buffer(&pipeline, &input, true).unwrap();
+        let output = apply_to_buffer(&pipeline, &input, true, &mut FilterContext::new()).unwrap();
         assert_eq!(output.descriptor(), input.descriptor());
 
         let src_bytes = input.copy_to_contiguous_bytes();
@@ -375,7 +393,7 @@ mod tests {
         let mut pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
         pipeline.push(Box::new(filters::Exposure { stops: 0.5 }));
 
-        let output = apply_to_buffer(&pipeline, &input, true).unwrap();
+        let output = apply_to_buffer(&pipeline, &input, true, &mut FilterContext::new()).unwrap();
         assert_eq!(output.descriptor(), PixelDescriptor::RGB8_SRGB);
 
         // Output should be brighter on average
@@ -394,7 +412,7 @@ mod tests {
         let input = make_srgb_u8_buffer(8, 8);
         let pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
 
-        let output = apply_to_buffer(&pipeline, &input, false).unwrap();
+        let output = apply_to_buffer(&pipeline, &input, false, &mut FilterContext::new()).unwrap();
         assert_eq!(output.descriptor().channel_type(), ChannelType::F32);
         assert_eq!(output.descriptor().transfer(), TransferFunction::Linear);
     }
@@ -404,10 +422,14 @@ mod tests {
         let input = make_srgb_u8_buffer(8, 8);
         let pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
 
-        let output = pipeline.apply_buffer(&input).unwrap();
+        let output = pipeline
+            .apply_buffer(&input, &mut FilterContext::new())
+            .unwrap();
         assert_eq!(output.descriptor(), PixelDescriptor::RGB8_SRGB);
 
-        let linear = pipeline.apply_buffer_linear(&input).unwrap();
+        let linear = pipeline
+            .apply_buffer_linear(&input, &mut FilterContext::new())
+            .unwrap();
         assert_eq!(linear.descriptor().channel_type(), ChannelType::F32);
     }
 
@@ -418,7 +440,7 @@ mod tests {
         let input = PixelBuffer::from_vec(data, 8, 8, desc).unwrap();
         let pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
 
-        let result = apply_to_buffer(&pipeline, &input, true);
+        let result = apply_to_buffer(&pipeline, &input, true, &mut FilterContext::new());
         assert!(result.is_err());
     }
 
@@ -428,7 +450,7 @@ mod tests {
         let input = PixelBuffer::from_vec(data, 8, 8, PixelDescriptor::GRAY8_SRGB).unwrap();
         let pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
 
-        let result = apply_to_buffer(&pipeline, &input, true);
+        let result = apply_to_buffer(&pipeline, &input, true, &mut FilterContext::new());
         assert!(result.is_err());
     }
 
@@ -462,7 +484,7 @@ mod tests {
         })
         .unwrap();
 
-        let output = apply_to_buffer(&pipeline, &input, true).unwrap();
+        let output = apply_to_buffer(&pipeline, &input, true, &mut FilterContext::new()).unwrap();
         assert_eq!(output.descriptor(), desc);
 
         let src_bytes = input.copy_to_contiguous_bytes();
@@ -484,7 +506,9 @@ mod tests {
         pipeline.push(Box::new(filters::Contrast { amount: 0.2 }));
         pipeline.push(Box::new(filters::Saturation { factor: 1.1 }));
 
-        let output = pipeline.apply_buffer(&input).unwrap();
+        let output = pipeline
+            .apply_buffer(&input, &mut FilterContext::new())
+            .unwrap();
         assert_eq!(output.descriptor(), PixelDescriptor::RGB8_SRGB);
         assert_eq!(output.width(), 32);
         assert_eq!(output.height(), 32);

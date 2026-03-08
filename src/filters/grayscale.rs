@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -18,7 +19,7 @@ impl Filter for Grayscale {
         ChannelAccess::CHROMA_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         planes.a.fill(0.0);
         planes.b.fill(0.0);
     }
@@ -42,7 +43,7 @@ mod tests {
         }
         let l_orig = planes.l.clone();
 
-        Grayscale.apply(&mut planes);
+        Grayscale.apply(&mut planes, &mut FilterContext::new());
 
         for &v in &planes.a {
             assert_eq!(v, 0.0);

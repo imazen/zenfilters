@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::simd;
@@ -17,7 +18,7 @@ impl Filter for Exposure {
         ChannelAccess::L_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         let factor = 2.0f32.powf(self.stops);
         simd::scale_plane(&mut planes.l, factor);
     }
@@ -34,7 +35,7 @@ mod tests {
             *v = 0.5;
         }
         let original = planes.l.clone();
-        Exposure { stops: 0.0 }.apply(&mut planes);
+        Exposure { stops: 0.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 
@@ -44,7 +45,7 @@ mod tests {
         for v in &mut planes.l {
             *v = 0.3;
         }
-        Exposure { stops: 1.0 }.apply(&mut planes);
+        Exposure { stops: 1.0 }.apply(&mut planes, &mut FilterContext::new());
         for &v in &planes.l {
             assert!((v - 0.6).abs() < 1e-5, "expected ~0.6, got {v}");
         }
@@ -61,7 +62,7 @@ mod tests {
         }
         let a_orig = planes.a.clone();
         let b_orig = planes.b.clone();
-        Exposure { stops: 2.0 }.apply(&mut planes);
+        Exposure { stops: 2.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.a, a_orig);
         assert_eq!(planes.b, b_orig);
     }

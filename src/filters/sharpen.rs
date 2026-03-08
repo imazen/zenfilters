@@ -1,5 +1,6 @@
 use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::simd;
@@ -25,12 +26,12 @@ impl Filter for Sharpen {
         true
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.amount.abs() < 1e-6 {
             return;
         }
         let kernel = GaussianKernel::new(self.sigma);
-        let mut blurred = vec![0.0f32; planes.pixel_count()];
+        let mut blurred = ctx.take_f32(planes.pixel_count());
         gaussian_blur_plane(
             &planes.l,
             &mut blurred,
@@ -39,15 +40,18 @@ impl Filter for Sharpen {
             &kernel,
         );
 
-        let mut dst = vec![0.0f32; planes.pixel_count()];
+        let mut dst = ctx.take_f32(planes.pixel_count());
         simd::unsharp_fuse(&planes.l, &blurred, &mut dst, self.amount);
-        planes.l = dst;
+        ctx.return_f32(blurred);
+        let old_l = core::mem::replace(&mut planes.l, dst);
+        ctx.return_f32(old_l);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::FilterContext;
 
     #[test]
     fn zero_amount_is_identity() {
@@ -60,7 +64,7 @@ mod tests {
             sigma: 1.0,
             amount: 0.0,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 
@@ -78,7 +82,7 @@ mod tests {
             sigma: 1.0,
             amount: 1.0,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         // Pixels near the edge should be pushed further apart
         let left = planes.l[planes.index(14, 16)];
         let right = planes.l[planes.index(17, 16)];

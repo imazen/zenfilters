@@ -19,7 +19,7 @@
 //! ## Usage
 //!
 //! ```
-//! use zenfilters::{Pipeline, PipelineConfig, OklabPlanes};
+//! use zenfilters::{Pipeline, PipelineConfig, FilterContext, OklabPlanes};
 //! use zenfilters::filters::*;
 //! use zenpixels::ColorPrimaries;
 //!
@@ -31,17 +31,21 @@
 //! pipeline.push(Box::new(Clarity { sigma: 10.0, amount: 0.3 }));
 //! pipeline.push(Box::new(Vibrance { amount: 0.4, protection: 2.0 }));
 //!
+//! // Create a reusable context to avoid per-call allocations
+//! let mut ctx = FilterContext::new();
+//!
 //! // Apply to interleaved linear RGB f32 data
 //! let (w, h) = (64, 64);
 //! let src = vec![0.5f32; w * h * 3];
 //! let mut dst = vec![0.0f32; w * h * 3];
-//! pipeline.apply(&src, &mut dst, w as u32, h as u32, 3).unwrap();
+//! pipeline.apply(&src, &mut dst, w as u32, h as u32, 3, &mut ctx).unwrap();
 //! ```
 
 extern crate alloc;
 
 mod access;
 mod blur;
+mod context;
 mod filter;
 pub mod filters;
 mod gamut_map;
@@ -58,6 +62,7 @@ pub mod srgb_filters;
 
 pub use access::ChannelAccess;
 pub use blur::GaussianKernel;
+pub use context::FilterContext;
 #[cfg(feature = "buffer")]
 pub use convenience::{ConvenienceError, PipelineBufferExt, apply_to_buffer};
 pub use filter::Filter;

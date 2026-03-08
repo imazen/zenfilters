@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -16,7 +17,7 @@ impl Filter for Contrast {
         ChannelAccess::L_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.amount.abs() < 1e-6 {
             return;
         }
@@ -40,7 +41,7 @@ mod tests {
             *v = i as f32 / 16.0;
         }
         let original = planes.l.clone();
-        Contrast { amount: 0.0 }.apply(&mut planes);
+        Contrast { amount: 0.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 
@@ -49,7 +50,7 @@ mod tests {
         let mut planes = OklabPlanes::new(2, 1);
         planes.l[0] = 0.3; // below midpoint
         planes.l[1] = 0.7; // above midpoint
-        Contrast { amount: 0.5 }.apply(&mut planes);
+        Contrast { amount: 0.5 }.apply(&mut planes, &mut FilterContext::new());
         // 0.3 should get darker, 0.7 should get brighter
         assert!(planes.l[0] < 0.3);
         assert!(planes.l[1] > 0.7);
@@ -59,7 +60,7 @@ mod tests {
     fn midpoint_unchanged() {
         let mut planes = OklabPlanes::new(1, 1);
         planes.l[0] = 0.5;
-        Contrast { amount: 0.8 }.apply(&mut planes);
+        Contrast { amount: 0.8 }.apply(&mut planes, &mut FilterContext::new());
         assert!((planes.l[0] - 0.5).abs() < 1e-6);
     }
 }

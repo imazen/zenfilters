@@ -1,5 +1,6 @@
 use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -24,7 +25,7 @@ impl Filter for Blur {
         true
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.sigma < 0.01 {
             return;
         }
@@ -33,7 +34,7 @@ impl Filter for Blur {
         let w = planes.width;
         let h = planes.height;
 
-        let mut tmp = vec![0.0f32; n];
+        let mut tmp = ctx.take_f32(n);
 
         // Blur L
         gaussian_blur_plane(&planes.l, &mut tmp, w, h, &kernel);
@@ -53,7 +54,10 @@ impl Filter for Blur {
         if let Some(alpha) = &mut planes.alpha {
             tmp.fill(0.0);
             gaussian_blur_plane(alpha, &mut tmp, w, h, &kernel);
-            *alpha = tmp;
+            core::mem::swap(alpha, &mut tmp);
+            ctx.return_f32(tmp);
+        } else {
+            ctx.return_f32(tmp);
         }
     }
 }
@@ -61,6 +65,7 @@ impl Filter for Blur {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::FilterContext;
 
     #[test]
     fn zero_sigma_is_identity() {
@@ -69,7 +74,7 @@ mod tests {
             *v = i as f32 / 256.0;
         }
         let orig = planes.l.clone();
-        Blur { sigma: 0.0 }.apply(&mut planes);
+        Blur { sigma: 0.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, orig);
     }
 
@@ -79,7 +84,7 @@ mod tests {
         planes.l.fill(0.5);
         planes.a.fill(0.02);
         planes.b.fill(-0.03);
-        Blur { sigma: 3.0 }.apply(&mut planes);
+        Blur { sigma: 3.0 }.apply(&mut planes, &mut FilterContext::new());
         for &v in &planes.l {
             assert!((v - 0.5).abs() < 0.01, "L should stay ~0.5, got {v}");
         }
@@ -101,7 +106,7 @@ mod tests {
                 planes.l[i] = if x < 16 { 0.2 } else { 0.8 };
             }
         }
-        Blur { sigma: 2.0 }.apply(&mut planes);
+        Blur { sigma: 2.0 }.apply(&mut planes, &mut FilterContext::new());
         // After blur, the step edge should be softened
         let left = planes.l[planes.index(8, 16)];
         let right = planes.l[planes.index(24, 16)];
@@ -122,7 +127,7 @@ mod tests {
                 planes.alpha.as_mut().unwrap()[i] = if x < 16 { 0.0 } else { 1.0 };
             }
         }
-        Blur { sigma: 2.0 }.apply(&mut planes);
+        Blur { sigma: 2.0 }.apply(&mut planes, &mut FilterContext::new());
         // Edge pixels should be intermediate
         let edge = planes.alpha.as_ref().unwrap()[planes.index(16, 16)];
         assert!(

@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -19,7 +20,7 @@ impl Filter for HighlightsShadows {
         ChannelAccess::L_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.highlights.abs() < 1e-6 && self.shadows.abs() < 1e-6 {
             return;
         }
@@ -54,7 +55,7 @@ mod tests {
             highlights: 0.0,
             shadows: 0.0,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 
@@ -66,7 +67,7 @@ mod tests {
             highlights: 0.0,
             shadows: 1.0,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         assert!(planes.l[0] > 0.1, "shadows should brighten darks");
     }
 
@@ -78,7 +79,7 @@ mod tests {
             highlights: 1.0,
             shadows: 0.0,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         assert!(planes.l[0] < 0.9, "highlights should dim brights");
     }
 }

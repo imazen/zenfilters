@@ -1,5 +1,6 @@
 use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::simd;
@@ -41,15 +42,15 @@ impl Filter for Brilliance {
         true
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.amount.abs() < 1e-6 {
             return;
         }
         let kernel = GaussianKernel::new(self.sigma);
-        let mut avg_l = vec![0.0f32; planes.pixel_count()];
+        let mut avg_l = ctx.take_f32(planes.pixel_count());
         gaussian_blur_plane(&planes.l, &mut avg_l, planes.width, planes.height, &kernel);
 
-        let mut dst = vec![0.0f32; planes.pixel_count()];
+        let mut dst = ctx.take_f32(planes.pixel_count());
         simd::brilliance_apply(
             &planes.l,
             &avg_l,
@@ -58,13 +59,16 @@ impl Filter for Brilliance {
             self.shadow_strength,
             self.highlight_strength,
         );
-        planes.l = dst;
+        ctx.return_f32(avg_l);
+        let old_l = core::mem::replace(&mut planes.l, dst);
+        ctx.return_f32(old_l);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::FilterContext;
 
     #[test]
     fn zero_amount_is_identity() {
@@ -77,7 +81,7 @@ mod tests {
             amount: 0.0,
             ..Default::default()
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 
@@ -94,7 +98,7 @@ mod tests {
             shadow_strength: 0.6,
             highlight_strength: 0.4,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         // Uniform dark image: local avg ≈ 0.1, ratio ≈ 1.0
         // No change expected for uniform images (ratio=1 means no correction)
         // This is correct — brilliance only acts on local contrast variations

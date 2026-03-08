@@ -2,6 +2,7 @@ use zenpixels::ColorPrimaries;
 use zenpixels_convert::gamut::GamutMatrix;
 use zenpixels_convert::oklab;
 
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::scatter_gather::{gather_from_oklab, scatter_to_oklab};
@@ -96,6 +97,8 @@ impl Pipeline {
     /// `dst` is the output buffer (same size as src).
     /// `width` and `height` are image dimensions.
     /// `channels` is 3 (RGB) or 4 (RGBA).
+    /// `ctx` provides reusable scratch buffers — pass a persistent
+    /// `FilterContext` to avoid per-call allocations.
     pub fn apply(
         &self,
         src: &[f32],
@@ -103,6 +106,7 @@ impl Pipeline {
         width: u32,
         height: u32,
         channels: u32,
+        ctx: &mut FilterContext,
     ) -> Result<(), PipelineError> {
         let n = (width as usize) * (height as usize) * (channels as usize);
         if src.len() < n {
@@ -133,9 +137,7 @@ impl Pipeline {
         );
 
         // Apply all filters
-        for filter in &self.filters {
-            filter.apply(&mut planes);
-        }
+        self.apply_planar(&mut planes, ctx);
 
         // Gather back to interleaved RGB
         gather_from_oklab(
@@ -153,9 +155,9 @@ impl Pipeline {
     ///
     /// Use this when you want to manage scatter/gather yourself,
     /// or when chaining multiple pipelines on the same planar data.
-    pub fn apply_planar(&self, planes: &mut OklabPlanes) {
+    pub fn apply_planar(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         for filter in &self.filters {
-            filter.apply(planes);
+            filter.apply(planes, ctx);
         }
     }
 }
@@ -169,7 +171,8 @@ mod tests {
         let pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
         let src = vec![0.5f32; 64 * 64 * 3];
         let mut dst = vec![0.0f32; 64 * 64 * 3];
-        pipeline.apply(&src, &mut dst, 64, 64, 3).unwrap();
+        let mut ctx = FilterContext::new();
+        pipeline.apply(&src, &mut dst, 64, 64, 3, &mut ctx).unwrap();
 
         let mut max_err = 0.0f32;
         for i in 0..src.len() {
@@ -192,7 +195,8 @@ mod tests {
         let pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
         let src = vec![0.5f32; 10]; // too small
         let mut dst = vec![0.0f32; 64 * 64 * 3];
-        let result = pipeline.apply(&src, &mut dst, 64, 64, 3);
+        let mut ctx = FilterContext::new();
+        let result = pipeline.apply(&src, &mut dst, 64, 64, 3, &mut ctx);
         assert!(result.is_err());
     }
 }

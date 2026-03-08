@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -16,7 +17,7 @@ impl Filter for BlackPoint {
         ChannelAccess::L_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.level.abs() < 1e-6 {
             return;
         }
@@ -39,7 +40,7 @@ mod tests {
         planes.l[0] = 0.3;
         planes.l[1] = 0.8;
         let original = planes.l.clone();
-        BlackPoint { level: 0.0 }.apply(&mut planes);
+        BlackPoint { level: 0.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 
@@ -47,7 +48,7 @@ mod tests {
     fn crushes_shadows() {
         let mut planes = OklabPlanes::new(1, 1);
         planes.l[0] = 0.05; // just at the black point
-        BlackPoint { level: 0.05 }.apply(&mut planes);
+        BlackPoint { level: 0.05 }.apply(&mut planes, &mut FilterContext::new());
         assert!(planes.l[0].abs() < 1e-5, "should be near zero");
     }
 }

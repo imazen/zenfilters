@@ -1,5 +1,6 @@
 use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::simd;
@@ -30,12 +31,12 @@ impl Filter for Clarity {
         true
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.amount.abs() < 1e-6 {
             return;
         }
         let kernel = GaussianKernel::new(self.sigma);
-        let mut blurred = vec![0.0f32; planes.pixel_count()];
+        let mut blurred = ctx.take_f32(planes.pixel_count());
         gaussian_blur_plane(
             &planes.l,
             &mut blurred,
@@ -44,15 +45,18 @@ impl Filter for Clarity {
             &kernel,
         );
 
-        let mut dst = vec![0.0f32; planes.pixel_count()];
+        let mut dst = ctx.take_f32(planes.pixel_count());
         simd::unsharp_fuse(&planes.l, &blurred, &mut dst, self.amount);
-        planes.l = dst;
+        ctx.return_f32(blurred);
+        let old_l = core::mem::replace(&mut planes.l, dst);
+        ctx.return_f32(old_l);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::FilterContext;
 
     #[test]
     fn zero_amount_is_identity() {
@@ -65,7 +69,7 @@ mod tests {
             sigma: 5.0,
             amount: 0.0,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 
@@ -84,7 +88,7 @@ mod tests {
             sigma: 5.0,
             amount: 0.5,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         let after_std = std_dev(&planes.l);
         assert!(
             after_std > before_std,
@@ -106,7 +110,7 @@ mod tests {
             sigma: 3.0,
             amount: 0.5,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.a, a_orig);
     }
 

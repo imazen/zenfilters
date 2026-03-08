@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::simd;
@@ -27,7 +28,7 @@ impl Filter for Sepia {
         ChannelAccess::CHROMA_ONLY
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         // Zero chroma (grayscale), then set to sepia tint
         let a_target = SEPIA_A * self.amount;
         let b_target = SEPIA_B * self.amount;
@@ -51,7 +52,7 @@ mod tests {
         for v in &mut planes.b {
             *v = -0.03;
         }
-        Sepia { amount: 0.0 }.apply(&mut planes);
+        Sepia { amount: 0.0 }.apply(&mut planes, &mut FilterContext::new());
         for &v in &planes.a {
             assert!(v.abs() < 1e-6);
         }
@@ -66,7 +67,7 @@ mod tests {
         for v in &mut planes.l {
             *v = 0.5;
         }
-        Sepia { amount: 1.0 }.apply(&mut planes);
+        Sepia { amount: 1.0 }.apply(&mut planes, &mut FilterContext::new());
         for &v in &planes.a {
             assert!((v - 0.01).abs() < 1e-5);
         }
@@ -82,7 +83,7 @@ mod tests {
             *v = 0.7;
         }
         let l_orig = planes.l.clone();
-        Sepia { amount: 1.0 }.apply(&mut planes);
+        Sepia { amount: 1.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, l_orig);
     }
 }

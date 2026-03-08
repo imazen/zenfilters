@@ -1,4 +1,5 @@
 use crate::access::ChannelAccess;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -16,7 +17,7 @@ impl Filter for Dehaze {
         ChannelAccess::L_AND_CHROMA
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.strength.abs() < 1e-6 {
             return;
         }
@@ -50,7 +51,7 @@ mod tests {
         planes.b[0] = -0.05;
         let l_orig = planes.l.clone();
         let a_orig = planes.a.clone();
-        Dehaze { strength: 0.0 }.apply(&mut planes);
+        Dehaze { strength: 0.0 }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, l_orig);
         assert_eq!(planes.a, a_orig);
     }
@@ -60,7 +61,7 @@ mod tests {
         let mut planes = OklabPlanes::new(1, 1);
         planes.l[0] = 0.7; // above midpoint
         planes.a[0] = 0.1;
-        Dehaze { strength: 1.0 }.apply(&mut planes);
+        Dehaze { strength: 1.0 }.apply(&mut planes, &mut FilterContext::new());
         assert!(planes.l[0] > 0.7, "L should increase above midpoint");
         assert!(planes.a[0] > 0.1, "chroma should increase");
     }

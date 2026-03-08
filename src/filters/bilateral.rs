@@ -1,5 +1,6 @@
 use crate::access::ChannelAccess;
 use crate::blur::GaussianKernel;
+use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 
@@ -31,7 +32,7 @@ impl Filter for Bilateral {
         true
     }
 
-    fn apply(&self, planes: &mut OklabPlanes) {
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.strength.abs() < 1e-6 {
             return;
         }
@@ -42,9 +43,9 @@ impl Filter for Bilateral {
         let range_sigma2 = 2.0 * self.range_sigma * self.range_sigma;
         let strength = self.strength;
 
-        let mut dst_l = vec![0.0f32; w * h];
-        let mut dst_a = vec![0.0f32; w * h];
-        let mut dst_b = vec![0.0f32; w * h];
+        let mut dst_l = ctx.take_f32(w * h);
+        let mut dst_a = ctx.take_f32(w * h);
+        let mut dst_b = ctx.take_f32(w * h);
 
         for y in 0..h {
             for x in 0..w {
@@ -82,15 +83,19 @@ impl Filter for Bilateral {
             }
         }
 
-        planes.l = dst_l;
-        planes.a = dst_a;
-        planes.b = dst_b;
+        let old_l = core::mem::replace(&mut planes.l, dst_l);
+        let old_a = core::mem::replace(&mut planes.a, dst_a);
+        let old_b = core::mem::replace(&mut planes.b, dst_b);
+        ctx.return_f32(old_l);
+        ctx.return_f32(old_a);
+        ctx.return_f32(old_b);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::FilterContext;
 
     #[test]
     fn zero_strength_is_identity() {
@@ -104,7 +109,7 @@ mod tests {
             range_sigma: 0.1,
             strength: 0.0,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
     }
 
@@ -121,7 +126,7 @@ mod tests {
             range_sigma: 0.1,
             strength: 1.0,
         }
-        .apply(&mut planes);
+        .apply(&mut planes, &mut FilterContext::new());
         let after_var = variance(&planes.l);
         assert!(
             after_var < before_var,

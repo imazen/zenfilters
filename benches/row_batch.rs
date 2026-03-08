@@ -4,7 +4,7 @@ use zenpixels::{ChannelLayout, ChannelType, PixelDescriptor, TransferFunction};
 use zenpixels_convert::RowConverter;
 
 use zenfilters::srgb_filters::{self, SrgbColorFilter};
-use zenfilters::{Pipeline, PipelineBufferExt, PipelineConfig};
+use zenfilters::{FilterContext, Pipeline, PipelineBufferExt, PipelineConfig};
 
 // ─── Test data ──────────────────────────────────────────────────────
 
@@ -188,19 +188,32 @@ fn bench_oklab_pipeline(c: &mut Criterion) {
     for &(w, h) in &[(256, 256), (512, 512), (1024, 1024), (2048, 2048)] {
         let buf = make_rgba8_buffer(w, h);
 
-        // Empty pipeline (scatter + gather only)
+        // Empty pipeline (scatter + gather only) — fresh context each time
         let empty_pipe = Pipeline::new(PipelineConfig::default()).unwrap();
         group.bench_with_input(
             BenchmarkId::new("empty_roundtrip", format!("{w}x{h}")),
             &(w, h),
             |b, _| {
                 b.iter(|| {
-                    empty_pipe.apply_buffer(&buf).unwrap();
+                    let mut ctx = FilterContext::new();
+                    empty_pipe.apply_buffer(&buf, &mut ctx).unwrap();
                 });
             },
         );
 
-        // Typical filter stack
+        // Empty pipeline — reused context (measures allocation savings)
+        group.bench_with_input(
+            BenchmarkId::new("empty_roundtrip_reuse_ctx", format!("{w}x{h}")),
+            &(w, h),
+            |b, _| {
+                let mut ctx = FilterContext::new();
+                b.iter(|| {
+                    empty_pipe.apply_buffer(&buf, &mut ctx).unwrap();
+                });
+            },
+        );
+
+        // Typical filter stack — fresh context
         let mut full_pipe = Pipeline::new(PipelineConfig::default()).unwrap();
         full_pipe.push(Box::new(zenfilters::filters::Exposure { stops: 0.3 }));
         full_pipe.push(Box::new(zenfilters::filters::Contrast { amount: 0.2 }));
@@ -210,7 +223,47 @@ fn bench_oklab_pipeline(c: &mut Criterion) {
             &(w, h),
             |b, _| {
                 b.iter(|| {
-                    full_pipe.apply_buffer(&buf).unwrap();
+                    let mut ctx = FilterContext::new();
+                    full_pipe.apply_buffer(&buf, &mut ctx).unwrap();
+                });
+            },
+        );
+
+        // Typical filter stack — reused context
+        group.bench_with_input(
+            BenchmarkId::new("exposure_contrast_sat_reuse_ctx", format!("{w}x{h}")),
+            &(w, h),
+            |b, _| {
+                let mut ctx = FilterContext::new();
+                b.iter(|| {
+                    full_pipe.apply_buffer(&buf, &mut ctx).unwrap();
+                });
+            },
+        );
+
+        // Neighborhood filters (clarity) — fresh vs reused context
+        let mut clarity_pipe = Pipeline::new(PipelineConfig::default()).unwrap();
+        clarity_pipe.push(Box::new(zenfilters::filters::Clarity {
+            sigma: 10.0,
+            amount: 0.3,
+        }));
+        group.bench_with_input(
+            BenchmarkId::new("clarity_fresh_ctx", format!("{w}x{h}")),
+            &(w, h),
+            |b, _| {
+                b.iter(|| {
+                    let mut ctx = FilterContext::new();
+                    clarity_pipe.apply_buffer(&buf, &mut ctx).unwrap();
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("clarity_reuse_ctx", format!("{w}x{h}")),
+            &(w, h),
+            |b, _| {
+                let mut ctx = FilterContext::new();
+                b.iter(|| {
+                    clarity_pipe.apply_buffer(&buf, &mut ctx).unwrap();
                 });
             },
         );
