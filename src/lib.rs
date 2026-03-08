@@ -52,6 +52,9 @@ mod simd;
 
 #[cfg(feature = "buffer")]
 mod convenience;
+#[cfg(feature = "srgb-filters")]
+#[allow(clippy::manual_clamp)]
+pub mod srgb_filters;
 
 pub use access::ChannelAccess;
 pub use blur::GaussianKernel;

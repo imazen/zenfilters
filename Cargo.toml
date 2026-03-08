@@ -12,11 +12,13 @@ categories = ["multimedia::images", "graphics"]
 [features]
 default = []
 buffer = ["zenpixels/buffer", "zenpixels-convert/buffer"]
+srgb-filters = ["buffer", "dep:rgb"]
 
 [dependencies]
 archmage = { version = "0.9", features = ["avx512"] }
 bytemuck = { version = "1.21", default-features = false, features = ["extern_crate_alloc"] }
 magetypes = "0.9"
+rgb = { version = "0.8", default-features = false, features = ["bytemuck"], optional = true }
 zenpixels = { version = "0.1", path = "../zenpixels/zenpixels", features = ["planar"] }
 zenpixels-convert = { version = "0.1", path = "../zenpixels/zenpixels-convert" }
 

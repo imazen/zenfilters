@@ -149,6 +149,7 @@ dependencies = [
  "archmage",
  "bytemuck",
  "magetypes",
+ "rgb",
  "zenpixels",
  "zenpixels-convert",
 ]
