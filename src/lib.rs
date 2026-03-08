@@ -38,6 +38,8 @@
 //! pipeline.apply(&src, &mut dst, w as u32, h as u32, 3).unwrap();
 //! ```
 
+extern crate alloc;
+
 mod access;
 mod blur;
 mod filter;
@@ -48,8 +50,13 @@ mod planes;
 mod scatter_gather;
 mod simd;
 
+#[cfg(feature = "buffer")]
+mod convenience;
+
 pub use access::ChannelAccess;
 pub use blur::GaussianKernel;
+#[cfg(feature = "buffer")]
+pub use convenience::{ConvenienceError, PipelineBufferExt, apply_to_buffer};
 pub use filter::Filter;
 pub use gamut_map::GamutMapping;
 pub use pipeline::{Pipeline, PipelineConfig, PipelineError};
