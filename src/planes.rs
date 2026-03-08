@@ -1,3 +1,5 @@
+use crate::context::FilterContext;
+
 /// Owned planar f32 data for Oklab L, a, b, and optional alpha.
 ///
 /// Each plane is a contiguous `Vec<f32>` of `width * height` elements,
@@ -37,6 +39,47 @@ impl OklabPlanes {
             a: vec![0.0; n],
             b: vec![0.0; n],
             alpha: Some(vec![0.0; n]),
+        }
+    }
+
+    /// Create planes using buffers borrowed from a [`FilterContext`].
+    ///
+    /// This avoids allocating new vectors when the context already has
+    /// suitably-sized buffers from a previous pipeline run.
+    pub fn from_ctx(ctx: &mut FilterContext, width: u32, height: u32) -> Self {
+        let n = (width as usize) * (height as usize);
+        Self {
+            width,
+            height,
+            l: ctx.take_f32(n),
+            a: ctx.take_f32(n),
+            b: ctx.take_f32(n),
+            alpha: None,
+        }
+    }
+
+    /// Create planes with alpha using buffers borrowed from a [`FilterContext`].
+    pub fn from_ctx_with_alpha(ctx: &mut FilterContext, width: u32, height: u32) -> Self {
+        let n = (width as usize) * (height as usize);
+        Self {
+            width,
+            height,
+            l: ctx.take_f32(n),
+            a: ctx.take_f32(n),
+            b: ctx.take_f32(n),
+            alpha: Some(ctx.take_f32(n)),
+        }
+    }
+
+    /// Return all plane buffers to the [`FilterContext`] pool.
+    ///
+    /// After this call, the planes are empty and should not be used.
+    pub fn return_to_ctx(self, ctx: &mut FilterContext) {
+        ctx.return_f32(self.l);
+        ctx.return_f32(self.a);
+        ctx.return_f32(self.b);
+        if let Some(alpha) = self.alpha {
+            ctx.return_f32(alpha);
         }
     }
 

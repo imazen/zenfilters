@@ -124,9 +124,9 @@ impl Pipeline {
 
         // Scatter to planar Oklab
         let mut planes = if channels == 4 {
-            OklabPlanes::with_alpha(width, height)
+            OklabPlanes::from_ctx_with_alpha(ctx, width, height)
         } else {
-            OklabPlanes::new(width, height)
+            OklabPlanes::from_ctx(ctx, width, height)
         };
         scatter_to_oklab(
             src,
@@ -147,6 +147,9 @@ impl Pipeline {
             &self.m1_inv,
             self.config.reference_white,
         );
+
+        // Return planes to the pool
+        planes.return_to_ctx(ctx);
 
         Ok(())
     }
