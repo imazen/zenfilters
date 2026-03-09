@@ -22,6 +22,7 @@ use crate::simd;
 /// 7. Saturation
 /// 8. Vibrance
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct FusedAdjust {
     /// Exposure in stops.
     pub exposure: f32,

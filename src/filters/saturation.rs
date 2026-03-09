@@ -8,9 +8,17 @@ use crate::simd;
 ///
 /// Scales chroma (a, b) by a constant factor. 1.0 = no change,
 /// 0.0 = grayscale, 2.0 = double saturation.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Saturation {
     /// Saturation factor. 1.0 = no change.
     pub factor: f32,
+}
+
+impl Default for Saturation {
+    fn default() -> Self {
+        Self { factor: 1.0 }
+    }
 }
 
 impl Filter for Saturation {

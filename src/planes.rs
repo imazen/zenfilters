@@ -6,6 +6,7 @@ use crate::context::FilterContext;
 /// stored in row-major order. This is the working representation that
 /// filters operate on.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct OklabPlanes {
     pub width: u32,
     pub height: u32,

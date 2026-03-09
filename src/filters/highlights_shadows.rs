@@ -9,6 +9,8 @@ use crate::simd;
 /// Positive `highlights` compresses bright areas (recovery).
 /// Positive `shadows` lifts dark areas (fill light).
 /// Both operate on L with smooth transitions to avoid artifacts.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct HighlightsShadows {
     /// Highlights recovery. Positive = compress highlights, negative = boost.
     pub highlights: f32,

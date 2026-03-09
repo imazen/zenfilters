@@ -24,6 +24,7 @@ use crate::scatter_gather::{
 
 /// Error type for convenience layer operations.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ConvenienceError {
     /// Filter pipeline error.
     Pipeline(PipelineError),

@@ -7,6 +7,8 @@ use crate::simd;
 /// Tint adjustment via Oklab a-channel shift.
 ///
 /// Positive values shift toward magenta, negative toward green.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Tint {
     /// Tint shift. -1.0 (green) to +1.0 (magenta). 0.0 = no change.
     pub shift: f32,

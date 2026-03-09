@@ -8,6 +8,8 @@ use crate::simd;
 ///
 /// Positive values increase contrast (darks darker, lights lighter).
 /// Negative values reduce contrast. The pivot point is L=0.5.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Contrast {
     /// Contrast amount. 0.0 = no change, 1.0 = maximum increase, -1.0 = flatten.
     pub amount: f32,

@@ -11,6 +11,8 @@ use crate::planes::OklabPlanes;
 /// equivalent of imageflow4's RGB Gaussian blur, but perceptually correct —
 /// blurring in Oklab avoids the darkening artifacts that sRGB gamma-space
 /// blurs produce at color boundaries.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Blur {
     /// Gaussian sigma in pixels. Larger = more blur.
     pub sigma: f32,

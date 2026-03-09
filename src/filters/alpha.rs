@@ -10,9 +10,17 @@ use zenpixels::PlaneMask;
 /// Multiplies the alpha plane by a constant factor. Useful for
 /// fade effects or transparency adjustments. If no alpha plane
 /// exists, this is a no-op.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Alpha {
     /// Alpha multiplier. 0.0 = fully transparent, 1.0 = no change.
     pub factor: f32,
+}
+
+impl Default for Alpha {
+    fn default() -> Self {
+        Self { factor: 1.0 }
+    }
 }
 
 impl Filter for Alpha {

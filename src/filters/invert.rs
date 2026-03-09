@@ -9,6 +9,8 @@ use crate::simd;
 /// Inverts lightness (L' = 1.0 - L) and negates chroma (a' = -a, b' = -b).
 /// This produces a perceptually correct negative — unlike sRGB inversion
 /// (255 - v) which distorts perceived brightness relationships.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Invert;
 
 impl Filter for Invert {

@@ -12,6 +12,8 @@ use crate::planes::OklabPlanes;
 /// All three legacy grayscale modes (BT.709, NTSC, flat) produce the same
 /// result in Oklab: zero chroma. The perceived luminance is already encoded
 /// in the L channel, so there's no information loss.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Grayscale;
 
 impl Filter for Grayscale {

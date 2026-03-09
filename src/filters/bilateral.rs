@@ -13,6 +13,8 @@ use crate::planes::OklabPlanes;
 /// Note: bilateral filter is non-separable and accesses all channels,
 /// so planar layout provides no speedup over interleaved for this filter.
 /// It's included for API completeness.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Bilateral {
     /// Spatial sigma for the Gaussian kernel. Typical: 1.0-3.0.
     pub spatial_sigma: f32,
@@ -21,6 +23,16 @@ pub struct Bilateral {
     pub range_sigma: f32,
     /// Blend strength. 0.0 = no denoising, 1.0 = full effect.
     pub strength: f32,
+}
+
+impl Default for Bilateral {
+    fn default() -> Self {
+        Self {
+            spatial_sigma: 2.0,
+            range_sigma: 0.1,
+            strength: 0.0,
+        }
+    }
 }
 
 impl Filter for Bilateral {

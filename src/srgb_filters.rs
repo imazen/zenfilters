@@ -98,6 +98,7 @@ pub fn color_matrix(slice: &mut PixelSliceMut<'_>, matrix: &[f32; 25]) {
 
 /// Predefined color filter operations in sRGB space.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum SrgbColorFilter {
     /// BT.709 luma grayscale (0.2126 R + 0.7152 G + 0.0722 B).
     GrayscaleBt709,

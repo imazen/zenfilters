@@ -11,6 +11,8 @@ use crate::simd;
 /// relative to its local average — lifting shadows and compressing highlights
 /// selectively. This produces a more natural "dynamic range compression"
 /// similar to Apple's Brilliance slider.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Brilliance {
     /// Blur sigma for computing local average.
     pub sigma: f32,

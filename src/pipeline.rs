@@ -20,6 +20,7 @@ pub(crate) fn strip_height(width: u32, has_alpha: bool) -> usize {
 
 /// Configuration for the filter pipeline.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct PipelineConfig {
     /// Color primaries (determines RGB↔LMS matrices).
     pub primaries: ColorPrimaries,
@@ -39,6 +40,7 @@ impl Default for PipelineConfig {
 
 /// Errors from pipeline construction or execution.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum PipelineError {
     /// The requested color primaries are not supported (Unknown).
     UnsupportedPrimaries(ColorPrimaries),

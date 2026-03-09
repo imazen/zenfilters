@@ -8,6 +8,8 @@ use crate::simd;
 ///
 /// Scales lightness by `2^stops`. +1 stop doubles brightness, -1 halves it.
 /// Only modifies the L plane — colors are preserved exactly.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Exposure {
     /// Exposure adjustment in stops. 0.0 = no change.
     pub stops: f32,

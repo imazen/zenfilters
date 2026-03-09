@@ -23,13 +23,19 @@
 //! use zenfilters::filters::*;
 //! use zenpixels::ColorPrimaries;
 //!
-//! let mut pipeline = Pipeline::new(PipelineConfig {
-//!     primaries: ColorPrimaries::Bt709,
-//!     reference_white: 1.0,
-//! }).unwrap();
-//! pipeline.push(Box::new(Exposure { stops: 0.5 }));
-//! pipeline.push(Box::new(Clarity { sigma: 10.0, amount: 0.3 }));
-//! pipeline.push(Box::new(Vibrance { amount: 0.4, protection: 2.0 }));
+//! let mut pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
+//!
+//! let mut exposure = Exposure::default();
+//! exposure.stops = 0.5;
+//! pipeline.push(Box::new(exposure));
+//!
+//! let mut clarity = Clarity::default();
+//! clarity.amount = 0.3;
+//! pipeline.push(Box::new(clarity));
+//!
+//! let mut vibrance = Vibrance::default();
+//! vibrance.amount = 0.4;
+//! pipeline.push(Box::new(vibrance));
 //!
 //! // Create a reusable context to avoid per-call allocations
 //! let mut ctx = FilterContext::new();

@@ -13,6 +13,8 @@ use crate::simd;
 ///
 /// At 1080p with sigma=10, this runs at ~25ms (188× faster than naive
 /// interleaved approach) thanks to separable SIMD blur on planar data.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Clarity {
     /// Blur sigma for low-frequency extraction. Larger = coarser features.
     /// Typical: 5.0-15.0.
@@ -20,6 +22,15 @@ pub struct Clarity {
     /// Enhancement amount. Positive = sharper detail, negative = soften.
     /// Typical: 0.1-0.5.
     pub amount: f32,
+}
+
+impl Default for Clarity {
+    fn default() -> Self {
+        Self {
+            sigma: 10.0,
+            amount: 0.0,
+        }
+    }
 }
 
 impl Filter for Clarity {

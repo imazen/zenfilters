@@ -9,6 +9,8 @@ use crate::simd;
 /// Boosts chroma of low-saturation pixels more than high-saturation ones,
 /// preventing skin tone and sky clipping. The protection curve is:
 /// `scale = 1 + amount * (1 - chroma / max_chroma)^protection`
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Vibrance {
     /// Vibrance amount. 0.0 = no change, 1.0 = full boost.
     pub amount: f32,

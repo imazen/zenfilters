@@ -8,6 +8,8 @@ use crate::simd;
 ///
 /// Increases both L-channel contrast and chroma to cut through haze.
 /// Operates on L, a, and b planes.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Dehaze {
     /// Dehaze strength. 0.0 = no change, 1.0 = full effect.
     pub strength: f32,

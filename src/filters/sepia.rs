@@ -13,9 +13,17 @@ use crate::simd;
 /// In Oklab, sepia is approximately a≈+0.01, b≈+0.04 (warm yellow-brown).
 /// This produces more natural results than the classic sRGB sepia matrix
 /// because the tint is applied in perceptually uniform space.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Sepia {
     /// Sepia strength. 0.0 = grayscale, 1.0 = full sepia.
     pub amount: f32,
+}
+
+impl Default for Sepia {
+    fn default() -> Self {
+        Self { amount: 1.0 }
+    }
 }
 
 /// Oklab a component of sepia tone (warm reddish).

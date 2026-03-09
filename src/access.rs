@@ -6,6 +6,7 @@ use zenpixels::PlaneMask;
 /// whether adjacent filters can share a planar layout without
 /// intermediate scatter/gather.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ChannelAccess {
     /// Planes this filter reads.
     pub reads: PlaneMask,
@@ -14,6 +15,11 @@ pub struct ChannelAccess {
 }
 
 impl ChannelAccess {
+    /// Create a custom channel access descriptor.
+    pub const fn new(reads: PlaneMask, writes: PlaneMask) -> Self {
+        Self { reads, writes }
+    }
+
     /// Filter reads and writes only the L (lightness) plane.
     pub const L_ONLY: Self = Self {
         reads: PlaneMask::LUMA,

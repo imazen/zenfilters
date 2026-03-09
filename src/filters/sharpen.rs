@@ -10,11 +10,22 @@ use crate::simd;
 /// Like clarity but with a smaller sigma for fine detail enhancement.
 /// Sharpening in Oklab L avoids the color fringing that RGB sharpening
 /// produces at high-contrast edges.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Sharpen {
     /// Blur sigma. Small values (0.5-2.0) for fine sharpening.
     pub sigma: f32,
     /// Sharpening amount. Typical: 0.3-1.0.
     pub amount: f32,
+}
+
+impl Default for Sharpen {
+    fn default() -> Self {
+        Self {
+            sigma: 1.0,
+            amount: 0.0,
+        }
+    }
 }
 
 impl Filter for Sharpen {

@@ -1,5 +1,6 @@
 /// Strategy for handling out-of-gamut colors after gather.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub enum GamutMapping {
     /// Clamp negative RGB values to 0. Fast, may shift hue slightly
     /// for aggressively boosted colors. Sufficient for most adjustments.

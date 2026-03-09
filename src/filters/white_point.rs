@@ -9,9 +9,17 @@ use crate::simd;
 /// Scales the L range so that `level` maps to L=1.0.
 /// For SDR, default is 1.0 (no change). Values < 1.0 brighten highlights;
 /// values > 1.0 extend the dynamic range.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct WhitePoint {
     /// White point level. 1.0 = no change.
     pub level: f32,
+}
+
+impl Default for WhitePoint {
+    fn default() -> Self {
+        Self { level: 1.0 }
+    }
 }
 
 impl Filter for WhitePoint {

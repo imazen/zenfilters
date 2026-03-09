@@ -16,10 +16,20 @@ use zenpixels_convert::oklab;
 ///
 /// The matrix uses BT.709 primaries for the Oklab↔RGB conversion since
 /// the matrix coefficients are defined relative to standard RGB.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ColorMatrix {
     /// Row-major 5×5 matrix (25 elements).
     /// `[R',G',B',A',1] = M × [R,G,B,A,1]`
     pub matrix: [f32; 25],
+}
+
+impl Default for ColorMatrix {
+    fn default() -> Self {
+        Self {
+            matrix: Self::IDENTITY,
+        }
+    }
 }
 
 impl ColorMatrix {
