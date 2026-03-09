@@ -1867,6 +1867,134 @@ fn dt_vibrance_boost() {
     // Both protect already-saturated pixels, but in different color spaces.
 }
 
+/// Combined exposure + contrast via darktable's exposure module + basicadj.
+#[test]
+fn dt_combined_exposure_contrast() {
+    if skip_unless_darktable() {
+        return;
+    }
+
+    let (min, avg, avg_diff) = compare_with_darktable(
+        FAST_IMAGES,
+        |img| {
+            let (w, h) = img.dimensions();
+            let input_bytes: Vec<u8> = img.as_raw().clone();
+            let desc = zenpixels::PixelDescriptor::RGB8_SRGB;
+            let input_buf =
+                zenpixels::buffer::PixelBuffer::from_vec(input_bytes, w, h, desc).unwrap();
+
+            let mut pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
+            pipeline.push({
+                let mut e = Exposure::default();
+                e.stops = 0.5;
+                Box::new(e)
+            });
+            pipeline.push({
+                let mut c = Contrast::default();
+                c.amount = 0.3;
+                Box::new(c)
+            });
+            pipeline.push({
+                let mut s = Saturation::default();
+                s.factor = 1.2;
+                Box::new(s)
+            });
+
+            let mut ctx = FilterContext::new();
+            let output_buf = apply_to_buffer(&pipeline, &input_buf, true, &mut ctx).unwrap();
+            let output_bytes = output_buf.copy_to_contiguous_bytes();
+            ImageBuffer::from_raw(w, h, output_bytes).unwrap()
+        },
+        || {
+            vec![
+                DtModule {
+                    operation: "exposure",
+                    modversion: 7,
+                    params_hex: dt_exposure_hex(0.5),
+                },
+                DtModule {
+                    operation: "basicadj",
+                    modversion: 2,
+                    params_hex: dt_basicadj_hex(0.3, 0.2, 0.0),
+                },
+            ]
+        },
+        "combined",
+    );
+
+    eprintln!(
+        "dt combined (exp+0.5, contrast+0.3, sat+0.2): min={min:.1} avg={avg:.1} diff={avg_diff:.1}"
+    );
+}
+
+/// Full corpus darktable comparison on all 10 test images (exposure only).
+#[test]
+fn dt_exposure_full_corpus() {
+    if skip_unless_darktable() {
+        return;
+    }
+
+    let (min, avg, avg_diff) = compare_with_darktable(
+        TEST_IMAGES,
+        |img| {
+            let mut e = Exposure::default();
+            e.stops = 1.0;
+            apply_zenfilter(img, Box::new(e))
+        },
+        || {
+            vec![DtModule {
+                operation: "exposure",
+                modversion: 7,
+                params_hex: dt_exposure_hex(1.0),
+            }]
+        },
+        "exp_p1_full",
+    );
+
+    eprintln!("dt exposure +1 (10 images): min={min:.1} avg={avg:.1} diff={avg_diff:.1}");
+    assert!(
+        min > 90.0,
+        "exposure +1 min zensim should be > 90 across full corpus: {min:.1}"
+    );
+}
+
+/// Full corpus contrast comparison on all 10 test images.
+#[test]
+fn dt_contrast_full_corpus() {
+    if skip_unless_darktable() {
+        return;
+    }
+
+    let (min, avg, avg_diff) = compare_with_darktable(
+        TEST_IMAGES,
+        |img| {
+            let mut c = Contrast::default();
+            c.amount = 0.5;
+            apply_zenfilter(img, Box::new(c))
+        },
+        || {
+            vec![DtModule {
+                operation: "basicadj",
+                modversion: 2,
+                params_hex: dt_basicadj_hex(0.5, 0.0, 0.0),
+            }]
+        },
+        "contrast_p50_full",
+    );
+
+    eprintln!("dt contrast +0.5 (10 images): min={min:.1} avg={avg:.1} diff={avg_diff:.1}");
+    // Highly saturated content (abstract paint) diverges more between
+    // Oklab and linear RGB contrast models — min ~65 is acceptable.
+    assert!(
+        min > 60.0,
+        "contrast +0.5 min zensim should be > 60 across full corpus: {min:.1}"
+    );
+    assert!(
+        avg > 80.0,
+        "contrast +0.5 avg zensim should be > 80 across full corpus: {avg:.1}"
+    );
+}
+
 // ─── darktable comparison summary ────────────────────────────────
 
 #[test]
