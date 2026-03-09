@@ -214,6 +214,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
+name = "garb"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "232a3653471b7228242fec8669102c1991af35a5262c6eb18aa47d68d661a143"
+dependencies = [
+ "archmage",
+ "bytemuck",
+ "paste",
+]
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -287,6 +298,8 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "linear-srgb"
 version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad4cadc069dae2158d5f87814de8958b88985b7bd1afe36f3bc9c1f607418fd5"
 dependencies = [
  "archmage",
  "bytemuck",
@@ -296,9 +309,7 @@ dependencies = [
 
 [[package]]
 name = "linear-srgb"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad4cadc069dae2158d5f87814de8958b88985b7bd1afe36f3bc9c1f607418fd5"
+version = "0.6.3"
 dependencies = [
  "archmage",
  "bytemuck",
@@ -342,6 +353,12 @@ name = "oorandom"
 version = "11.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "plotters"
@@ -634,7 +651,7 @@ dependencies = [
  "archmage",
  "bytemuck",
  "criterion",
- "linear-srgb 0.6.2",
+ "linear-srgb 0.6.3",
  "magetypes",
  "rgb",
  "zenpixels",
@@ -655,25 +672,26 @@ name = "zenpixels-convert"
 version = "0.1.1"
 dependencies = [
  "bytemuck",
- "linear-srgb 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "garb",
+ "linear-srgb 0.6.2",
  "rgb",
  "zenpixels",
 ]
 
 [[package]]
 name = "zerocopy"
-version = "0.8.40"
+version = "0.8.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a789c6e490b576db9f7e6b6d661bcc9799f7c0ac8352f56ea20193b2681532e5"
+checksum = "96e13bc581734df6250836c59a5f44f3c57db9f9acb9dc8e3eaabdaf6170254d"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.40"
+version = "0.8.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f65c489a7071a749c849713807783f70672b28094011623e200cb86dcb835953"
+checksum = "3545ea9e86d12ab9bba9fcd99b54c1556fd3199007def5a03c375623d05fac1c"
 dependencies = [
  "proc-macro2",
  "quote",
