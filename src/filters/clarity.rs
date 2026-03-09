@@ -3,31 +3,41 @@ use crate::blur::{GaussianKernel, gaussian_blur_plane};
 use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
-use crate::simd;
 
-/// Clarity: local contrast enhancement via unsharp mask on L channel.
+/// Clarity: multi-scale local contrast enhancement on L channel.
 ///
-/// Computes a Gaussian-blurred version of L, then adds weighted high-pass
-/// signal back. This enhances mid-frequency texture without affecting
-/// global tone or color.
+/// Uses a two-band decomposition to isolate the mid-frequency "clarity"
+/// band, avoiding both noise amplification (from fine detail) and halos
+/// (from coarse edges):
 ///
-/// At 1080p with sigma=10, this runs at ~25ms (188× faster than naive
-/// interleaved approach) thanks to separable SIMD blur on planar data.
+/// ```text
+/// fine   = gaussian_blur(L, sigma)
+/// coarse = gaussian_blur(L, sigma * 4)
+/// mid    = fine - coarse          // the clarity band
+/// L'     = L + amount * mid
+/// ```
+///
+/// This is significantly better than single-scale unsharp mask because
+/// it only boosts mid-frequency texture (skin pores, fabric, foliage),
+/// not high-frequency noise or low-frequency tonal gradients.
+///
+/// Inspired by darktable's local contrast module (local Laplacian filter).
+/// This multi-scale approach is simpler but captures most of the benefit.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Clarity {
-    /// Blur sigma for low-frequency extraction. Larger = coarser features.
-    /// Typical: 5.0-15.0.
+    /// Sigma for the fine-scale blur. Controls the smallest features
+    /// affected. Typical: 2.0-8.0. The coarse blur is 4× this.
     pub sigma: f32,
-    /// Enhancement amount. Positive = sharper detail, negative = soften.
-    /// Typical: 0.1-0.5.
+    /// Enhancement amount. Positive = enhance texture, negative = soften.
+    /// Typical: 0.3-1.0 for natural results.
     pub amount: f32,
 }
 
 impl Default for Clarity {
     fn default() -> Self {
         Self {
-            sigma: 10.0,
+            sigma: 4.0,
             amount: 0.0,
         }
     }
@@ -46,20 +56,37 @@ impl Filter for Clarity {
         if self.amount.abs() < 1e-6 {
             return;
         }
-        let kernel = GaussianKernel::new(self.sigma);
-        let mut blurred = ctx.take_f32(planes.pixel_count());
-        gaussian_blur_plane(
-            &planes.l,
-            &mut blurred,
-            planes.width,
-            planes.height,
-            &kernel,
-            ctx,
-        );
 
-        let mut dst = ctx.take_f32(planes.pixel_count());
-        simd::unsharp_fuse(&planes.l, &blurred, &mut dst, self.amount);
-        ctx.return_f32(blurred);
+        let pc = planes.pixel_count();
+        let w = planes.width;
+        let h = planes.height;
+
+        // Fine blur: captures detail above sigma
+        let kernel_fine = GaussianKernel::new(self.sigma);
+        let mut blurred_fine = ctx.take_f32(pc);
+        gaussian_blur_plane(&planes.l, &mut blurred_fine, w, h, &kernel_fine, ctx);
+
+        // Coarse blur: captures structure above sigma*4
+        let kernel_coarse = GaussianKernel::new(self.sigma * 4.0);
+        let mut blurred_coarse = ctx.take_f32(pc);
+        gaussian_blur_plane(&planes.l, &mut blurred_coarse, w, h, &kernel_coarse, ctx);
+
+        // Mid band = fine - coarse; apply: L' = L + amount * mid
+        // L' = L + amount * (fine - coarse)
+        // Rewrite as unsharp between blurred_fine and blurred_coarse:
+        //   dst = blurred_fine + amount * (blurred_fine - blurred_coarse)
+        //   Then final = L - blurred_fine + dst = L + amount * (fine - coarse)
+        //
+        // Simpler: just compute it directly with scale+offset.
+        let amount = self.amount;
+        let mut dst = ctx.take_f32(pc);
+        for i in 0..pc {
+            let mid = blurred_fine[i] - blurred_coarse[i];
+            dst[i] = (planes.l[i] + amount * mid).max(0.0);
+        }
+
+        ctx.return_f32(blurred_fine);
+        ctx.return_f32(blurred_coarse);
         let old_l = core::mem::replace(&mut planes.l, dst);
         ctx.return_f32(old_l);
     }
@@ -78,7 +105,7 @@ mod tests {
         }
         let original = planes.l.clone();
         Clarity {
-            sigma: 5.0,
+            sigma: 4.0,
             amount: 0.0,
         }
         .apply(&mut planes, &mut FilterContext::new());
@@ -88,7 +115,7 @@ mod tests {
     #[test]
     fn positive_amount_enhances_contrast() {
         let mut planes = OklabPlanes::new(64, 64);
-        // Create a pattern with local variation
+        // Create a pattern with local variation at mid-frequency
         for y in 0..64 {
             for x in 0..64 {
                 let i = y * 64 + x;
@@ -97,7 +124,7 @@ mod tests {
         }
         let before_std = std_dev(&planes.l);
         Clarity {
-            sigma: 5.0,
+            sigma: 3.0,
             amount: 0.5,
         }
         .apply(&mut planes, &mut FilterContext::new());
@@ -124,6 +151,50 @@ mod tests {
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.a, a_orig);
+    }
+
+    #[test]
+    fn uniform_image_unchanged() {
+        // A perfectly uniform image has no mid-frequency content — clarity
+        // should produce zero change regardless of amount.
+        let mut planes = OklabPlanes::new(32, 32);
+        for v in &mut planes.l {
+            *v = 0.6;
+        }
+        let original = planes.l.clone();
+        Clarity {
+            sigma: 4.0,
+            amount: 1.0,
+        }
+        .apply(&mut planes, &mut FilterContext::new());
+        for (a, b) in planes.l.iter().zip(original.iter()) {
+            assert!(
+                (a - b).abs() < 1e-4,
+                "uniform image should be unchanged: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn negative_amount_softens() {
+        let mut planes = OklabPlanes::new(64, 64);
+        for y in 0..64 {
+            for x in 0..64 {
+                let i = y * 64 + x;
+                planes.l[i] = if (x / 8 + y / 8) % 2 == 0 { 0.7 } else { 0.3 };
+            }
+        }
+        let before_std = std_dev(&planes.l);
+        Clarity {
+            sigma: 3.0,
+            amount: -0.5,
+        }
+        .apply(&mut planes, &mut FilterContext::new());
+        let after_std = std_dev(&planes.l);
+        assert!(
+            after_std < before_std,
+            "negative amount should soften: {before_std} -> {after_std}"
+        );
     }
 
     fn std_dev(data: &[f32]) -> f32 {
