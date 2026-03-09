@@ -21,6 +21,7 @@ linear-srgb = { version = "0.6", path = "../linear-srgb" }
 magetypes = "0.9.4"
 rgb = { version = "0.8", default-features = false, features = ["bytemuck"], optional = true }
 zenpixels = { version = "0.1", path = "../zenpixels/zenpixels", features = ["planar"] }
+whereat = { version = "0.1", path = "../../whereat" }
 zenpixels-convert = { version = "0.1", path = "../zenpixels/zenpixels-convert" }
 
 [dev-dependencies]

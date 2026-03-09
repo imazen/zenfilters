@@ -9,6 +9,7 @@
 //!
 //! Requires the `buffer` feature.
 
+use whereat::{At, ResultAtExt, at};
 use zenpixels::buffer::PixelBuffer;
 use zenpixels::{
     AlphaMode, ChannelLayout, ChannelType, ColorPrimaries, PixelDescriptor, TransferFunction,
@@ -36,12 +37,6 @@ pub enum ConvenienceError {
     UnsupportedLayout(ChannelLayout),
 }
 
-impl From<PipelineError> for ConvenienceError {
-    fn from(e: PipelineError) -> Self {
-        Self::Pipeline(e)
-    }
-}
-
 impl From<zenpixels_convert::ConvertError> for ConvenienceError {
     fn from(e: zenpixels_convert::ConvertError) -> Self {
         Self::Convert(e)
@@ -65,12 +60,13 @@ impl std::error::Error for ConvenienceError {}
 ///
 /// If the input has known primaries, use those. This preserves the gamut
 /// without any cross-gamut conversion (BT.2020 stays BT.2020, P3 stays P3).
-fn working_primaries(desc: PixelDescriptor) -> Result<ColorPrimaries, ConvenienceError> {
+#[track_caller]
+fn working_primaries(desc: PixelDescriptor) -> Result<ColorPrimaries, At<ConvenienceError>> {
     match desc.primaries {
         ColorPrimaries::Bt709 | ColorPrimaries::Bt2020 | ColorPrimaries::DisplayP3 => {
             Ok(desc.primaries)
         }
-        other => Err(ConvenienceError::UnsupportedPrimaries(other)),
+        other => Err(at!(ConvenienceError::UnsupportedPrimaries(other))),
     }
 }
 
@@ -111,21 +107,22 @@ fn linear_f32_descriptor(has_alpha: bool, primaries: ColorPrimaries) -> PixelDes
 /// When `convert_back` is false, the output is linear f32 RGB(A) in the
 /// input's gamut. This is useful when the caller wants to do further
 /// processing before final encoding.
+#[track_caller]
 pub fn apply_to_buffer(
     pipeline: &Pipeline,
     input: &PixelBuffer,
     convert_back: bool,
     ctx: &mut FilterContext,
-) -> Result<PixelBuffer, ConvenienceError> {
+) -> Result<PixelBuffer, At<ConvenienceError>> {
     let desc = input.descriptor();
     let width = input.width();
     let height = input.height();
-    let primaries = working_primaries(desc)?;
+    let primaries = working_primaries(desc).at()?;
 
     // Validate layout is RGB-based
     match desc.layout() {
         ChannelLayout::Rgb | ChannelLayout::Rgba | ChannelLayout::Bgra => {}
-        other => return Err(ConvenienceError::UnsupportedLayout(other)),
+        other => return Err(at!(ConvenienceError::UnsupportedLayout(other))),
     }
 
     let has_alpha = desc.has_alpha();
@@ -135,9 +132,9 @@ pub fn apply_to_buffer(
     let linear_desc = linear_f32_descriptor(has_alpha, primaries);
     let reference_white = desc.transfer().reference_white_nits();
     let m1 = zenpixels_convert::oklab::rgb_to_lms_matrix(primaries)
-        .ok_or(ConvenienceError::UnsupportedPrimaries(primaries))?;
+        .ok_or_else(|| at!(ConvenienceError::UnsupportedPrimaries(primaries)))?;
     let m1_inv = zenpixels_convert::oklab::lms_to_rgb_matrix(primaries)
-        .ok_or(ConvenienceError::UnsupportedPrimaries(primaries))?;
+        .ok_or_else(|| at!(ConvenienceError::UnsupportedPrimaries(primaries)))?;
 
     // Detect if we can use the fused sRGB u8 path (eliminates intermediate
     // linear f32 buffer — ~48MB savings at 2048² RGB).
@@ -163,7 +160,8 @@ pub fn apply_to_buffer(
             &m1,
             &m1_inv,
             color_ctx.as_ref(),
-        );
+        )
+        .at();
     }
 
     // Full-frame paths: neighborhood filters, non-fused formats, or !convert_back.
@@ -178,7 +176,8 @@ pub fn apply_to_buffer(
         scatter_srgb_u8_to_oklab(&input_bytes, &mut planes, channels, &m1);
         ctx.return_u8(input_bytes);
     } else {
-        let linear_bytes = convert_buffer_bytes_pooled(input, linear_desc, ctx)?;
+        let linear_bytes = convert_buffer_bytes_pooled(input, linear_desc, ctx)
+            .map_err(|e| at!(e).map_error(ConvenienceError::Convert))?;
         let linear_f32: &[f32] = bytemuck::cast_slice(&linear_bytes);
         scatter_to_oklab(linear_f32, &mut planes, channels, &m1, reference_white);
         ctx.return_u8(linear_bytes);
@@ -194,7 +193,9 @@ pub fn apply_to_buffer(
 
         let mut output_buf =
             PixelBuffer::from_vec(output_bytes, width, height, desc).map_err(|_| {
-                ConvenienceError::Convert(zenpixels_convert::ConvertError::AllocationFailed)
+                at!(ConvenienceError::Convert(
+                    zenpixels_convert::ConvertError::AllocationFailed
+                ))
             })?;
         if let Some(cc) = &color_ctx {
             output_buf = output_buf.with_color_context(alloc::sync::Arc::clone(cc));
@@ -207,7 +208,8 @@ pub fn apply_to_buffer(
         planes.return_to_ctx(ctx);
 
         if convert_back && desc != linear_desc {
-            let converter = RowConverter::new(linear_desc, desc)?;
+            let converter = RowConverter::new(linear_desc, desc)
+                .map_err(|e| at!(e).map_error(ConvenienceError::Convert))?;
             let dst_bpp = desc.bytes_per_pixel();
             let dst_stride = (width as usize) * dst_bpp;
             let total = dst_stride * height as usize;
@@ -233,7 +235,9 @@ pub fn apply_to_buffer(
             ctx.return_f32(output_f32);
             let mut final_buf =
                 PixelBuffer::from_vec(final_bytes, width, height, desc).map_err(|_| {
-                    ConvenienceError::Convert(zenpixels_convert::ConvertError::AllocationFailed)
+                    at!(ConvenienceError::Convert(
+                        zenpixels_convert::ConvertError::AllocationFailed
+                    ))
                 })?;
             if let Some(cc) = &color_ctx {
                 final_buf = final_buf.with_color_context(alloc::sync::Arc::clone(cc));
@@ -244,7 +248,9 @@ pub fn apply_to_buffer(
             let mut output_buf =
                 PixelBuffer::from_vec(output_bytes.to_vec(), width, height, linear_desc).map_err(
                     |_| {
-                        ConvenienceError::Convert(zenpixels_convert::ConvertError::AllocationFailed)
+                        at!(ConvenienceError::Convert(
+                            zenpixels_convert::ConvertError::AllocationFailed
+                        ))
                     },
                 )?;
             ctx.return_f32(output_f32);
@@ -262,6 +268,7 @@ pub fn apply_to_buffer(
 /// (L + a + b + optional alpha) stays in L3 cache during scatter → filter → gather.
 /// Only used when all filters are per-pixel (no neighborhood access).
 #[allow(clippy::too_many_arguments)]
+#[track_caller]
 fn apply_fused_stripped(
     pipeline: &Pipeline,
     input: &PixelBuffer,
@@ -274,7 +281,7 @@ fn apply_fused_stripped(
     m1: &zenpixels_convert::gamut::GamutMatrix,
     m1_inv: &zenpixels_convert::gamut::GamutMatrix,
     color_ctx: Option<&alloc::sync::Arc<zenpixels::ColorContext>>,
-) -> Result<PixelBuffer, ConvenienceError> {
+) -> Result<PixelBuffer, At<ConvenienceError>> {
     let w = width as usize;
     let ch = channels as usize;
     let strip_h = pipeline::strip_height(width, has_alpha);
@@ -322,7 +329,9 @@ fn apply_fused_stripped(
     ctx.return_u8(strip_input);
 
     let mut buf = PixelBuffer::from_vec(output_bytes, width, height, desc).map_err(|_| {
-        ConvenienceError::Convert(zenpixels_convert::ConvertError::AllocationFailed)
+        at!(ConvenienceError::Convert(
+            zenpixels_convert::ConvertError::AllocationFailed
+        ))
     })?;
     if let Some(cc) = color_ctx {
         buf = buf.with_color_context(alloc::sync::Arc::clone(cc));
@@ -391,31 +400,33 @@ pub trait PipelineBufferExt {
         &self,
         input: &PixelBuffer,
         ctx: &mut FilterContext,
-    ) -> Result<PixelBuffer, ConvenienceError>;
+    ) -> Result<PixelBuffer, At<ConvenienceError>>;
 
     /// Apply this pipeline to a `PixelBuffer`, returning linear f32 RGB(A).
     fn apply_buffer_linear(
         &self,
         input: &PixelBuffer,
         ctx: &mut FilterContext,
-    ) -> Result<PixelBuffer, ConvenienceError>;
+    ) -> Result<PixelBuffer, At<ConvenienceError>>;
 }
 
 impl PipelineBufferExt for Pipeline {
+    #[track_caller]
     fn apply_buffer(
         &self,
         input: &PixelBuffer,
         ctx: &mut FilterContext,
-    ) -> Result<PixelBuffer, ConvenienceError> {
-        apply_to_buffer(self, input, true, ctx)
+    ) -> Result<PixelBuffer, At<ConvenienceError>> {
+        apply_to_buffer(self, input, true, ctx).at()
     }
 
+    #[track_caller]
     fn apply_buffer_linear(
         &self,
         input: &PixelBuffer,
         ctx: &mut FilterContext,
-    ) -> Result<PixelBuffer, ConvenienceError> {
-        apply_to_buffer(self, input, false, ctx)
+    ) -> Result<PixelBuffer, At<ConvenienceError>> {
+        apply_to_buffer(self, input, false, ctx).at()
     }
 }
 

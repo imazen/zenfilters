@@ -1,3 +1,4 @@
+use whereat::{At, at};
 use zenpixels::ColorPrimaries;
 use zenpixels_convert::gamut::GamutMatrix;
 use zenpixels_convert::oklab;
@@ -75,11 +76,12 @@ pub struct Pipeline {
 
 impl Pipeline {
     /// Create a new pipeline with the given configuration.
-    pub fn new(config: PipelineConfig) -> Result<Self, PipelineError> {
+    #[track_caller]
+    pub fn new(config: PipelineConfig) -> Result<Self, At<PipelineError>> {
         let m1 = oklab::rgb_to_lms_matrix(config.primaries)
-            .ok_or(PipelineError::UnsupportedPrimaries(config.primaries))?;
+            .ok_or_else(|| at!(PipelineError::UnsupportedPrimaries(config.primaries)))?;
         let m1_inv = oklab::lms_to_rgb_matrix(config.primaries)
-            .ok_or(PipelineError::UnsupportedPrimaries(config.primaries))?;
+            .ok_or_else(|| at!(PipelineError::UnsupportedPrimaries(config.primaries)))?;
 
         Ok(Self {
             config,
@@ -120,6 +122,7 @@ impl Pipeline {
     /// `channels` is 3 (RGB) or 4 (RGBA).
     /// `ctx` provides reusable scratch buffers — pass a persistent
     /// `FilterContext` to avoid per-call allocations.
+    #[track_caller]
     pub fn apply(
         &self,
         src: &[f32],
@@ -128,19 +131,19 @@ impl Pipeline {
         height: u32,
         channels: u32,
         ctx: &mut FilterContext,
-    ) -> Result<(), PipelineError> {
+    ) -> Result<(), At<PipelineError>> {
         let n = (width as usize) * (height as usize) * (channels as usize);
         if src.len() < n {
-            return Err(PipelineError::BufferSize {
+            return Err(at!(PipelineError::BufferSize {
                 expected: n,
                 actual: src.len(),
-            });
+            }));
         }
         if dst.len() < n {
-            return Err(PipelineError::BufferSize {
+            return Err(at!(PipelineError::BufferSize {
                 expected: n,
                 actual: dst.len(),
-            });
+            }));
         }
 
         // Strip processing: keep planar data in L3 cache by processing
@@ -185,7 +188,7 @@ impl Pipeline {
         height: u32,
         channels: u32,
         ctx: &mut FilterContext,
-    ) -> Result<(), PipelineError> {
+    ) -> Result<(), At<PipelineError>> {
         let ch = channels as usize;
         let w = width as usize;
         let has_alpha = ch == 4;

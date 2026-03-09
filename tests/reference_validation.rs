@@ -81,8 +81,7 @@ fn apply_zenfilter(img: &RgbImage, filter: Box<dyn Filter>) -> RgbImage {
     let input_bytes: Vec<u8> = img.as_raw().clone();
 
     let desc = zenpixels::PixelDescriptor::RGB8_SRGB;
-    let input_buf =
-        zenpixels::buffer::PixelBuffer::from_vec(input_bytes, w, h, desc).unwrap();
+    let input_buf = zenpixels::buffer::PixelBuffer::from_vec(input_bytes, w, h, desc).unwrap();
 
     let mut pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
     pipeline.push(filter);
@@ -116,10 +115,15 @@ fn avg_brightness(img: &RgbImage) -> f64 {
 fn pixel_stddev(img: &RgbImage) -> f64 {
     let mean = avg_brightness(img);
     let n = img.as_raw().len() as f64;
-    let var: f64 = img.as_raw().iter().map(|&v| {
-        let d = v as f64 - mean;
-        d * d
-    }).sum::<f64>() / n;
+    let var: f64 = img
+        .as_raw()
+        .iter()
+        .map(|&v| {
+            let d = v as f64 - mean;
+            d * d
+        })
+        .sum::<f64>()
+        / n;
     var.sqrt()
 }
 
@@ -223,7 +227,8 @@ fn saturation_zero_is_grayscale() {
     let result = apply_zenfilter(&img, Box::new(sat));
     // Every pixel should have R≈G≈B (grayscale)
     for pixel in result.pixels() {
-        let max_diff = pixel.0[0].abs_diff(pixel.0[1])
+        let max_diff = pixel.0[0]
+            .abs_diff(pixel.0[1])
             .max(pixel.0[1].abs_diff(pixel.0[2]))
             .max(pixel.0[0].abs_diff(pixel.0[2]));
         assert!(
@@ -266,9 +271,15 @@ fn grayscale_vs_image_crate() {
     // rather than pixel similarity (Oklab L vs BT.601 luma differ significantly)
     for (ours_px, ref_px) in ours.pixels().zip(reference.pixels()) {
         let ours_spread = ours_px.0[0].abs_diff(ours_px.0[2]);
-        assert!(ours_spread <= 3, "our grayscale should be neutral, spread={ours_spread}");
+        assert!(
+            ours_spread <= 3,
+            "our grayscale should be neutral, spread={ours_spread}"
+        );
         let ref_spread = ref_px.0[0].abs_diff(ref_px.0[2]);
-        assert!(ref_spread <= 3, "ref grayscale should be neutral, spread={ref_spread}");
+        assert!(
+            ref_spread <= 3,
+            "ref grayscale should be neutral, spread={ref_spread}"
+        );
     }
 
     // Luminance values should be correlated (bright→bright, dark→dark)
@@ -287,7 +298,8 @@ fn grayscale_output_is_neutral() {
     let img = make_colorful_rgb(SIZE, SIZE);
     let result = apply_zenfilter(&img, Box::new(Grayscale::default()));
     for pixel in result.pixels() {
-        let max_diff = pixel.0[0].abs_diff(pixel.0[1])
+        let max_diff = pixel.0[0]
+            .abs_diff(pixel.0[1])
             .max(pixel.0[1].abs_diff(pixel.0[2]))
             .max(pixel.0[0].abs_diff(pixel.0[2]));
         assert!(
@@ -338,10 +350,14 @@ fn invert_vs_image_crate() {
     let mut total = 0usize;
     for i in (0..n).step_by(7) {
         for j in (i + 1..n).step_by(11) {
-            let orig_i = img_raw[i * 3] as i32 + img_raw[i * 3 + 1] as i32 + img_raw[i * 3 + 2] as i32;
-            let orig_j = img_raw[j * 3] as i32 + img_raw[j * 3 + 1] as i32 + img_raw[j * 3 + 2] as i32;
-            let inv_i = ours_raw[i * 3] as i32 + ours_raw[i * 3 + 1] as i32 + ours_raw[i * 3 + 2] as i32;
-            let inv_j = ours_raw[j * 3] as i32 + ours_raw[j * 3 + 1] as i32 + ours_raw[j * 3 + 2] as i32;
+            let orig_i =
+                img_raw[i * 3] as i32 + img_raw[i * 3 + 1] as i32 + img_raw[i * 3 + 2] as i32;
+            let orig_j =
+                img_raw[j * 3] as i32 + img_raw[j * 3 + 1] as i32 + img_raw[j * 3 + 2] as i32;
+            let inv_i =
+                ours_raw[i * 3] as i32 + ours_raw[i * 3 + 1] as i32 + ours_raw[i * 3 + 2] as i32;
+            let inv_j =
+                ours_raw[j * 3] as i32 + ours_raw[j * 3 + 1] as i32 + ours_raw[j * 3 + 2] as i32;
             if (orig_i - orig_j).abs() > 10 {
                 total += 1;
                 if (orig_i > orig_j) != (inv_i > inv_j) {
@@ -396,9 +412,7 @@ fn hue_rotate_vs_image_crate() {
     hue.degrees = 90.0;
     let ours = apply_zenfilter(&img, Box::new(hue));
 
-    let reference = DynamicImage::ImageRgb8(img.clone())
-        .huerotate(90)
-        .to_rgb8();
+    let reference = DynamicImage::ImageRgb8(img.clone()).huerotate(90).to_rgb8();
 
     // Oklab rotation vs HSL rotation produce very different pixel values.
     // Verify that both shift colors away from the original by a similar amount.
@@ -417,10 +431,18 @@ fn hue_rotate_vs_image_crate() {
     );
 
     // Both should change the color distribution (not be identical to original)
-    let ours_diff: u64 = ours.as_raw().iter().zip(img.as_raw().iter())
-        .map(|(a, b)| a.abs_diff(*b) as u64).sum();
-    let ref_diff: u64 = reference.as_raw().iter().zip(img.as_raw().iter())
-        .map(|(a, b)| a.abs_diff(*b) as u64).sum();
+    let ours_diff: u64 = ours
+        .as_raw()
+        .iter()
+        .zip(img.as_raw().iter())
+        .map(|(a, b)| a.abs_diff(*b) as u64)
+        .sum();
+    let ref_diff: u64 = reference
+        .as_raw()
+        .iter()
+        .zip(img.as_raw().iter())
+        .map(|(a, b)| a.abs_diff(*b) as u64)
+        .sum();
     assert!(ours_diff > 0, "our hue rotation should change colors");
     assert!(ref_diff > 0, "ref hue rotation should change colors");
 }
@@ -495,12 +517,12 @@ fn sharpen_vs_imageproc() {
         let orig = img.get_pixel(x, y);
         let blur = blurred.get_pixel(x, y);
         Rgb([
-            (orig.0[0] as f32 + 0.5 * (orig.0[0] as f32 - blur.0[0] as f32))
-                .clamp(0.0, 255.0) as u8,
-            (orig.0[1] as f32 + 0.5 * (orig.0[1] as f32 - blur.0[1] as f32))
-                .clamp(0.0, 255.0) as u8,
-            (orig.0[2] as f32 + 0.5 * (orig.0[2] as f32 - blur.0[2] as f32))
-                .clamp(0.0, 255.0) as u8,
+            (orig.0[0] as f32 + 0.5 * (orig.0[0] as f32 - blur.0[0] as f32)).clamp(0.0, 255.0)
+                as u8,
+            (orig.0[1] as f32 + 0.5 * (orig.0[1] as f32 - blur.0[1] as f32)).clamp(0.0, 255.0)
+                as u8,
+            (orig.0[2] as f32 + 0.5 * (orig.0[2] as f32 - blur.0[2] as f32)).clamp(0.0, 255.0)
+                as u8,
         ])
     });
 
@@ -552,11 +574,13 @@ fn highlights_recovery_dims_brights() {
     hs.highlights = 0.5;
     let result = apply_zenfilter(&img, Box::new(hs));
 
-    let bright_before: f64 = img.pixels()
+    let bright_before: f64 = img
+        .pixels()
         .filter(|p| p.0[0] > 180 && p.0[1] > 100)
         .map(|p| (p.0[0] as u64 + p.0[1] as u64 + p.0[2] as u64) as f64 / 3.0)
         .sum::<f64>();
-    let bright_after: f64 = result.pixels()
+    let bright_after: f64 = result
+        .pixels()
         .zip(img.pixels())
         .filter(|(_, orig)| orig.0[0] > 180 && orig.0[1] > 100)
         .map(|(p, _)| (p.0[0] as u64 + p.0[1] as u64 + p.0[2] as u64) as f64 / 3.0)
@@ -643,14 +667,16 @@ fn sepia_has_warm_neutral_tones() {
     let result = apply_zenfilter(&img, Box::new(Sepia::default()));
 
     // Sepia should produce warm neutral tones: R >= G >= B for most pixels
-    let warm_count = result.pixels().filter(|p| {
-        p.0[0] >= p.0[1].saturating_sub(5) && p.0[1] >= p.0[2].saturating_sub(5)
-    }).count();
+    let warm_count = result
+        .pixels()
+        .filter(|p| p.0[0] >= p.0[1].saturating_sub(5) && p.0[1] >= p.0[2].saturating_sub(5))
+        .count();
     let total = (SIZE * SIZE) as usize;
     let warm_ratio = warm_count as f64 / total as f64;
     assert!(
         warm_ratio > 0.8,
-        "sepia should produce warm tones (R>=G>=B) for most pixels, got {:.1}%", warm_ratio * 100.0
+        "sepia should produce warm tones (R>=G>=B) for most pixels, got {:.1}%",
+        warm_ratio * 100.0
     );
 }
 
@@ -700,10 +726,12 @@ fn black_point_crushes_shadows() {
     let result = apply_zenfilter(&img, Box::new(bp));
 
     // Dark pixels should be pushed toward black
-    let dark_before: usize = img.pixels()
+    let dark_before: usize = img
+        .pixels()
         .filter(|p| p.0[0] < 30 && p.0[1] < 30 && p.0[2] < 30)
         .count();
-    let dark_after: usize = result.pixels()
+    let dark_after: usize = result
+        .pixels()
         .filter(|p| p.0[0] < 30 && p.0[1] < 30 && p.0[2] < 30)
         .count();
     assert!(
@@ -746,7 +774,8 @@ fn fused_adjust_matches_individual_filters() {
 
     let input_bytes = img.as_raw().clone();
     let desc = zenpixels::PixelDescriptor::RGB8_SRGB;
-    let input_buf = zenpixels::buffer::PixelBuffer::from_vec(input_bytes.clone(), SIZE, SIZE, desc).unwrap();
+    let input_buf =
+        zenpixels::buffer::PixelBuffer::from_vec(input_bytes.clone(), SIZE, SIZE, desc).unwrap();
     let mut ctx = FilterContext::new();
     let individual_out = apply_to_buffer(&pipeline_individual, &input_buf, true, &mut ctx).unwrap();
     let individual_bytes = individual_out.copy_to_contiguous_bytes();
@@ -834,7 +863,8 @@ fn empty_pipeline_is_near_identity() {
     let img = make_gradient_rgb(SIZE, SIZE);
     let input_bytes = img.as_raw().clone();
     let desc = zenpixels::PixelDescriptor::RGB8_SRGB;
-    let input_buf = zenpixels::buffer::PixelBuffer::from_vec(input_bytes, SIZE, SIZE, desc).unwrap();
+    let input_buf =
+        zenpixels::buffer::PixelBuffer::from_vec(input_bytes, SIZE, SIZE, desc).unwrap();
 
     let pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
     let mut ctx = FilterContext::new();

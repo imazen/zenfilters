@@ -49,6 +49,8 @@
 
 extern crate alloc;
 
+whereat::define_at_crate_info!();
+
 mod access;
 mod blur;
 mod context;
