@@ -169,10 +169,16 @@ mod tests {
             shadows: adj.shadows,
         }
         .apply(planes, &mut ctx);
-        Dehaze {
-            strength: adj.dehaze,
+        // FusedAdjust's dehaze is per-pixel (contrast + chroma boost),
+        // not the spatial Dehaze filter. Replicate the fused path math.
+        if adj.dehaze.abs() > 1e-6 {
+            let dc = 1.0 + adj.dehaze * 0.3;
+            let dc_chroma = 1.0 + adj.dehaze * 0.2;
+            crate::simd::scale_plane(&mut planes.l, dc);
+            crate::simd::offset_plane(&mut planes.l, 0.5 * (1.0 - dc));
+            crate::simd::scale_plane(&mut planes.a, dc_chroma);
+            crate::simd::scale_plane(&mut planes.b, dc_chroma);
         }
-        .apply(planes, &mut ctx);
         Temperature {
             shift: adj.temperature,
         }

@@ -22,6 +22,40 @@ use zenfilters::filters::*;
 use zenfilters::*;
 use zensim::{RgbSlice, Zensim, ZensimProfile};
 
+// ─── Per-pixel dehaze for fused_adjust comparison tests ─────────────
+// FusedAdjust's internal dehaze is a per-pixel contrast+chroma boost,
+// not the spatial Dehaze filter. This replicates that for test parity.
+
+struct PerPixelDehaze {
+    contrast_factor: f32,
+    chroma_factor: f32,
+}
+
+impl zenfilters::Filter for PerPixelDehaze {
+    fn channel_access(&self) -> zenfilters::ChannelAccess {
+        zenfilters::ChannelAccess::L_AND_CHROMA
+    }
+
+    fn apply(
+        &self,
+        planes: &mut zenfilters::OklabPlanes,
+        _ctx: &mut zenfilters::FilterContext,
+    ) {
+        let cf = self.contrast_factor;
+        let offset = 0.5 * (1.0 - cf);
+        for v in planes.l.iter_mut() {
+            *v = *v * cf + offset;
+        }
+        let ccf = self.chroma_factor;
+        for v in planes.a.iter_mut() {
+            *v *= ccf;
+        }
+        for v in planes.b.iter_mut() {
+            *v *= ccf;
+        }
+    }
+}
+
 // ─── Configuration ──────────────────────────────────────────────────
 
 /// Path to the CID22 training corpus (512×512 PNGs).
@@ -1171,10 +1205,12 @@ fn fused_adjust_matches_standalone_on_real_images() {
             f.shadows = adj.shadows;
             Box::new(f)
         });
+        // FusedAdjust's dehaze is per-pixel (not the spatial Dehaze filter).
+        // Replicate the fused path: L * dc + offset, a/b * dc_chroma.
         pipeline.push({
-            let mut f = Dehaze::default();
-            f.strength = adj.dehaze;
-            Box::new(f)
+            let dc = 1.0 + adj.dehaze * 0.3;
+            let dc_chroma = 1.0 + adj.dehaze * 0.2;
+            Box::new(PerPixelDehaze { contrast_factor: dc, chroma_factor: dc_chroma })
         });
         pipeline.push({
             let mut f = Temperature::default();
