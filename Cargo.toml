@@ -25,6 +25,9 @@ zenpixels-convert = { version = "0.1", path = "../zenpixels/zenpixels-convert" }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+image = "0.25"
+imageproc = "0.26"
+zensim = { version = "0.2", path = "../zensim/zensim", default-features = false }
 zenpixels = { version = "0.1", path = "../zenpixels/zenpixels", features = ["buffer", "planar", "rgb"] }
 zenpixels-convert = { version = "0.1", path = "../zenpixels/zenpixels-convert", features = ["buffer", "planar"] }
 
