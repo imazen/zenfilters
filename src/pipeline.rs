@@ -7,6 +7,17 @@ use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::scatter_gather::{gather_from_oklab, scatter_to_oklab};
 
+/// Compute the number of rows per strip for L3-friendly processing.
+///
+/// Targets keeping all planar data (L + a + b + optional alpha) under
+/// ~4 MB, which fits comfortably in L3 on most CPUs (8–32 MB).
+pub(crate) fn strip_height(width: u32, has_alpha: bool) -> usize {
+    const TARGET_BYTES: usize = 4 * 1024 * 1024;
+    let plane_count = if has_alpha { 4 } else { 3 };
+    let bytes_per_row = (width as usize) * plane_count * core::mem::size_of::<f32>();
+    (TARGET_BYTES / bytes_per_row.max(1)).clamp(8, 2048)
+}
+
 /// Configuration for the filter pipeline.
 #[derive(Clone, Debug)]
 pub struct PipelineConfig {
@@ -91,6 +102,14 @@ impl Pipeline {
         self.filters.is_empty()
     }
 
+    /// Whether any filter requires neighborhood access (spatial operations).
+    ///
+    /// When true, strip processing is disabled and the full frame is processed
+    /// at once to ensure neighborhood filters can see adjacent rows.
+    pub fn has_neighborhood_filter(&self) -> bool {
+        self.filters.iter().any(|f| f.is_neighborhood())
+    }
+
     /// Apply the full pipeline: scatter → filters → gather.
     ///
     /// `src` is interleaved linear RGB(A) f32 data.
@@ -122,7 +141,14 @@ impl Pipeline {
             });
         }
 
-        // Scatter to planar Oklab
+        // Strip processing: keep planar data in L3 cache by processing
+        // horizontal strips instead of the full frame.
+        // Neighborhood filters need full-frame access, so fall back then.
+        if !self.has_neighborhood_filter() {
+            return self.apply_stripped(src, dst, width, height, channels, ctx);
+        }
+
+        // Full-frame fallback for pipelines with neighborhood filters
         let mut planes = if channels == 4 {
             OklabPlanes::from_ctx_with_alpha(ctx, width, height)
         } else {
@@ -135,11 +161,7 @@ impl Pipeline {
             &self.m1,
             self.config.reference_white,
         );
-
-        // Apply all filters
         self.apply_planar(&mut planes, ctx);
-
-        // Gather back to interleaved RGB
         gather_from_oklab(
             &planes,
             dst,
@@ -147,9 +169,56 @@ impl Pipeline {
             &self.m1_inv,
             self.config.reference_white,
         );
-
-        // Return planes to the pool
         planes.return_to_ctx(ctx);
+
+        Ok(())
+    }
+
+    /// Strip-process: scatter, filter, gather in L3-sized horizontal strips.
+    fn apply_stripped(
+        &self,
+        src: &[f32],
+        dst: &mut [f32],
+        width: u32,
+        height: u32,
+        channels: u32,
+        ctx: &mut FilterContext,
+    ) -> Result<(), PipelineError> {
+        let ch = channels as usize;
+        let w = width as usize;
+        let has_alpha = ch == 4;
+        let strip_h = strip_height(width, has_alpha);
+
+        for y_start in (0..height as usize).step_by(strip_h) {
+            let y_end = (y_start + strip_h).min(height as usize);
+            let strip_rows = (y_end - y_start) as u32;
+            let offset = y_start * w * ch;
+            let len = (strip_rows as usize) * w * ch;
+
+            let mut planes = if has_alpha {
+                OklabPlanes::from_ctx_with_alpha(ctx, width, strip_rows)
+            } else {
+                OklabPlanes::from_ctx(ctx, width, strip_rows)
+            };
+
+            scatter_to_oklab(
+                &src[offset..offset + len],
+                &mut planes,
+                channels,
+                &self.m1,
+                self.config.reference_white,
+            );
+            self.apply_planar(&mut planes, ctx);
+            gather_from_oklab(
+                &planes,
+                &mut dst[offset..offset + len],
+                channels,
+                &self.m1_inv,
+                self.config.reference_white,
+            );
+
+            planes.return_to_ctx(ctx);
+        }
 
         Ok(())
     }

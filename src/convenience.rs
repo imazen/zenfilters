@@ -16,7 +16,7 @@ use zenpixels::{
 use zenpixels_convert::RowConverter;
 
 use crate::context::FilterContext;
-use crate::pipeline::{Pipeline, PipelineError};
+use crate::pipeline::{self, Pipeline, PipelineError};
 use crate::planes::OklabPlanes;
 use crate::scatter_gather::{
     gather_from_oklab, gather_oklab_to_srgb_u8, scatter_srgb_u8_to_oklab, scatter_to_oklab,
@@ -138,40 +138,54 @@ pub fn apply_to_buffer(
     let m1_inv = zenpixels_convert::oklab::lms_to_rgb_matrix(primaries)
         .ok_or(ConvenienceError::UnsupportedPrimaries(primaries))?;
 
-    let mut planes = if has_alpha {
-        OklabPlanes::from_ctx_with_alpha(ctx, width, height)
-    } else {
-        OklabPlanes::from_ctx(ctx, width, height)
-    };
-
     // Detect if we can use the fused sRGB u8 path (eliminates intermediate
     // linear f32 buffer — ~48MB savings at 2048² RGB).
     let use_fused = desc.channel_type() == ChannelType::U8
         && desc.transfer() == TransferFunction::Srgb
         && matches!(desc.layout(), ChannelLayout::Rgb | ChannelLayout::Rgba);
 
-    // Step 1-3: Scatter to planar Oklab
+    let color_ctx = input.color_context().cloned();
+    let can_strip = !pipeline.has_neighborhood_filter();
+
+    // Fast path: fused sRGB u8 roundtrip with L3-friendly strip processing.
+    // Scatter/filter/gather in horizontal strips so planar data stays in L3.
+    if use_fused && convert_back && can_strip {
+        return apply_fused_stripped(
+            pipeline,
+            input,
+            ctx,
+            desc,
+            width,
+            height,
+            channels,
+            has_alpha,
+            &m1,
+            &m1_inv,
+            color_ctx.as_ref(),
+        );
+    }
+
+    // Full-frame paths: neighborhood filters, non-fused formats, or !convert_back.
+    let mut planes = if has_alpha {
+        OklabPlanes::from_ctx_with_alpha(ctx, width, height)
+    } else {
+        OklabPlanes::from_ctx(ctx, width, height)
+    };
+
     if use_fused {
-        // Fused path: sRGB u8 → Oklab in one pass (LUT + M1 + cbrt + M2)
         let input_bytes = copy_input_bytes_pooled(input, ctx);
         scatter_srgb_u8_to_oklab(&input_bytes, &mut planes, channels, &m1);
         ctx.return_u8(input_bytes);
     } else {
-        // General path: convert to linear f32, then scatter
         let linear_bytes = convert_buffer_bytes_pooled(input, linear_desc, ctx)?;
         let linear_f32: &[f32] = bytemuck::cast_slice(&linear_bytes);
         scatter_to_oklab(linear_f32, &mut planes, channels, &m1, reference_white);
         ctx.return_u8(linear_bytes);
     }
 
-    // Step 4: Apply filters
     pipeline.apply_planar(&mut planes, ctx);
 
-    // Step 5-7: Gather and build output
-    let color_ctx = input.color_context().cloned();
-
     if use_fused && convert_back {
-        // Fused path: Oklab → sRGB u8 in one pass (M2⁻¹ + cube + M1⁻¹ + LUT)
         let total = (width as usize) * (height as usize) * (channels as usize);
         let mut output_bytes = ctx.take_u8(total);
         gather_oklab_to_srgb_u8(&planes, &mut output_bytes, channels, &m1_inv);
@@ -186,7 +200,6 @@ pub fn apply_to_buffer(
         }
         Ok(output_buf)
     } else {
-        // General path: gather to linear f32, then optionally convert back
         let n = (width as usize) * (height as usize) * (channels as usize);
         let mut output_f32 = ctx.take_f32(n);
         gather_from_oklab(&planes, &mut output_f32, channels, &m1_inv, reference_white);
@@ -240,6 +253,80 @@ pub fn apply_to_buffer(
             Ok(output_buf)
         }
     }
+}
+
+/// Fused sRGB u8 roundtrip with L3-friendly strip processing.
+///
+/// Processes the image in horizontal strips so that planar Oklab data
+/// (L + a + b + optional alpha) stays in L3 cache during scatter → filter → gather.
+/// Only used when all filters are per-pixel (no neighborhood access).
+#[allow(clippy::too_many_arguments)]
+fn apply_fused_stripped(
+    pipeline: &Pipeline,
+    input: &PixelBuffer,
+    ctx: &mut FilterContext,
+    desc: PixelDescriptor,
+    width: u32,
+    height: u32,
+    channels: u32,
+    has_alpha: bool,
+    m1: &zenpixels_convert::gamut::GamutMatrix,
+    m1_inv: &zenpixels_convert::gamut::GamutMatrix,
+    color_ctx: Option<&alloc::sync::Arc<zenpixels::ColorContext>>,
+) -> Result<PixelBuffer, ConvenienceError> {
+    let w = width as usize;
+    let ch = channels as usize;
+    let strip_h = pipeline::strip_height(width, has_alpha);
+
+    // Allocate strip-sized input buffer and full-frame output
+    let strip_byte_cap = strip_h * w * ch;
+    let mut strip_input = ctx.take_u8(strip_byte_cap);
+    let total_out = w * (height as usize) * ch;
+    let mut output_bytes = ctx.take_u8(total_out);
+
+    let src_slice = input.as_slice();
+
+    for y_start in (0..height as usize).step_by(strip_h) {
+        let y_end = (y_start + strip_h).min(height as usize);
+        let strip_rows = (y_end - y_start) as u32;
+        let strip_len = (strip_rows as usize) * w * ch;
+
+        // Copy strip rows from input (handles stride)
+        for dy in 0..(strip_rows as usize) {
+            let row = src_slice.row((y_start + dy) as u32);
+            let row_start = dy * w * ch;
+            strip_input[row_start..row_start + row.len()].copy_from_slice(row);
+        }
+
+        let mut planes = if has_alpha {
+            OklabPlanes::from_ctx_with_alpha(ctx, width, strip_rows)
+        } else {
+            OklabPlanes::from_ctx(ctx, width, strip_rows)
+        };
+
+        scatter_srgb_u8_to_oklab(&strip_input[..strip_len], &mut planes, channels, m1);
+        pipeline.apply_planar(&mut planes, ctx);
+
+        let out_offset = y_start * w * ch;
+        gather_oklab_to_srgb_u8(
+            &planes,
+            &mut output_bytes[out_offset..out_offset + strip_len],
+            channels,
+            m1_inv,
+        );
+
+        planes.return_to_ctx(ctx);
+    }
+
+    ctx.return_u8(strip_input);
+
+    let mut buf = PixelBuffer::from_vec(output_bytes, width, height, desc).map_err(|_| {
+        ConvenienceError::Convert(zenpixels_convert::ConvertError::AllocationFailed)
+    })?;
+    if let Some(cc) = color_ctx {
+        buf = buf.with_color_context(alloc::sync::Arc::clone(cc));
+    }
+    Ok(buf)
 }
 
 /// Convert a PixelBuffer to the target descriptor using a pooled output buffer.
