@@ -91,7 +91,9 @@ impl Filter for FusedAdjust {
         let range = (1.0 - bp).max(0.01);
         let inv_range = 1.0 / range;
         let wp_inv = 1.0 / self.white_point.max(0.01);
-        let exposure_factor = 2.0f32.powf(self.exposure);
+        // Exposure in Oklab: linear light 2^stops maps to 2^(stops/3) in
+        // cube-root domain. Applied to L (with white point) and a,b separately.
+        let exposure_factor = 2.0f32.powf(self.exposure / 3.0);
         let wp_exp = wp_inv * exposure_factor;
         let contrast_factor = (1.0 + self.contrast).max(0.01);
         let dehaze_contrast = 1.0 + self.dehaze * 0.3;
@@ -111,6 +113,7 @@ impl Filter for FusedAdjust {
             self.highlights,
             dehaze_contrast,
             dehaze_chroma,
+            exposure_factor,
             temp_offset,
             tint_offset,
             self.saturation,

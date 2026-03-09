@@ -859,6 +859,7 @@ pub(super) fn fused_adjust_impl_v3(
     highlights: f32,
     dehaze_contrast: f32,
     dehaze_chroma: f32,
+    exposure_chroma: f32,
     temp_offset: f32,
     tint_offset: f32,
     sat: f32,
@@ -881,6 +882,7 @@ pub(super) fn fused_adjust_impl_v3(
         a,
         b,
         dehaze_chroma,
+        exposure_chroma,
         temp_offset,
         tint_offset,
         sat,
@@ -956,6 +958,7 @@ fn fused_adjust_ab_rite(
     a: &mut [f32],
     b: &mut [f32],
     dehaze_chroma: f32,
+    exposure_chroma: f32,
     temp_offset: f32,
     tint_offset: f32,
     sat: f32,
@@ -963,6 +966,7 @@ fn fused_adjust_ab_rite(
     vib_protection: f32,
 ) {
     const MAX_CHROMA: f32 = 0.4;
+    let exp_v = f32x8::splat(token, exposure_chroma);
     let dc_v = f32x8::splat(token, dehaze_chroma);
     let temp_v = f32x8::splat(token, temp_offset);
     let tint_v = f32x8::splat(token, tint_offset);
@@ -977,6 +981,9 @@ fn fused_adjust_ab_rite(
     for (ac, bc) in a_chunks.iter_mut().zip(b_chunks.iter_mut()) {
         let mut av = f32x8::load(token, &*ac);
         let mut bv = f32x8::load(token, &*bc);
+        // Exposure chroma scaling (matches L-pass exposure)
+        av *= exp_v;
+        bv *= exp_v;
         // Dehaze chroma
         av *= dc_v;
         bv *= dc_v;
@@ -995,8 +1002,8 @@ fn fused_adjust_ab_rite(
         (bv * scale).store(bc);
     }
     for (a_val, b_val) in a_tail.iter_mut().zip(b_tail.iter_mut()) {
-        let mut av = *a_val;
-        let mut bv = *b_val;
+        let mut av = *a_val * exposure_chroma;
+        let mut bv = *b_val * exposure_chroma;
         av *= dehaze_chroma;
         bv *= dehaze_chroma;
         bv += temp_offset;

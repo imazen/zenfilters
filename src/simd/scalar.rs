@@ -231,6 +231,7 @@ pub(super) fn fused_adjust_impl_scalar(
     highlights: f32,
     dehaze_contrast: f32,
     dehaze_chroma: f32,
+    exposure_chroma: f32,
     temp_offset: f32,
     tint_offset: f32,
     sat: f32,
@@ -250,11 +251,11 @@ pub(super) fn fused_adjust_impl_scalar(
         lv = lv * dehaze_contrast + 0.5 * (1.0 - dehaze_contrast);
         *v = lv;
     }
-    // AB pass
+    // AB pass: exposure scales chroma to match L-channel exposure
     const MAX_CHROMA: f32 = 0.4;
     for (a_val, b_val) in a.iter_mut().zip(b.iter_mut()) {
-        let mut av = *a_val;
-        let mut bv = *b_val;
+        let mut av = *a_val * exposure_chroma;
+        let mut bv = *b_val * exposure_chroma;
         av *= dehaze_chroma;
         bv *= dehaze_chroma;
         bv += temp_offset;

@@ -4,10 +4,12 @@ use crate::filter::Filter;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
-/// Exposure adjustment in Oklab L channel.
+/// Exposure adjustment — simulates changing light intensity by ±stops.
 ///
-/// Scales lightness by `2^stops`. +1 stop doubles brightness, -1 halves it.
-/// Only modifies the L plane — colors are preserved exactly.
+/// +1 stop doubles linear light, -1 halves it. Because Oklab uses a
+/// cube-root transform, scaling linear light by `f` means scaling all
+/// Oklab channels (L, a, b) by `f^(1/3)`. This preserves hue and
+/// saturation exactly, unlike scaling L alone (which desaturates).
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct Exposure {
@@ -17,12 +19,17 @@ pub struct Exposure {
 
 impl Filter for Exposure {
     fn channel_access(&self) -> ChannelAccess {
-        ChannelAccess::L_ONLY
+        ChannelAccess::L_AND_CHROMA
     }
 
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
-        let factor = 2.0f32.powf(self.stops);
+        // Linear light factor = 2^stops.
+        // Oklab factor = (2^stops)^(1/3) = 2^(stops/3) because Oklab
+        // channels are linear functions of cube-root LMS values.
+        let factor = 2.0f32.powf(self.stops / 3.0);
         simd::scale_plane(&mut planes.l, factor);
+        simd::scale_plane(&mut planes.a, factor);
+        simd::scale_plane(&mut planes.b, factor);
     }
 }
 
@@ -48,24 +55,37 @@ mod tests {
             *v = 0.3;
         }
         Exposure { stops: 1.0 }.apply(&mut planes, &mut FilterContext::new());
+        // +1 stop = 2x linear light = 2^(1/3) ≈ 1.2599 in Oklab
+        let expected = 0.3 * 2.0f32.powf(1.0 / 3.0);
         for &v in &planes.l {
-            assert!((v - 0.6).abs() < 1e-5, "expected ~0.6, got {v}");
+            assert!(
+                (v - expected).abs() < 1e-5,
+                "expected ~{expected:.4}, got {v}"
+            );
         }
     }
 
     #[test]
-    fn does_not_modify_chroma() {
+    fn scales_chroma_proportionally() {
         let mut planes = OklabPlanes::new(4, 4);
+        for v in &mut planes.l {
+            *v = 0.5;
+        }
         for v in &mut planes.a {
             *v = 0.1;
         }
         for v in &mut planes.b {
             *v = -0.05;
         }
-        let a_orig = planes.a.clone();
-        let b_orig = planes.b.clone();
-        Exposure { stops: 2.0 }.apply(&mut planes, &mut FilterContext::new());
-        assert_eq!(planes.a, a_orig);
-        assert_eq!(planes.b, b_orig);
+        Exposure { stops: 1.0 }.apply(&mut planes, &mut FilterContext::new());
+
+        // All channels scale by the same factor
+        let factor = 2.0f32.powf(1.0 / 3.0);
+        for &v in &planes.a {
+            assert!((v - 0.1 * factor).abs() < 1e-5);
+        }
+        for &v in &planes.b {
+            assert!((v - (-0.05 * factor)).abs() < 1e-5);
+        }
     }
 }

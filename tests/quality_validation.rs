@@ -951,3 +951,79 @@ fn full_comparison_summary() {
 
     eprintln!("╚══════════════════════════════════════════════════════════════╝\n");
 }
+
+// ─── Visual comparison output ───────────────────────────────────────
+
+/// Generate side-by-side comparison PNGs for visual inspection.
+/// Not a real test — run manually with:
+///   cargo test --test quality_validation --features buffer -- generate_visual_comparison --nocapture --ignored
+#[test]
+#[ignore]
+fn generate_visual_comparison() {
+    if skip_unless_available() {
+        return;
+    }
+
+    let output_dir = Path::new("/mnt/v/output/zenfilters/quality");
+    std::fs::create_dir_all(output_dir).unwrap();
+
+    let ops: Vec<(&str, Box<dyn Fn(&RgbImage) -> RgbImage>, Box<dyn Fn(&Path, &Path) -> bool>)> =
+        vec![
+            (
+                "exposure_p1",
+                Box::new(|img| {
+                    let mut e = Exposure::default();
+                    e.stops = 1.0;
+                    apply_zenfilter(img, Box::new(e))
+                }),
+                Box::new(|i, o| vips_exposure(i, o, 1.0)),
+            ),
+            (
+                "contrast_p50",
+                Box::new(|img| {
+                    let mut c = Contrast::default();
+                    c.amount = 0.5;
+                    apply_zenfilter(img, Box::new(c))
+                }),
+                Box::new(|i, o| vips_contrast_lab(i, o, 0.5)),
+            ),
+            (
+                "saturation_1_5",
+                Box::new(|img| {
+                    let mut s = Saturation::default();
+                    s.factor = 1.5;
+                    apply_zenfilter(img, Box::new(s))
+                }),
+                Box::new(|i, o| vips_saturation_lch(i, o, 1.5)),
+            ),
+            (
+                "blur_s3",
+                Box::new(|img| {
+                    let mut b = Blur::default();
+                    b.sigma = 3.0;
+                    apply_zenfilter(img, Box::new(b))
+                }),
+                Box::new(|i, o| vips_gaussblur(i, o, 3.0)),
+            ),
+        ];
+
+    for &img_name in FAST_IMAGES {
+        let label = img_name.trim_end_matches(".png");
+        let img = load_corpus_image(img_name);
+        img.save(output_dir.join(format!("original_{label}.png"))).unwrap();
+
+        for (op_name, zen_fn, vips_fn) in &ops {
+            let zen_result = zen_fn(&img);
+            zen_result
+                .save(output_dir.join(format!("zen_{op_name}_{label}.png")))
+                .unwrap();
+
+            let vips_output = output_dir.join(format!("vips_{op_name}_{label}.png"));
+            if vips_fn(&corpus_path(img_name), &vips_output) {
+                eprintln!("  saved {op_name} for {label}");
+            }
+        }
+    }
+
+    eprintln!("\nVisual comparison images saved to {}", output_dir.display());
+}
