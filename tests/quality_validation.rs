@@ -2163,3 +2163,100 @@ fn darktable_comparison_summary() {
     eprintln!("║  darktable: linear RGB (exposure) / linear RGB (basicadj) ║");
     eprintln!("╚═══════════════════════════════════════════════════════════╝\n");
 }
+
+/// Generate side-by-side comparison PNGs: zenfilters vs darktable.
+/// Run manually:
+///   cargo test --test quality_validation --features buffer -- generate_dt_visual --nocapture --ignored
+#[test]
+#[ignore]
+fn generate_dt_visual() {
+    if skip_unless_darktable() {
+        return;
+    }
+
+    let output_dir = Path::new("/mnt/v/output/zenfilters/dt_comparison");
+    std::fs::create_dir_all(output_dir).unwrap();
+
+    let ops: Vec<(
+        &str,
+        Box<dyn Fn(&RgbImage) -> RgbImage>,
+        Box<dyn Fn() -> Vec<DtModule>>,
+    )> = vec![
+        (
+            "exposure_p1",
+            Box::new(|img| {
+                let mut e = Exposure::default();
+                e.stops = 1.0;
+                apply_zenfilter(img, Box::new(e))
+            }),
+            Box::new(|| {
+                vec![DtModule {
+                    operation: "exposure",
+                    modversion: 7,
+                    params_hex: dt_exposure_hex(1.0),
+                }]
+            }),
+        ),
+        (
+            "contrast_p50",
+            Box::new(|img| {
+                let mut c = Contrast::default();
+                c.amount = 0.5;
+                apply_zenfilter(img, Box::new(c))
+            }),
+            Box::new(|| {
+                vec![DtModule {
+                    operation: "basicadj",
+                    modversion: 2,
+                    params_hex: dt_basicadj_hex(0.5, 0.0, 0.0),
+                }]
+            }),
+        ),
+        (
+            "saturation_1_5",
+            Box::new(|img| {
+                let mut s = Saturation::default();
+                s.factor = 1.5;
+                apply_zenfilter(img, Box::new(s))
+            }),
+            Box::new(|| {
+                vec![DtModule {
+                    operation: "basicadj",
+                    modversion: 2,
+                    params_hex: dt_basicadj_hex(0.0, 0.5, 0.0),
+                }]
+            }),
+        ),
+    ];
+
+    for &img_name in FAST_IMAGES {
+        let label = img_name.trim_end_matches(".png");
+        let img = load_corpus_image(img_name);
+        let input_path = corpus_path(img_name);
+
+        img.save(output_dir.join(format!("original_{label}.png")))
+            .unwrap();
+
+        for (op_name, zen_fn, dt_fn) in &ops {
+            let zen_result = zen_fn(&img);
+            zen_result
+                .save(output_dir.join(format!("zen_{op_name}_{label}.png")))
+                .unwrap();
+
+            if let Some(dt_result) = run_darktable(&input_path, &dt_fn()) {
+                dt_result
+                    .save(output_dir.join(format!("dt_{op_name}_{label}.png")))
+                    .unwrap();
+
+                let score = zensim_score(&zen_result, &dt_result);
+                let mad = mean_abs_diff(&zen_result, &dt_result);
+                eprintln!("  {op_name} {label}: zensim={score:.1} diff={mad:.1}");
+            }
+        }
+    }
+
+    eprintln!(
+        "\ndarktable comparison images saved to {}",
+        output_dir.display()
+    );
+}
