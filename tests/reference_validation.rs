@@ -12,6 +12,7 @@
 //! - Directional checks: exposure up = brighter, contrast up = more range, etc.
 
 use image::{DynamicImage, ImageBuffer, Rgb, RgbImage};
+use palette::convert::IntoColorUnclamped;
 use zenfilters::filters::*;
 use zenfilters::*;
 use zensim::{RgbSlice, Zensim, ZensimProfile};
@@ -877,5 +878,145 @@ fn empty_pipeline_is_near_identity() {
     assert!(
         score > 90.0,
         "empty pipeline should be near-identity, got score {score:.1}"
+    );
+}
+
+// ═══ Palette crate Oklab validation ═════════════════════════════════
+//
+// Compare our sRGB→Oklab→sRGB conversion against the palette crate's
+// implementation. Palette uses the W3C-corrected Oklab matrices (2021);
+// our code uses the original Ottosson 2020 matrices. This test measures
+// the practical impact of that matrix difference.
+
+/// Convert a single sRGB u8 pixel through our pipeline (sRGB→Oklab→sRGB).
+fn our_srgb_to_oklab(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
+    let input = vec![r, g, b];
+    let m1 = zenpixels_convert::oklab::rgb_to_lms_matrix(zenpixels::ColorPrimaries::Bt709).unwrap();
+    let mut planes = OklabPlanes::new(1, 1);
+    zenfilters::scatter_srgb_u8_to_oklab(&input, &mut planes, 3, &m1);
+    (planes.l[0], planes.a[0], planes.b[0])
+}
+
+/// Convert a single sRGB u8 pixel through palette (sRGB→Oklab).
+fn palette_srgb_to_oklab(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
+    let srgb = palette::Srgb::new(r, g, b).into_format::<f32>();
+    let oklab: palette::Oklab = srgb.into_color_unclamped();
+    (oklab.l, oklab.a, oklab.b)
+}
+
+#[test]
+fn oklab_conversion_vs_palette_primary_colors() {
+    // Test the full sRGB primary and secondary colors plus white, black, mid-gray
+    let test_colors: &[(u8, u8, u8, &str)] = &[
+        (0, 0, 0, "black"),
+        (255, 255, 255, "white"),
+        (128, 128, 128, "mid-gray"),
+        (255, 0, 0, "red"),
+        (0, 255, 0, "green"),
+        (0, 0, 255, "blue"),
+        (255, 255, 0, "yellow"),
+        (255, 0, 255, "magenta"),
+        (0, 255, 255, "cyan"),
+    ];
+
+    let mut max_l_err = 0.0f32;
+    let mut max_a_err = 0.0f32;
+    let mut max_b_err = 0.0f32;
+
+    for &(r, g, b, name) in test_colors {
+        let (our_l, our_a, our_b) = our_srgb_to_oklab(r, g, b);
+        let (pal_l, pal_a, pal_b) = palette_srgb_to_oklab(r, g, b);
+
+        let l_err = (our_l - pal_l).abs();
+        let a_err = (our_a - pal_a).abs();
+        let b_err = (our_b - pal_b).abs();
+
+        max_l_err = max_l_err.max(l_err);
+        max_a_err = max_a_err.max(a_err);
+        max_b_err = max_b_err.max(b_err);
+
+        eprintln!(
+            "{name:>8}: ours=({our_l:.4}, {our_a:.4}, {our_b:.4}) \
+             palette=({pal_l:.4}, {pal_a:.4}, {pal_b:.4}) \
+             err=({l_err:.6}, {a_err:.6}, {b_err:.6})"
+        );
+    }
+
+    eprintln!("Max errors: L={max_l_err:.6}, a={max_a_err:.6}, b={max_b_err:.6}");
+
+    // Both use f32 with slightly different matrices (original Ottosson vs W3C corrected).
+    // The difference should be tiny — well under 1e-3 for any practical purpose.
+    assert!(
+        max_l_err < 5e-3,
+        "L channel max error vs palette: {max_l_err}"
+    );
+    assert!(
+        max_a_err < 5e-3,
+        "a channel max error vs palette: {max_a_err}"
+    );
+    assert!(
+        max_b_err < 5e-3,
+        "b channel max error vs palette: {max_b_err}"
+    );
+}
+
+#[test]
+fn oklab_conversion_vs_palette_full_sweep() {
+    // Test a broader sample: every 17th value in each channel (16³ = 4096 test colors)
+    let mut total_colors = 0u32;
+    let mut max_l_err = 0.0f32;
+    let mut max_a_err = 0.0f32;
+    let mut max_b_err = 0.0f32;
+    let mut sum_l_err = 0.0f64;
+    let mut sum_a_err = 0.0f64;
+    let mut sum_b_err = 0.0f64;
+
+    for r in (0u16..=255).step_by(17) {
+        for g in (0u16..=255).step_by(17) {
+            for b in (0u16..=255).step_by(17) {
+                let (our_l, our_a, our_b) = our_srgb_to_oklab(r as u8, g as u8, b as u8);
+                let (pal_l, pal_a, pal_b) = palette_srgb_to_oklab(r as u8, g as u8, b as u8);
+
+                let l_err = (our_l - pal_l).abs();
+                let a_err = (our_a - pal_a).abs();
+                let b_err = (our_b - pal_b).abs();
+
+                max_l_err = max_l_err.max(l_err);
+                max_a_err = max_a_err.max(a_err);
+                max_b_err = max_b_err.max(b_err);
+                sum_l_err += l_err as f64;
+                sum_a_err += a_err as f64;
+                sum_b_err += b_err as f64;
+                total_colors += 1;
+            }
+        }
+    }
+
+    let n = total_colors as f64;
+    eprintln!("Tested {total_colors} colors");
+    eprintln!(
+        "Max errors:  L={max_l_err:.6}, a={max_a_err:.6}, b={max_b_err:.6}"
+    );
+    eprintln!(
+        "Mean errors: L={:.8}, a={:.8}, b={:.8}",
+        sum_l_err / n,
+        sum_a_err / n,
+        sum_b_err / n
+    );
+
+    // With different XYZ→LMS matrices (original Ottosson vs W3C corrected),
+    // we expect small but nonzero differences. The practical threshold for
+    // visible difference in Oklab is ~0.01 (JND).
+    assert!(
+        max_l_err < 0.01,
+        "L max error {max_l_err:.6} exceeds JND threshold"
+    );
+    assert!(
+        max_a_err < 0.01,
+        "a max error {max_a_err:.6} exceeds JND threshold"
+    );
+    assert!(
+        max_b_err < 0.01,
+        "b max error {max_b_err:.6} exceeds JND threshold"
     );
 }

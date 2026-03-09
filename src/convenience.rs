@@ -177,7 +177,7 @@ pub fn apply_to_buffer(
         ctx.return_u8(input_bytes);
     } else {
         let linear_bytes = convert_buffer_bytes_pooled(input, linear_desc, ctx)
-            .map_err(|e| at!(e).map_error(ConvenienceError::Convert))?;
+            .map_err(|e| at!(e).map_error(|e| ConvenienceError::Convert(e.into_inner())))?;
         let linear_f32: &[f32] = bytemuck::cast_slice(&linear_bytes);
         scatter_to_oklab(linear_f32, &mut planes, channels, &m1, reference_white);
         ctx.return_u8(linear_bytes);
@@ -209,7 +209,7 @@ pub fn apply_to_buffer(
 
         if convert_back && desc != linear_desc {
             let converter = RowConverter::new(linear_desc, desc)
-                .map_err(|e| at!(e).map_error(ConvenienceError::Convert))?;
+                .map_err(|e| at!(e).map_error(|e| ConvenienceError::Convert(e.into_inner())))?;
             let dst_bpp = desc.bytes_per_pixel();
             let dst_stride = (width as usize) * dst_bpp;
             let total = dst_stride * height as usize;
@@ -344,7 +344,7 @@ fn convert_buffer_bytes_pooled(
     input: &PixelBuffer,
     target: PixelDescriptor,
     ctx: &mut FilterContext,
-) -> Result<alloc::vec::Vec<u8>, zenpixels_convert::ConvertError> {
+) -> Result<alloc::vec::Vec<u8>, At<zenpixels_convert::ConvertError>> {
     let desc = input.descriptor();
     let width = input.width();
     let height = input.height();
@@ -362,7 +362,7 @@ fn convert_buffer_bytes_pooled(
             output[dst_start..dst_start + src_row.len()].copy_from_slice(src_row);
         }
     } else {
-        let converter = RowConverter::new(desc, target)?;
+        let converter = RowConverter::new(desc, target).at()?;
         let src_slice = input.as_slice();
         for y in 0..height {
             let src_row = src_slice.row(y);

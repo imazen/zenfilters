@@ -21,13 +21,14 @@ linear-srgb = "0.6.3"
 magetypes = "0.9.4"
 rgb = { version = "0.8", default-features = false, features = ["bytemuck"], optional = true }
 zenpixels = { version = "0.1", path = "../zenpixels/zenpixels", features = ["planar"] }
-whereat = { version = "0.1.3", path = "../../whereat" }
+whereat = { version = "0.1.3", path = "../whereat" }
 zenpixels-convert = { version = "0.1", path = "../zenpixels/zenpixels-convert" }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 image = "0.25"
 imageproc = "0.26"
+palette = { version = "0.7", default-features = false, features = ["std"] }
 zensim = { version = "0.2", path = "../zensim/zensim", default-features = false }
 zenpixels = { version = "0.1", path = "../zenpixels/zenpixels", features = ["buffer", "planar", "rgb"] }
 zenpixels-convert = { version = "0.1", path = "../zenpixels/zenpixels-convert", features = ["buffer", "planar"] }
