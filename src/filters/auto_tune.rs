@@ -491,10 +491,13 @@ pub fn rule_based_tune(features: &ImageFeatures) -> TunedParams {
         params.tint = params.tint.clamp(-0.1, 0.1);
     }
 
+    // ── Derived stats ────────────────────────────────────────────
+    let chroma_energy = (features.std_a() + features.std_b()) * 0.5;
+    let contrast_ratio = features.std_l() / features.mean_l().max(0.01);
+
     // ── Saturation ─────────────────────────────────────────────
     // Modest boost for all images. Expert edits almost always increase saturation.
     // Adaptive: boost less for already-saturated images (high std_a/std_b).
-    let chroma_energy = (features.std_a() + features.std_b()) * 0.5;
     if chroma_energy < 0.08 {
         // Low-chroma image: boost more
         params.saturation = 1.15;
@@ -508,16 +511,31 @@ pub fn rule_based_tune(features: &ImageFeatures) -> TunedParams {
     // Selectively saturate muted colors. More for low-chroma images.
     params.vibrance = if chroma_energy < 0.08 { 0.25 } else { 0.15 };
 
+    // ── Contrast ──────────────────────────────────────────────────
+    // Modest mid-tone contrast boost. Expert edits almost always add contrast.
+    // Less for already-punchy images, more for flat ones.
+    if contrast_ratio < 0.15 {
+        params.contrast = 0.12;
+    } else if contrast_ratio < 0.25 {
+        params.contrast = 0.06;
+    }
+
     // ── Sigmoid ─────────────────────────────────────────────────
     // Mild S-curve for added "pop". Skip if dynamic range is already high.
     if features.dynamic_range > 0.3 && features.dynamic_range < 0.85 {
         params.sigmoid_contrast = 1.12;
     }
 
+    // ── Black point ──────────────────────────────────────────────
+    // Subtle black point lift adds "weight" to shadows. Only for images
+    // that have meaningful shadow detail (not already crushed).
+    if features.p5() > 0.05 && features.p1() > 0.01 {
+        params.black_point = 0.008;
+    }
+
     // ── Clarity ─────────────────────────────────────────────────
     // Adaptive: more clarity for flat/low-contrast images (landscapes,
     // overcast), less for high-contrast (already punchy).
-    let contrast_ratio = features.std_l() / features.mean_l().max(0.01);
     if contrast_ratio < 0.15 {
         // Low contrast: more clarity helps
         params.clarity = 0.2;
