@@ -157,6 +157,10 @@ fn main() {
     let mut ctx = FilterContext::new();
 
     let mut all_paths: Vec<String> = Vec::new();
+    let mut sum_orig = 0.0f64;
+    let mut sum_rule = 0.0f64;
+    let mut sum_cluster = 0.0f64;
+    let mut count = 0usize;
 
     let num_samples: usize = std::env::var("ZEN_SAMPLES")
         .ok()
@@ -225,8 +229,24 @@ fn main() {
         all_paths.push(p_rule);
         all_paths.push(p_cluster);
         all_paths.push(p_expert);
+
+        sum_orig += score_orig;
+        sum_rule += score_rule;
+        sum_cluster += score_cluster;
+        count += 1;
     }
 
-    println!("\n\nSaved {} images to {OUTPUT_DIR}/", all_paths.len());
-    println!("Use montage to create comparison grid.");
+    if count > 0 {
+        let n = count as f64;
+        println!("\n=== Summary ({count} images) ===");
+        println!("  Original:   {:.1}", sum_orig / n);
+        println!("  Rule-based: {:.1}", sum_rule / n);
+        println!("  Cluster:    {:.1}", sum_cluster / n);
+        println!(
+            "  Improvement (cluster over original): {:+.1}",
+            (sum_cluster - sum_orig) / n
+        );
+    }
+
+    println!("\nSaved {} images to {OUTPUT_DIR}/", all_paths.len());
 }
