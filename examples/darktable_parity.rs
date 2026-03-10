@@ -33,7 +33,7 @@ const ORIGINAL_DIR: &str = "/mnt/v/input/fivek/original";
 const EXPERT_DIR: &str = "/mnt/v/input/fivek/expert_c";
 const OUTPUT_DIR: &str = "/mnt/v/output/zenfilters/parity";
 const MAX_DIM: u32 = 512;
-const NUM_SAMPLES: usize = 32;
+const DEFAULT_SAMPLES: usize = 32;
 const N_FEAT: usize = 142;
 const N_PARAMS: usize = 18;
 const TRAINING_DIR: &str = "/mnt/v/output/zenfilters/training";
@@ -173,10 +173,18 @@ fn build_pipeline_linear(params: &TunedParams) -> Pipeline {
 
     // Base tone mapping: approximate darktable's base curve.
     // Linear sensor data needs an S-curve to look like a camera JPEG.
-    // Contrast ~1.6 provides a moderate base curve with shadow lift.
+    // Tunable via env vars for parameter search.
+    let base_contrast: f32 = std::env::var("ZEN_BASE_CONTRAST")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1.4);
+    let base_skew: f32 = std::env::var("ZEN_BASE_SKEW")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.58);
     let mut base_sig = Sigmoid::default();
-    base_sig.contrast = 1.6;
-    base_sig.skew = 0.55; // slight shadow lift
+    base_sig.contrast = base_contrast;
+    base_sig.skew = base_skew;
     pipeline.push(Box::new(base_sig));
 
     // Now apply artistic adjustments (same as JPEG path)
@@ -373,8 +381,12 @@ fn main() {
     }
     println!("Found {} images with DNG + JPEG + Expert", triples.len());
 
-    let step = triples.len() / NUM_SAMPLES;
-    let samples: Vec<_> = (0..NUM_SAMPLES).map(|i| &triples[i * step]).collect();
+    let num_samples: usize = std::env::var("ZEN_SAMPLES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_SAMPLES);
+    let step = triples.len() / num_samples;
+    let samples: Vec<_> = (0..num_samples).map(|i| &triples[i * step]).collect();
 
     let m1 = oklab::rgb_to_lms_matrix(ColorPrimaries::Bt709).unwrap();
     let m1_inv = oklab::lms_to_rgb_matrix(ColorPrimaries::Bt709).unwrap();
@@ -386,7 +398,7 @@ fn main() {
 
     for (si, (orig_path, dng_path, expert_path)) in samples.iter().enumerate() {
         let stem = orig_path.file_stem().unwrap().to_str().unwrap();
-        println!("\n[{}/{}] {}", si + 1, NUM_SAMPLES, stem);
+        println!("\n[{}/{}] {}", si + 1, num_samples, stem);
 
         // Load expert
         let expert_img = match image::open(expert_path) {
