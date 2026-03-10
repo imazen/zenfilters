@@ -503,8 +503,9 @@ fn process_dng_parity(
     let ceiling = zensim_score(&dt_r2, &expert_r, w2, h2, zs);
 
     // Save DNG-specific comparison images
-    save_rgb(&base_r, w, h, &format!("{out_prefix}_4_dng_ours.jpg"));
-    save_rgb(&dt_r, w, h, &format!("{out_prefix}_5_dng_dt.jpg"));
+    save_rgb(&base_r, w, h, &format!("{out_prefix}_4_dng_base.jpg"));
+    save_rgb(&rule_r, w3, h3, &format!("{out_prefix}_5_dng_rule.jpg"));
+    save_rgb(&dt_r, w, h, &format!("{out_prefix}_6_dng_dt.jpg"));
 
     Some((parity_base, parity_rule, ceiling))
 }
