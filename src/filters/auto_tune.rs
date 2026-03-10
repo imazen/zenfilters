@@ -493,17 +493,28 @@ pub fn rule_based_tune(features: &ImageFeatures) -> TunedParams {
     }
 
     // ── Highlight recovery ──────────────────────────────────────
-    // Dedicated recovery filter for severe clipping (p99-p95 nearly zero).
+    // Trained model uses highlight_recovery broadly (mean=0.31).
+    // Apply proportionally: more for images with compressed highlights,
+    // less for images with natural rolloff.
     let highlight_headroom = features.p99() - features.p95();
     if features.p95() > 0.85 && highlight_headroom < 0.01 {
+        // Severe clipping
         params.highlight_recovery = 0.5;
+    } else if features.p95() > 0.7 {
+        // General highlight recovery — model data shows this helps broadly
+        params.highlight_recovery = 0.15 * art_scale;
     }
 
     // ── Shadow lift ─────────────────────────────────────────────
-    // Dedicated lift filter for severely crushed shadows.
+    // Trained model uses shadow_lift broadly (mean=0.11).
+    // Expert edits consistently lift shadows for detail recovery.
     let shadow_headroom = features.p5() - features.p1();
     if features.p5() < 0.08 && shadow_headroom < 0.005 {
+        // Severely crushed
         params.shadow_lift = 0.4;
+    } else if features.p5() < 0.2 {
+        // General shadow lift
+        params.shadow_lift = 0.08 * art_scale;
     }
 
     // ── Color cast correction ───────────────────────────────────
@@ -520,18 +531,24 @@ pub fn rule_based_tune(features: &ImageFeatures) -> TunedParams {
     }
 
     // ── Saturation ─────────────────────────────────────────────
-    // Modest boost, scaled by art_scale so balanced images get less.
+    // Trained model mean=1.25. Expert edits consistently boost ~25%.
+    // Scale by art_scale so balanced images get less.
     if chroma_energy < 0.08 {
-        params.saturation = 1.0 + 0.15 * art_scale;
+        params.saturation = 1.0 + 0.25 * art_scale;
     } else if chroma_energy < 0.15 {
+        params.saturation = 1.0 + 0.18 * art_scale;
+    } else {
+        // Even high-chroma images get a small boost (model min=0.77 means
+        // some desaturation, but mean=1.25 says boost on average)
         params.saturation = 1.0 + 0.08 * art_scale;
     }
 
     // ── Vibrance ────────────────────────────────────────────────
+    // Trained model mean=0.35. Always apply — experts always boost muted colors.
     params.vibrance = if chroma_energy < 0.08 {
-        0.25 * art_scale
+        0.35 * art_scale
     } else {
-        0.15 * art_scale
+        0.25 * art_scale
     };
 
     // ── Contrast ──────────────────────────────────────────────────
@@ -567,10 +584,14 @@ pub fn rule_based_tune(features: &ImageFeatures) -> TunedParams {
     }
 
     // ── Gamut expand ────────────────────────────────────────────
+    // Trained model mean=0.39. Expert edits push color vibrancy hard.
     if chroma_energy < 0.06 {
-        params.gamut_expand = 0.35 * art_scale;
+        params.gamut_expand = 0.45 * art_scale;
     } else if chroma_energy < 0.12 {
-        params.gamut_expand = 0.2 * art_scale;
+        params.gamut_expand = 0.35 * art_scale;
+    } else {
+        // Even high-chroma images benefit from modest expansion
+        params.gamut_expand = 0.15 * art_scale;
     }
 
     params
