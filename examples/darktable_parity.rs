@@ -442,15 +442,28 @@ fn main() {
 
     let n = results.len() as f64;
     println!("{}", "-".repeat(88));
+    let mean_clust = sq / n;
+    let mean_rule = sqr / n;
+    let mean_base0 = sb / n;
     println!(
         "{:<35} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1}",
         "MEAN",
         if np > 0 { spb / np as f64 } else { 0.0 },
         if np > 0 { spr / np as f64 } else { 0.0 },
         if np > 0 { sc / np as f64 } else { 0.0 },
-        sq / n,
-        sqr / n,
-        sb / n
+        mean_clust,
+        mean_rule,
+        mean_base0
+    );
+    println!(
+        "{:<35} {:>7} {:>7} {:>7} {:>+7.1} {:>+7.1} {:>7}",
+        "DELTA vs base0",
+        "",
+        "",
+        "",
+        mean_clust - mean_base0,
+        mean_rule - mean_base0,
+        ""
     );
 
     // Write TSV
