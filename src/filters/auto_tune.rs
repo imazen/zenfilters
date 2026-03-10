@@ -254,8 +254,14 @@ impl ImageFeatures {
     fn mean_a(&self) -> f32 {
         self.channel_stats[2]
     }
+    fn std_a(&self) -> f32 {
+        self.channel_stats[3]
+    }
     fn mean_b(&self) -> f32 {
         self.channel_stats[4]
+    }
+    fn std_b(&self) -> f32 {
+        self.channel_stats[5]
     }
 }
 
@@ -272,67 +278,69 @@ pub fn rule_based_tune(features: &ImageFeatures) -> TunedParams {
     let mut params = TunedParams::default();
 
     // ── Exposure correction ─────────────────────────────────────
-    // Target: median L near 0.5. Correct if off by more than 0.1.
+    // Only correct severely mis-exposed images. Most camera JPEGs are fine.
     let median = features.p50();
-    let exposure_error = 0.5 - median;
-    if exposure_error.abs() > 0.1 {
-        // Convert L-domain error to EV stops: L scales as 2^(stops/3)
-        // factor = target/current, stops = 3 * log2(factor)
-        let factor = 0.5 / median.max(0.05);
+    if median < 0.2 {
+        // Very dark: lift gently
+        let factor = 0.35 / median.max(0.05);
         let stops = 3.0 * factor.log2();
-        params.exposure = stops.clamp(-2.0, 2.0) * 0.6; // conservative: 60% correction
+        params.exposure = stops.clamp(0.0, 2.0) * 0.4;
+    } else if median > 0.75 {
+        // Very bright: darken gently
+        let factor = 0.6 / median.max(0.01);
+        let stops = 3.0 * factor.log2();
+        params.exposure = stops.clamp(-2.0, 0.0) * 0.4;
     }
 
     // ── Highlight recovery ──────────────────────────────────────
-    // If top 5% of pixels are compressed (p99 ≈ p95), highlights are clipped.
-    // Compare headroom to overall dynamic range — a uniform distribution
-    // naturally has p99-p95 ≈ 4% of its range.
+    // Only for severe clipping (p99-p95 nearly zero).
     let highlight_headroom = features.p99() - features.p95();
-    let expected_headroom = features.dynamic_range * 0.04; // 4% of range
-    if features.p95() > 0.75 && highlight_headroom < expected_headroom * 0.5 {
-        // More clipping → stronger recovery
-        let deficit = (expected_headroom * 0.5 - highlight_headroom).max(0.0);
-        params.highlight_recovery = (deficit / expected_headroom.max(0.01)) * 0.8;
-        params.highlight_recovery = params.highlight_recovery.clamp(0.0, 0.8);
+    if features.p95() > 0.85 && highlight_headroom < 0.01 {
+        params.highlight_recovery = 0.5;
     }
 
     // ── Shadow lift ─────────────────────────────────────────────
-    // If bottom 5% of pixels are crushed (p5 near p1), shadows are clipped.
+    // Only for severely crushed shadows.
     let shadow_headroom = features.p5() - features.p1();
-    let expected_shadow = features.dynamic_range * 0.04;
-    if features.p5() < 0.15 && shadow_headroom < expected_shadow * 0.5 {
-        let deficit = (expected_shadow * 0.5 - shadow_headroom).max(0.0);
-        params.shadow_lift = (deficit / expected_shadow.max(0.01)) * 0.7;
-        params.shadow_lift = params.shadow_lift.clamp(0.0, 0.7);
-    }
-
-    // ── Contrast ────────────────────────────────────────────────
-    // If dynamic range is low (flat image), add some contrast.
-    // If DR is already high, leave it alone.
-    if features.dynamic_range < 0.5 && features.std_l() < 0.2 {
-        params.contrast = (0.5 - features.dynamic_range) * 0.3;
-        params.contrast = params.contrast.clamp(0.0, 0.2);
+    if features.p5() < 0.08 && shadow_headroom < 0.005 {
+        params.shadow_lift = 0.4;
     }
 
     // ── Color cast correction ───────────────────────────────────
-    // Gray world assumption: mean(a) and mean(b) should be near zero.
-    // Large offsets indicate a color cast.
+    // Only correct strong casts (>0.06 mean deviation).
     let cast_a = features.mean_a();
     let cast_b = features.mean_b();
-    if cast_b.abs() > 0.02 {
-        // b axis ≈ warm/cool → temperature
-        params.temperature = -cast_b * 2.0; // correct toward neutral
-        params.temperature = params.temperature.clamp(-0.3, 0.3);
+    if cast_b.abs() > 0.06 {
+        params.temperature = -cast_b * 0.8;
+        params.temperature = params.temperature.clamp(-0.1, 0.1);
     }
-    if cast_a.abs() > 0.02 {
-        // a axis ≈ green/magenta → tint
-        params.tint = -cast_a * 2.0;
-        params.tint = params.tint.clamp(-0.3, 0.3);
+    if cast_a.abs() > 0.06 {
+        params.tint = -cast_a * 0.8;
+        params.tint = params.tint.clamp(-0.1, 0.1);
     }
 
+    // ── Saturation ─────────────────────────────────────────────
+    // Modest boost for all images. Expert edits almost always increase saturation.
+    // Adaptive: boost less for already-saturated images (high std_a/std_b).
+    let chroma_energy = (features.std_a() + features.std_b()) * 0.5;
+    if chroma_energy < 0.08 {
+        // Low-chroma image: boost more
+        params.saturation = 1.15;
+    } else if chroma_energy < 0.15 {
+        // Normal image: modest boost
+        params.saturation = 1.08;
+    }
+    // High-chroma: leave at 1.0 (default)
+
     // ── Vibrance ────────────────────────────────────────────────
-    // Always a small amount — universally flattering.
-    params.vibrance = 0.15;
+    // Selectively saturate muted colors. More for low-chroma images.
+    params.vibrance = if chroma_energy < 0.08 { 0.25 } else { 0.15 };
+
+    // ── Sigmoid ─────────────────────────────────────────────────
+    // Mild S-curve for added "pop". Skip if dynamic range is already high.
+    if features.dynamic_range > 0.3 && features.dynamic_range < 0.85 {
+        params.sigmoid_contrast = 1.12;
+    }
 
     // ── Clarity ─────────────────────────────────────────────────
     // Small constant amount for texture enhancement.
