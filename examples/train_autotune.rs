@@ -34,9 +34,9 @@ const OUTPUT_DIR: &str = "/mnt/v/output/zenfilters/training";
 // ── Tuning knobs ─────────────────────────────────────────────────────
 const MAX_DIM: u32 = 384; // Working resolution for optimization speed
 const NUM_CLUSTERS: usize = 64;
-const KMEANS_ITERS: usize = 50;
-const OPTIM_EVALS: usize = 800; // Nelder-Mead budget per cluster
-const CLUSTER_SAMPLE: usize = 40; // Images per cluster for optimization
+const KMEANS_ITERS: usize = 30;
+const OPTIM_EVALS: usize = 400; // Nelder-Mead budget per cluster
+const CLUSTER_SAMPLE: usize = 20; // Images per cluster for optimization
 
 const N_FEAT: usize = 142;
 const N_PARAMS: usize = 18;
