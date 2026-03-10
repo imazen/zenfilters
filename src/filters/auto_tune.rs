@@ -614,7 +614,7 @@ impl LinearModel {
 // ─── Cluster model ──────────────────────────────────────────────────
 
 /// Number of clusters in the trained model.
-pub const CLUSTER_COUNT: usize = 16;
+pub const CLUSTER_COUNT: usize = 64;
 
 /// Cluster-based auto-tuner: nearest-centroid lookup.
 ///
