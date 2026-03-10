@@ -24,7 +24,7 @@ const OUTPUT_DIR: &str = "/mnt/v/output/zenfilters/compare";
 const N_FEAT: usize = 142;
 const N_PARAMS: usize = 18;
 const COMPARE_WIDTH: u32 = 512;
-const NUM_SAMPLES: usize = 16; // One per cluster
+const DEFAULT_SAMPLES: usize = 32;
 
 fn load_f32s(path: &Path) -> Vec<f32> {
     let bytes = fs::read(path).expect("failed to read file");
@@ -34,13 +34,6 @@ fn load_f32s(path: &Path) -> Vec<f32> {
 fn load_u32s(path: &Path) -> Vec<u32> {
     let bytes = fs::read(path).expect("failed to read file");
     bytemuck::cast_slice(&bytes).to_vec()
-}
-
-fn load_resized(path: &Path, max_dim: u32) -> Option<(Vec<u8>, u32, u32)> {
-    let img = image::open(path).ok()?;
-    let resized = img.resize(max_dim, max_dim, FilterType::Triangle);
-    let (w, h) = resized.dimensions();
-    Some((resized.to_rgb8().into_raw(), w, h))
 }
 
 fn load_pair(
@@ -97,34 +90,7 @@ fn array_to_params(a: &[f32]) -> TunedParams {
 }
 
 fn reconstruct_features(feat: &[f32]) -> ImageFeatures {
-    ImageFeatures {
-        l_histogram: {
-            let mut h = [0.0f32; 64];
-            h.copy_from_slice(&feat[..64]);
-            h
-        },
-        a_histogram: {
-            let mut h = [0.0f32; 32];
-            h.copy_from_slice(&feat[64..96]);
-            h
-        },
-        b_histogram: {
-            let mut h = [0.0f32; 32];
-            h.copy_from_slice(&feat[96..128]);
-            h
-        },
-        l_percentiles: {
-            let mut p = [0.0f32; 7];
-            p.copy_from_slice(&feat[128..135]);
-            p
-        },
-        channel_stats: {
-            let mut s = [0.0f32; 6];
-            s.copy_from_slice(&feat[135..141]);
-            s
-        },
-        dynamic_range: feat[141],
-    }
+    ImageFeatures::from_tensor(feat)
 }
 
 fn main() {
@@ -192,7 +158,12 @@ fn main() {
 
     let mut all_paths: Vec<String> = Vec::new();
 
-    for (si, &idx) in sample_indices.iter().enumerate().take(NUM_SAMPLES) {
+    let num_samples: usize = std::env::var("ZEN_SAMPLES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_SAMPLES.min(n_clusters));
+
+    for (si, &idx) in sample_indices.iter().enumerate().take(num_samples) {
         let (orig_path, expert_path) = &pairs[idx];
         let cluster_id = assignments[idx] as usize;
         let name = orig_path.file_stem().unwrap().to_str().unwrap();
@@ -200,7 +171,7 @@ fn main() {
         println!(
             "\n[{}/{}] Cluster {cluster_id}: {}",
             si + 1,
-            NUM_SAMPLES,
+            num_samples,
             name
         );
 
