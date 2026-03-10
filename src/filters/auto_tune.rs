@@ -275,6 +275,7 @@ impl TunedParams {
     ///
     /// `base_contrast` and `base_skew` control the scene-to-display tone curve.
     /// Good defaults: contrast=1.4, skew=0.58 (tuned for darktable parity).
+    #[allow(clippy::field_reassign_with_default)]
     pub fn build_pipeline_linear(&self, base_contrast: f32, base_skew: f32) -> Pipeline {
         let mut pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
 
@@ -289,6 +290,7 @@ impl TunedParams {
     }
 
     /// Push artistic adjustment filters into an existing pipeline.
+    #[allow(clippy::field_reassign_with_default)]
     fn push_artistic_filters(&self, pipeline: &mut Pipeline) {
         let mut fused = FusedAdjust::new();
         fused.exposure = self.exposure;
@@ -303,9 +305,7 @@ impl TunedParams {
         fused.white_point = self.white_point;
         pipeline.push(Box::new(fused));
 
-        if (self.sigmoid_contrast - 1.0).abs() > 0.01
-            || (self.sigmoid_skew - 0.5).abs() > 0.01
-        {
+        if (self.sigmoid_contrast - 1.0).abs() > 0.01 || (self.sigmoid_skew - 0.5).abs() > 0.01 {
             let mut sig = Sigmoid::default();
             sig.contrast = self.sigmoid_contrast;
             sig.skew = self.sigmoid_skew;

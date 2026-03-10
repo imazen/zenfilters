@@ -15,12 +15,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use image::imageops::FilterType;
 use image::RgbImage;
+use image::imageops::FilterType;
 use zenfilters::filters::*;
 use zenfilters::{
-    FilterContext, OklabPlanes, Pipeline, gather_oklab_to_srgb_u8,
-    scatter_srgb_u8_to_oklab, scatter_to_oklab,
+    FilterContext, OklabPlanes, Pipeline, gather_oklab_to_srgb_u8, scatter_srgb_u8_to_oklab,
+    scatter_to_oklab,
 };
 use zenpixels::ColorPrimaries;
 use zenpixels_convert::gamut::GamutMatrix;
@@ -192,7 +192,6 @@ fn resize_pair(
     (ca, cb, w, h)
 }
 
-
 fn save_rgb(data: &[u8], w: u32, h: u32, path: &str) {
     if let Some(img) = RgbImage::from_raw(w, h, data.to_vec()) {
         let _ = img.save(path);
@@ -201,11 +200,11 @@ fn save_rgb(data: &[u8], w: u32, h: u32, path: &str) {
 
 struct ImageResult {
     name: String,
-    parity_base: f64,  // our DNG pipeline (base only, no cluster) vs darktable display
-    ceiling: f64,      // darktable display vs expert
-    quality: f64,      // our JPEG cluster pipeline vs expert
+    parity_base: f64, // our DNG pipeline (base only, no cluster) vs darktable display
+    ceiling: f64,     // darktable display vs expert
+    quality: f64,     // our JPEG cluster pipeline vs expert
     quality_rule: f64, // our JPEG rule-based pipeline vs expert
-    baseline: f64,     // untouched original vs expert
+    baseline: f64,    // untouched original vs expert
 }
 
 fn main() {
