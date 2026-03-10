@@ -1,0 +1,328 @@
+use crate::access::ChannelAccess;
+use crate::context::FilterContext;
+use crate::filter::Filter;
+use crate::planes::OklabPlanes;
+
+/// Wavelet-based noise reduction for luminance and chroma.
+///
+/// Uses an à trous (with holes) wavelet decomposition on separate planes.
+/// Each wavelet scale captures noise at a different frequency:
+/// - Scale 0: finest noise (1–2px features)
+/// - Scale 1: medium noise (2–4px)
+/// - Scale 2: coarser noise (4–8px)
+/// - Scale 3+: structural detail (preserved)
+///
+/// Thresholding is soft (shrinkage) to avoid artifacts. Chroma noise is
+/// typically stronger than luminance noise, so chroma denoising uses a
+/// higher effective threshold.
+///
+/// This approach is similar to darktable's "denoise (profiled)" module
+/// and Lightroom's noise reduction.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct NoiseReduction {
+    /// Luminance noise reduction strength. 0.0 = off, 1.0 = strong.
+    /// Typical: 0.3–0.7.
+    pub luminance: f32,
+    /// Luminance detail preservation. Higher values keep more fine detail
+    /// at the cost of less noise removal. Default: 0.5.
+    pub detail: f32,
+    /// Chroma noise reduction strength. 0.0 = off, 1.0 = strong.
+    /// Typical: 0.5–1.0 (chroma noise is usually more objectionable).
+    pub chroma: f32,
+    /// Number of wavelet scales. More scales = smoother result.
+    /// Default: 4. Range: 1–6.
+    pub scales: u32,
+}
+
+impl Default for NoiseReduction {
+    fn default() -> Self {
+        Self {
+            luminance: 0.0,
+            chroma: 0.0,
+            detail: 0.5,
+            scales: 4,
+        }
+    }
+}
+
+impl NoiseReduction {
+    fn is_identity(&self) -> bool {
+        self.luminance.abs() < 1e-6 && self.chroma.abs() < 1e-6
+    }
+}
+
+/// B3 spline wavelet kernel coefficients [1/16, 4/16, 6/16, 4/16, 1/16].
+const B3_KERNEL: [f32; 5] = [1.0 / 16.0, 4.0 / 16.0, 6.0 / 16.0, 4.0 / 16.0, 1.0 / 16.0];
+
+/// À trous wavelet transform: one smoothing step at the given scale.
+/// `scale` determines the spacing between kernel taps: spacing = 2^scale.
+fn atrous_smooth(src: &[f32], dst: &mut [f32], w: usize, h: usize, scale: u32, tmp: &mut [f32]) {
+    let step = 1usize << scale;
+
+    // Horizontal pass: src → tmp
+    for y in 0..h {
+        let row_off = y * w;
+        for x in 0..w {
+            let mut sum = 0.0f32;
+            for (k, &weight) in B3_KERNEL.iter().enumerate() {
+                let sx = (x as isize + (k as isize - 2) * step as isize).clamp(0, w as isize - 1)
+                    as usize;
+                sum += src[row_off + sx] * weight;
+            }
+            tmp[row_off + x] = sum;
+        }
+    }
+
+    // Vertical pass: tmp → dst
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum = 0.0f32;
+            for (k, &weight) in B3_KERNEL.iter().enumerate() {
+                let sy = (y as isize + (k as isize - 2) * step as isize).clamp(0, h as isize - 1)
+                    as usize;
+                sum += tmp[sy * w + x] * weight;
+            }
+            dst[y * w + x] = sum;
+        }
+    }
+}
+
+/// Soft thresholding (wavelet shrinkage).
+/// Reduces coefficients toward zero by `threshold`, preserving sign.
+#[inline]
+fn soft_threshold(val: f32, threshold: f32) -> f32 {
+    if val > threshold {
+        val - threshold
+    } else if val < -threshold {
+        val + threshold
+    } else {
+        0.0
+    }
+}
+
+/// Denoise a single plane using à trous wavelet shrinkage.
+fn denoise_plane(
+    plane: &mut [f32],
+    w: usize,
+    h: usize,
+    strength: f32,
+    detail_preserve: f32,
+    num_scales: u32,
+    ctx: &mut FilterContext,
+) {
+    if strength.abs() < 1e-6 {
+        return;
+    }
+
+    let n = w * h;
+    let mut smooth = ctx.take_f32(n);
+    let mut tmp = ctx.take_f32(n);
+    let mut current = ctx.take_f32(n);
+    current.copy_from_slice(plane);
+
+    // Accumulate the denoised result
+    let mut result = ctx.take_f32(n);
+    for v in &mut result[..n] {
+        *v = 0.0;
+    }
+
+    let num_scales = num_scales.clamp(1, 6);
+
+    for scale in 0..num_scales {
+        atrous_smooth(&current, &mut smooth, w, h, scale, &mut tmp);
+
+        // Detail coefficients = current - smooth
+        // Threshold based on estimated noise at this scale
+        let threshold_scale = if scale == 0 {
+            // Finest scale: estimate noise sigma, apply full threshold
+            let sigma = estimate_noise_sigma_from_diff(&current, &smooth, n);
+            sigma * strength * 3.0 * (1.0 - detail_preserve * 0.5)
+        } else {
+            // Coarser scales: progressively less thresholding
+            // Noise decreases at coarser scales
+            let decay = 0.5f32.powi(scale as i32);
+            let sigma = estimate_noise_sigma_from_diff(&current, &smooth, n);
+            sigma * strength * 3.0 * decay * (1.0 - detail_preserve * 0.3)
+        };
+
+        // Soft-threshold the detail and add to result
+        for i in 0..n {
+            let detail = current[i] - smooth[i];
+            let thresholded = soft_threshold(detail, threshold_scale);
+            result[i] += thresholded;
+        }
+
+        // Next iteration works on the smooth approximation
+        current[..n].copy_from_slice(&smooth[..n]);
+    }
+
+    // Add the final smooth (coarsest approximation) to the thresholded details
+    for i in 0..n {
+        plane[i] = (result[i] + current[i]).max(0.0);
+    }
+
+    ctx.return_f32(result);
+    ctx.return_f32(current);
+    ctx.return_f32(tmp);
+    ctx.return_f32(smooth);
+}
+
+/// Estimate noise sigma from the difference between two signals.
+fn estimate_noise_sigma_from_diff(a: &[f32], b: &[f32], n: usize) -> f32 {
+    let mean_abs = a[..n]
+        .iter()
+        .zip(b[..n].iter())
+        .map(|(x, y)| (x - y).abs())
+        .sum::<f32>()
+        / n as f32;
+    mean_abs / 0.6745
+}
+
+impl Filter for NoiseReduction {
+    fn channel_access(&self) -> ChannelAccess {
+        ChannelAccess::L_AND_CHROMA
+    }
+
+    fn is_neighborhood(&self) -> bool {
+        true
+    }
+
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
+        if self.is_identity() {
+            return;
+        }
+
+        let w = planes.width as usize;
+        let h = planes.height as usize;
+
+        if self.luminance > 1e-6 {
+            denoise_plane(
+                &mut planes.l,
+                w,
+                h,
+                self.luminance,
+                self.detail,
+                self.scales,
+                ctx,
+            );
+        }
+
+        if self.chroma > 1e-6 {
+            // Chroma noise is typically stronger — use higher effective strength
+            let chroma_strength = self.chroma * 1.5;
+            denoise_plane(
+                &mut planes.a,
+                w,
+                h,
+                chroma_strength,
+                0.2, // less detail preservation for chroma
+                self.scales,
+                ctx,
+            );
+            denoise_plane(&mut planes.b, w, h, chroma_strength, 0.2, self.scales, ctx);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_strength_is_identity() {
+        let mut planes = OklabPlanes::new(32, 32);
+        for v in &mut planes.l {
+            *v = 0.5;
+        }
+        let orig = planes.l.clone();
+        NoiseReduction::default().apply(&mut planes, &mut FilterContext::new());
+        assert_eq!(planes.l, orig);
+    }
+
+    #[test]
+    fn reduces_noise() {
+        let mut planes = OklabPlanes::new(64, 64);
+        // Add noise to a flat signal
+        for (i, v) in planes.l.iter_mut().enumerate() {
+            let noise = ((i as u32).wrapping_mul(2654435761) as f32 / u32::MAX as f32) * 0.1 - 0.05;
+            *v = 0.5 + noise;
+        }
+        let before_std = std_dev(&planes.l);
+
+        let mut nr = NoiseReduction::default();
+        nr.luminance = 0.8;
+        nr.apply(&mut planes, &mut FilterContext::new());
+
+        let after_std = std_dev(&planes.l);
+        assert!(
+            after_std < before_std * 0.8,
+            "noise should be reduced: {before_std} -> {after_std}"
+        );
+    }
+
+    #[test]
+    fn preserves_structure() {
+        let mut planes = OklabPlanes::new(64, 64);
+        // Create a gradient with noise
+        for y in 0..64 {
+            for x in 0..64 {
+                let i = y * 64 + x;
+                let base = y as f32 / 63.0;
+                let noise =
+                    ((i as u32).wrapping_mul(2654435761) as f32 / u32::MAX as f32) * 0.02 - 0.01;
+                planes.l[i] = base + noise;
+            }
+        }
+
+        let mut nr = NoiseReduction::default();
+        nr.luminance = 0.5;
+        nr.apply(&mut planes, &mut FilterContext::new());
+
+        // The gradient should still be visible: top should be brighter than bottom
+        let top_mean: f32 = planes.l[60 * 64..64 * 64].iter().sum::<f32>() / 256.0;
+        let bottom_mean: f32 = planes.l[0..4 * 64].iter().sum::<f32>() / 256.0;
+        assert!(
+            top_mean > bottom_mean + 0.5,
+            "gradient structure should be preserved: top={top_mean} bottom={bottom_mean}"
+        );
+    }
+
+    #[test]
+    fn chroma_denoising() {
+        let mut planes = OklabPlanes::new(32, 32);
+        for v in &mut planes.l {
+            *v = 0.5;
+        }
+        // Add chroma noise
+        for (i, v) in planes.a.iter_mut().enumerate() {
+            let noise = ((i as u32).wrapping_mul(2654435761) as f32 / u32::MAX as f32) * 0.1 - 0.05;
+            *v = noise;
+        }
+        let before_std = std_dev(&planes.a);
+
+        let mut nr = NoiseReduction::default();
+        nr.chroma = 0.8;
+        nr.apply(&mut planes, &mut FilterContext::new());
+
+        let after_std = std_dev(&planes.a);
+        assert!(
+            after_std < before_std * 0.8,
+            "chroma noise should be reduced: {before_std} -> {after_std}"
+        );
+    }
+
+    #[test]
+    fn soft_threshold_works() {
+        assert!((soft_threshold(0.5, 0.3) - 0.2).abs() < 1e-6);
+        assert!((soft_threshold(-0.5, 0.3) - (-0.2)).abs() < 1e-6);
+        assert_eq!(soft_threshold(0.1, 0.3), 0.0);
+    }
+
+    fn std_dev(data: &[f32]) -> f32 {
+        let mean = data.iter().sum::<f32>() / data.len() as f32;
+        let variance =
+            data.iter().map(|&v| (v - mean) * (v - mean)).sum::<f32>() / data.len() as f32;
+        variance.sqrt()
+    }
+}

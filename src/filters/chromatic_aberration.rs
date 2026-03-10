@@ -1,0 +1,195 @@
+use crate::access::ChannelAccess;
+use crate::context::FilterContext;
+use crate::filter::Filter;
+use crate::planes::OklabPlanes;
+
+/// Lateral chromatic aberration correction.
+///
+/// Corrects color fringing at image edges caused by lens dispersion.
+/// In Oklab, CA manifests as radial displacement of the a (green-red)
+/// and b (blue-yellow) planes relative to L. This filter shifts the
+/// chroma planes radially to re-align them with luminance.
+///
+/// Positive values shift the plane outward, negative shifts inward.
+/// Typical corrections are very small (±0.001 to ±0.005).
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct ChromaticAberration {
+    /// Radial shift for the a (green-red) channel.
+    /// Positive = outward, negative = inward. Default: 0.0.
+    pub shift_a: f32,
+    /// Radial shift for the b (blue-yellow) channel.
+    /// Positive = outward, negative = inward. Default: 0.0.
+    pub shift_b: f32,
+}
+
+impl Default for ChromaticAberration {
+    fn default() -> Self {
+        Self {
+            shift_a: 0.0,
+            shift_b: 0.0,
+        }
+    }
+}
+
+impl ChromaticAberration {
+    fn is_identity(&self) -> bool {
+        self.shift_a.abs() < 1e-7 && self.shift_b.abs() < 1e-7
+    }
+}
+
+/// Bilinear interpolation sample from a plane at fractional coordinates.
+#[inline]
+fn sample_bilinear(plane: &[f32], w: usize, h: usize, x: f32, y: f32) -> f32 {
+    let x0 = (x.floor() as isize).clamp(0, w as isize - 1) as usize;
+    let y0 = (y.floor() as isize).clamp(0, h as isize - 1) as usize;
+    let x1 = (x0 + 1).min(w - 1);
+    let y1 = (y0 + 1).min(h - 1);
+    let fx = x - x0 as f32;
+    let fy = y - y0 as f32;
+
+    let p00 = plane[y0 * w + x0];
+    let p10 = plane[y0 * w + x1];
+    let p01 = plane[y1 * w + x0];
+    let p11 = plane[y1 * w + x1];
+
+    let top = p00 + fx * (p10 - p00);
+    let bot = p01 + fx * (p11 - p01);
+    top + fy * (bot - top)
+}
+
+/// Apply radial shift to a chroma plane.
+fn shift_plane_radial(src: &[f32], dst: &mut [f32], w: usize, h: usize, shift: f32) {
+    let cx = w as f32 * 0.5;
+    let cy = h as f32 * 0.5;
+    let diag = (cx * cx + cy * cy).sqrt();
+    if diag < 1.0 {
+        dst[..w * h].copy_from_slice(&src[..w * h]);
+        return;
+    }
+
+    for y in 0..h {
+        let dy = y as f32 + 0.5 - cy;
+        for x in 0..w {
+            let dx = x as f32 + 0.5 - cx;
+            let r = (dx * dx + dy * dy).sqrt();
+
+            // Radial scale: sample from a slightly different position
+            // shift > 0 means the channel was displaced outward, so we
+            // sample inward to correct
+            let scale = 1.0 - shift * (r / diag);
+            let sx = cx + dx * scale - 0.5;
+            let sy = cy + dy * scale - 0.5;
+
+            dst[y * w + x] = sample_bilinear(src, w, h, sx, sy);
+        }
+    }
+}
+
+impl Filter for ChromaticAberration {
+    fn channel_access(&self) -> ChannelAccess {
+        ChannelAccess::CHROMA_ONLY
+    }
+
+    fn is_neighborhood(&self) -> bool {
+        true
+    }
+
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
+        if self.is_identity() {
+            return;
+        }
+
+        let w = planes.width as usize;
+        let h = planes.height as usize;
+
+        if self.shift_a.abs() > 1e-7 {
+            let mut dst = ctx.take_f32(w * h);
+            shift_plane_radial(&planes.a, &mut dst, w, h, self.shift_a);
+            let old = core::mem::replace(&mut planes.a, dst);
+            ctx.return_f32(old);
+        }
+
+        if self.shift_b.abs() > 1e-7 {
+            let mut dst = ctx.take_f32(w * h);
+            shift_plane_radial(&planes.b, &mut dst, w, h, self.shift_b);
+            let old = core::mem::replace(&mut planes.b, dst);
+            ctx.return_f32(old);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_shift_is_identity() {
+        let mut planes = OklabPlanes::new(32, 32);
+        for v in &mut planes.a {
+            *v = 0.1;
+        }
+        let orig = planes.a.clone();
+        ChromaticAberration::default().apply(&mut planes, &mut FilterContext::new());
+        assert_eq!(planes.a, orig);
+    }
+
+    #[test]
+    fn does_not_modify_luminance() {
+        let mut planes = OklabPlanes::new(32, 32);
+        for v in &mut planes.l {
+            *v = 0.5;
+        }
+        let l_orig = planes.l.clone();
+        let mut ca = ChromaticAberration::default();
+        ca.shift_a = 0.01;
+        ca.shift_b = -0.005;
+        ca.apply(&mut planes, &mut FilterContext::new());
+        assert_eq!(planes.l, l_orig);
+    }
+
+    #[test]
+    fn shift_changes_edge_pixels() {
+        let mut planes = OklabPlanes::new(64, 64);
+        // Create a radial chroma pattern
+        for y in 0..64 {
+            for x in 0..64 {
+                let dx = x as f32 - 32.0;
+                let dy = y as f32 - 32.0;
+                let r = (dx * dx + dy * dy).sqrt() / 32.0;
+                planes.a[y * 64 + x] = r * 0.1;
+            }
+        }
+        let orig_corner = planes.a[0];
+
+        let mut ca = ChromaticAberration::default();
+        ca.shift_a = 0.02;
+        ca.apply(&mut planes, &mut FilterContext::new());
+
+        let new_corner = planes.a[0];
+        assert!(
+            (new_corner - orig_corner).abs() > 0.001,
+            "corner should change: {orig_corner} -> {new_corner}"
+        );
+    }
+
+    #[test]
+    fn center_minimally_affected() {
+        let mut planes = OklabPlanes::new(64, 64);
+        // Uniform chroma
+        for v in &mut planes.a {
+            *v = 0.1;
+        }
+        let center_orig = planes.a[32 * 64 + 32];
+
+        let mut ca = ChromaticAberration::default();
+        ca.shift_a = 0.01;
+        ca.apply(&mut planes, &mut FilterContext::new());
+
+        let center_new = planes.a[32 * 64 + 32];
+        assert!(
+            (center_new - center_orig).abs() < 0.005,
+            "center should barely change: {center_orig} -> {center_new}"
+        );
+    }
+}
