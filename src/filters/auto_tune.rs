@@ -437,15 +437,36 @@ pub fn rule_based_tune(features: &ImageFeatures) -> TunedParams {
     }
 
     // ── Clarity ─────────────────────────────────────────────────
-    // Small constant amount for texture enhancement.
-    params.clarity = 0.15;
+    // Adaptive: more clarity for flat/low-contrast images (landscapes,
+    // overcast), less for high-contrast (already punchy).
+    let contrast_ratio = features.std_l() / features.mean_l().max(0.01);
+    if contrast_ratio < 0.15 {
+        // Low contrast: more clarity helps
+        params.clarity = 0.2;
+    } else if contrast_ratio < 0.3 {
+        params.clarity = 0.12;
+    }
+    // High contrast: skip clarity (would add halos)
 
     // ── Adaptive sharpening ─────────────────────────────────────
-    params.sharpen = 0.3;
+    // Scale with dynamic range: low-DR images (foggy, overcast) need
+    // more sharpening, high-DR images are usually already crisp.
+    if features.dynamic_range < 0.5 {
+        params.sharpen = 0.35;
+    } else if features.dynamic_range < 0.8 {
+        params.sharpen = 0.2;
+    }
+    // Very high DR: skip sharpening
 
     // ── Gamut expand ────────────────────────────────────────────
-    // Subtle P3-like expansion.
-    params.gamut_expand = 0.3;
+    // Adaptive: expand more for low-chroma images. Already-vivid
+    // images don't benefit and can clip.
+    if chroma_energy < 0.06 {
+        params.gamut_expand = 0.35;
+    } else if chroma_energy < 0.12 {
+        params.gamut_expand = 0.2;
+    }
+    // High-chroma: skip (would over-saturate)
 
     params
 }
