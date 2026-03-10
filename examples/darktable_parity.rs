@@ -1,10 +1,11 @@
-//! Compare zenfilters auto-tune output against darktable for DNG and JPEG sources.
+//! Measure darktable parity: compare zenfilters pipeline output against
+//! darktable's default display-referred processing.
 //!
-//! For each test image:
-//! 1. DNG → darktable (linear output, no edits) → reference
-//! 2. DNG → darktable → sRGB JPEG (darktable default processing)
-//! 3. JPEG original → zenfilters auto-tune pipeline → our output
-//! 4. Compare our output vs expert_c using zensim
+//! For each DNG test image, produces four comparisons:
+//! - **Parity**: our pipeline (from linear DNG) vs darktable display output
+//! - **Ceiling**: darktable display vs expert edit (best case)
+//! - **Quality**: our pipeline (from JPEG) vs expert edit
+//! - **Baseline**: untouched original vs expert (worst case)
 //!
 //! Usage: cargo run --release --features experimental --example darktable_parity
 //!
@@ -12,6 +13,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use image::imageops::FilterType;
 use image::RgbImage;
@@ -45,7 +47,7 @@ fn zensim_score(a: &[u8], b: &[u8], w: u32, h: u32, zs: &Zensim) -> f64 {
     let expected = w as usize * h as usize * 3;
     if a.len() != expected || b.len() != expected {
         eprintln!(
-            "    zensim: buffer size mismatch: a={} b={} expected={} ({}x{})",
+            "    zensim: buffer mismatch: a={} b={} expected={} ({}x{})",
             a.len(),
             b.len(),
             expected,
@@ -145,7 +147,7 @@ fn build_pipeline(params: &TunedParams) -> Pipeline {
 }
 
 /// Apply filter pipeline to sRGB u8 input, return sRGB u8 output.
-fn apply_pipeline_u8(
+fn apply_pipeline_srgb(
     src: &[u8],
     w: u32,
     h: u32,
@@ -163,23 +165,185 @@ fn apply_pipeline_u8(
     output
 }
 
+/// Build a pipeline for linear (scene-referred) input.
+/// Prepends a base tone mapping step (Sigmoid) to convert scene→display
+/// before applying the artistic adjustments.
+fn build_pipeline_linear(params: &TunedParams) -> Pipeline {
+    let mut pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
+
+    // Base tone mapping: approximate darktable's base curve.
+    // Linear sensor data needs an S-curve to look like a camera JPEG.
+    // Contrast ~1.6 provides a moderate base curve with shadow lift.
+    let mut base_sig = Sigmoid::default();
+    base_sig.contrast = 1.6;
+    base_sig.skew = 0.55; // slight shadow lift
+    pipeline.push(Box::new(base_sig));
+
+    // Now apply artistic adjustments (same as JPEG path)
+    let mut fused = FusedAdjust::new();
+    fused.exposure = params.exposure;
+    fused.contrast = params.contrast;
+    fused.highlights = params.highlights;
+    fused.shadows = params.shadows;
+    fused.saturation = params.saturation;
+    fused.vibrance = params.vibrance;
+    fused.temperature = params.temperature;
+    fused.tint = params.tint;
+    fused.black_point = params.black_point;
+    fused.white_point = params.white_point;
+    pipeline.push(Box::new(fused));
+
+    // Additional artistic sigmoid on top of base (only if cluster requests it)
+    if (params.sigmoid_contrast - 1.0).abs() > 0.01 || (params.sigmoid_skew - 0.5).abs() > 0.01 {
+        let mut sig = Sigmoid::default();
+        sig.contrast = params.sigmoid_contrast;
+        sig.skew = params.sigmoid_skew;
+        pipeline.push(Box::new(sig));
+    }
+    if params.highlight_recovery > 0.01 {
+        let mut hr = HighlightRecovery::default();
+        hr.strength = params.highlight_recovery;
+        pipeline.push(Box::new(hr));
+    }
+    if params.shadow_lift > 0.01 {
+        let mut sl = ShadowLift::default();
+        sl.strength = params.shadow_lift;
+        pipeline.push(Box::new(sl));
+    }
+    if params.local_tonemap > 0.01 {
+        let mut ltm = LocalToneMap::default();
+        ltm.compression = params.local_tonemap;
+        pipeline.push(Box::new(ltm));
+    }
+    if params.clarity > 0.01 {
+        let mut c = Clarity::default();
+        c.amount = params.clarity;
+        pipeline.push(Box::new(c));
+    }
+    if params.sharpen > 0.01 {
+        let mut s = AdaptiveSharpen::default();
+        s.amount = params.sharpen;
+        pipeline.push(Box::new(s));
+    }
+    if params.gamut_expand > 0.01 {
+        let mut ge = GamutExpand::default();
+        ge.strength = params.gamut_expand;
+        pipeline.push(Box::new(ge));
+    }
+    pipeline
+}
+
+/// Apply filter pipeline to linear f32 RGB input, return sRGB u8 output.
+/// Includes base tone mapping for scene-to-display conversion.
+fn apply_pipeline_linear(
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+    params: &TunedParams,
+    m1: &GamutMatrix,
+    m1_inv: &GamutMatrix,
+    ctx: &mut FilterContext,
+) -> Vec<u8> {
+    let mut planes = OklabPlanes::new(w, h);
+    scatter_to_oklab(linear_f32, &mut planes, 3, m1, 1.0);
+    let pipeline = build_pipeline_linear(params);
+    pipeline.apply_planar(&mut planes, ctx);
+    let mut output = vec![0u8; (w as usize) * (h as usize) * 3];
+    gather_oklab_to_srgb_u8(&planes, &mut output, 3, m1_inv);
+    output
+}
+
+/// Get darktable's display-referred sRGB output for a DNG file.
+/// This uses darktable's default workflow (basecurve tone mapping).
+fn darktable_display_output(dng_path: &Path) -> Option<(Vec<u8>, u32, u32)> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_dir = PathBuf::from(format!("/tmp/dt_parity_{}_{}", std::process::id(), id));
+    fs::create_dir_all(&tmp_dir).ok()?;
+    let out_path = tmp_dir.join("output.tif");
+
+    let status = Command::new("darktable-cli")
+        .arg(dng_path)
+        .arg(&out_path)
+        .arg("--icc-type")
+        .arg("SRGB")
+        .arg("--apply-custom-presets")
+        .arg("false")
+        .arg("--core")
+        .arg("--library")
+        .arg(":memory:")
+        .arg("--configdir")
+        .arg(tmp_dir.join("dtconf"))
+        .stderr(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .status()
+        .ok()?;
+
+    if !status.success() {
+        let _ = fs::remove_dir_all(&tmp_dir);
+        return None;
+    }
+
+    let img = image::open(&out_path).ok()?;
+    let _ = fs::remove_dir_all(&tmp_dir);
+    let rgb = img.to_rgb8();
+    let w = rgb.width();
+    let h = rgb.height();
+    Some((rgb.into_raw(), w, h))
+}
+
+/// Resize and crop two images to common dimensions <= MAX_DIM.
+fn resize_pair(
+    a: &[u8],
+    aw: u32,
+    ah: u32,
+    b: &[u8],
+    bw: u32,
+    bh: u32,
+) -> (Vec<u8>, Vec<u8>, u32, u32) {
+    let img_a = image::DynamicImage::ImageRgb8(RgbImage::from_raw(aw, ah, a.to_vec()).unwrap());
+    let img_b = image::DynamicImage::ImageRgb8(RgbImage::from_raw(bw, bh, b.to_vec()).unwrap());
+    let ra = img_a.resize(MAX_DIM, MAX_DIM, FilterType::Triangle);
+    let rb = img_b.resize(MAX_DIM, MAX_DIM, FilterType::Triangle);
+    let w = ra.width().min(rb.width());
+    let h = ra.height().min(rb.height());
+    let ca = ra.crop_imm(0, 0, w, h).to_rgb8().into_raw();
+    let cb = rb.crop_imm(0, 0, w, h).to_rgb8().into_raw();
+    (ca, cb, w, h)
+}
+
+
+fn save_rgb(data: &[u8], w: u32, h: u32, path: &str) {
+    if let Some(img) = RgbImage::from_raw(w, h, data.to_vec()) {
+        let _ = img.save(path);
+    }
+}
+
+struct ImageResult {
+    name: String,
+    parity: f64,       // our DNG pipeline vs darktable display
+    ceiling: f64,      // darktable display vs expert
+    quality: f64,      // our JPEG pipeline vs expert
+    baseline: f64,     // untouched original vs expert
+}
+
 fn main() {
     fs::create_dir_all(OUTPUT_DIR).unwrap();
 
-    // Check darktable availability
     if !darktable::is_available() {
         eprintln!("ERROR: darktable-cli not found in PATH");
         std::process::exit(1);
     }
     println!("darktable: {}", darktable::version().unwrap_or_default());
 
-    // Load cluster model data
+    // Load cluster model
     let centroids_flat = load_f32s(&PathBuf::from(TRAINING_DIR).join("centroids.bin"));
     let params_flat = load_f32s(&PathBuf::from(TRAINING_DIR).join("cluster_params.bin"));
     let n_clusters = centroids_flat.len() / N_FEAT;
-    println!("Loaded {n_clusters} cluster centroids + params");
+    println!("Loaded {n_clusters} clusters");
 
-    // Discover test images (need DNG + original JPEG + expert JPEG)
+    // Find images with DNG + JPEG + expert
     let mut triples: Vec<(PathBuf, PathBuf, PathBuf)> = Vec::new();
     let mut entries: Vec<_> = fs::read_dir(ORIGINAL_DIR)
         .unwrap()
@@ -208,7 +372,6 @@ fn main() {
     }
     println!("Found {} images with DNG + JPEG + Expert", triples.len());
 
-    // Sample evenly
     let step = triples.len() / NUM_SAMPLES;
     let samples: Vec<_> = (0..NUM_SAMPLES).map(|i| &triples[i * step]).collect();
 
@@ -218,13 +381,25 @@ fn main() {
     let mut ctx = FilterContext::new();
     let dt_config = DtConfig::new();
 
-    let mut results: Vec<(String, f64, f64, f64, f64)> = Vec::new();
+    let mut results: Vec<ImageResult> = Vec::new();
 
     for (si, (orig_path, dng_path, expert_path)) in samples.iter().enumerate() {
         let stem = orig_path.file_stem().unwrap().to_str().unwrap();
         println!("\n[{}/{}] {}", si + 1, NUM_SAMPLES, stem);
 
-        // --- Path A: JPEG → zenfilters auto-tune → compare vs expert ---
+        // Load expert
+        let expert_img = match image::open(expert_path) {
+            Ok(i) => i,
+            Err(_) => {
+                println!("  SKIP: can't load expert");
+                continue;
+            }
+        };
+        let expert_rgb = expert_img.to_rgb8();
+        let (ew, eh) = (expert_rgb.width(), expert_rgb.height());
+        let expert_raw = expert_rgb.into_raw();
+
+        // Load original JPEG
         let orig_img = match image::open(orig_path) {
             Ok(i) => i,
             Err(_) => {
@@ -232,22 +407,19 @@ fn main() {
                 continue;
             }
         };
-        let orig_resized = orig_img.resize(MAX_DIM, MAX_DIM, FilterType::Triangle);
-        let expert_img2 = image::open(expert_path).unwrap();
-        let expert_resized = expert_img2.resize(MAX_DIM, MAX_DIM, FilterType::Triangle);
+        let orig_rgb = orig_img.to_rgb8();
+        let (ow, oh) = (orig_rgb.width(), orig_rgb.height());
+        let orig_raw = orig_rgb.into_raw();
 
-        // Crop to common dimensions
-        let w = orig_resized.width().min(expert_resized.width());
-        let h = orig_resized.height().min(expert_resized.height());
-        let crop_orig = orig_resized.crop_imm(0, 0, w, h).to_rgb8().into_raw();
-        let crop_expert = expert_resized.crop_imm(0, 0, w, h).to_rgb8().into_raw();
+        // --- Baseline: original vs expert (no processing) ---
+        let (orig_r, expert_r, w, h) = resize_pair(&orig_raw, ow, oh, &expert_raw, ew, eh);
+        let baseline = zensim_score(&orig_r, &expert_r, w, h, &zs);
 
-        // Extract features from original
+        // --- JPEG path: extract features, find cluster, apply pipeline ---
         let mut feat_planes = OklabPlanes::new(w, h);
-        scatter_srgb_u8_to_oklab(&crop_orig, &mut feat_planes, 3, &m1);
+        scatter_srgb_u8_to_oklab(&orig_r, &mut feat_planes, 3, &m1);
         let features = ImageFeatures::extract(&feat_planes);
 
-        // Find nearest cluster
         let input = features.to_tensor();
         let mut best_cluster = 0;
         let mut best_dist = f32::MAX;
@@ -264,166 +436,158 @@ fn main() {
             }
         }
 
-        // Apply cluster params
         let cluster_p = &params_flat[best_cluster * N_PARAMS..(best_cluster + 1) * N_PARAMS];
-        let cluster_params = array_to_params(cluster_p);
-        let jpeg_cluster =
-            apply_pipeline_u8(&crop_orig, w, h, &cluster_params, &m1, &m1_inv, &mut ctx);
+        let params = array_to_params(cluster_p);
+        let jpeg_out = apply_pipeline_srgb(&orig_r, w, h, &params, &m1, &m1_inv, &mut ctx);
+        let quality = zensim_score(&jpeg_out, &expert_r, w, h, &zs);
 
-        // Rule-based for comparison
-        let rule_params = rule_based_tune(&features);
-        let jpeg_rule = apply_pipeline_u8(&crop_orig, w, h, &rule_params, &m1, &m1_inv, &mut ctx);
-
-        let score_jpeg_cluster = zensim_score(&jpeg_cluster, &crop_expert, w, h, &zs);
-        let score_jpeg_rule = zensim_score(&jpeg_rule, &crop_expert, w, h, &zs);
-
-        // --- Path B: DNG → darktable (linear) → zenfilters → compare vs expert ---
-        let (score_dng_cluster, score_dng_rule) = match process_dng(
+        // --- DNG path: darktable linear → our pipeline → compare vs darktable display ---
+        let (parity, ceiling) = match process_dng_parity(
             dng_path,
-            expert_path,
-            &cluster_params,
-            &rule_params,
+            &expert_raw,
+            ew,
+            eh,
+            &params,
             &dt_config,
             &m1,
             &m1_inv,
             &mut ctx,
             &zs,
+            &format!("{OUTPUT_DIR}/{stem}"),
         ) {
-            Some((sc, sr)) => (sc, sr),
+            Some(r) => r,
             None => {
-                println!("  DNG processing failed, using JPEG scores only");
-                (score_jpeg_cluster, score_jpeg_rule)
+                println!("  DNG failed");
+                (-1.0, -1.0)
             }
         };
 
         println!(
-            "  Cluster {best_cluster} | JPEG: rule={score_jpeg_rule:.1} cluster={score_jpeg_cluster:.1} | DNG: rule={score_dng_rule:.1} cluster={score_dng_cluster:.1}"
+            "  C{best_cluster:02} | parity={parity:.1} ceiling={ceiling:.1} quality={quality:.1} baseline={baseline:.1}"
         );
 
         // Save comparison images
         let prefix = format!("{OUTPUT_DIR}/{stem}");
-        save_rgb(&crop_orig, w, h, &format!("{prefix}_1_orig.jpg"));
-        save_rgb(&jpeg_rule, w, h, &format!("{prefix}_2_rule.jpg"));
-        save_rgb(&jpeg_cluster, w, h, &format!("{prefix}_3_cluster.jpg"));
-        save_rgb(&crop_expert, w, h, &format!("{prefix}_4_expert.jpg"));
+        save_rgb(&orig_r, w, h, &format!("{prefix}_1_orig.jpg"));
+        save_rgb(&jpeg_out, w, h, &format!("{prefix}_2_ours.jpg"));
+        save_rgb(&expert_r, w, h, &format!("{prefix}_3_expert.jpg"));
 
-        results.push((
-            stem.to_string(),
-            score_jpeg_rule,
-            score_jpeg_cluster,
-            score_dng_rule,
-            score_dng_cluster,
-        ));
+        results.push(ImageResult {
+            name: stem.to_string(),
+            parity,
+            ceiling,
+            quality,
+            baseline,
+        });
     }
 
     // Summary
-    println!("\n\n=== RESULTS ===\n");
+    println!("\n\n=== RESULTS ===");
+    println!("parity  = our DNG pipeline vs darktable display (higher = closer to dt)");
+    println!("ceiling = darktable display vs expert (upper bound for parity approach)");
+    println!("quality = our JPEG pipeline vs expert (our editing quality)");
+    println!("baseline = untouched original vs expert (no-op reference)\n");
+
     println!(
-        "{:<40} {:>10} {:>10} {:>10} {:>10}",
-        "Image", "JPEG Rule", "JPEG Clust", "DNG Rule", "DNG Clust"
+        "{:<40} {:>8} {:>8} {:>8} {:>8}",
+        "Image", "Parity", "Ceiling", "Quality", "Baseline"
     );
-    println!("{}", "-".repeat(90));
+    println!("{}", "-".repeat(80));
 
-    let mut sum_jr = 0.0;
-    let mut sum_jc = 0.0;
-    let mut sum_dr = 0.0;
-    let mut sum_dc = 0.0;
+    let (mut sp, mut sc, mut sq, mut sb) = (0.0, 0.0, 0.0, 0.0);
+    let mut np = 0;
 
-    for (name, jr, jc, dr, dc) in &results {
+    for r in &results {
+        let parity_str = if r.parity < 0.0 {
+            "FAIL".to_string()
+        } else {
+            format!("{:.1}", r.parity)
+        };
+        let ceiling_str = if r.ceiling < 0.0 {
+            "FAIL".to_string()
+        } else {
+            format!("{:.1}", r.ceiling)
+        };
         println!(
-            "{:<40} {:>10.1} {:>10.1} {:>10.1} {:>10.1}",
-            name, jr, jc, dr, dc
+            "{:<40} {:>8} {:>8} {:>8.1} {:>8.1}",
+            r.name, parity_str, ceiling_str, r.quality, r.baseline
         );
-        sum_jr += jr;
-        sum_jc += jc;
-        sum_dr += dr;
-        sum_dc += dc;
+        if r.parity >= 0.0 {
+            sp += r.parity;
+            sc += r.ceiling;
+            np += 1;
+        }
+        sq += r.quality;
+        sb += r.baseline;
     }
 
     let n = results.len() as f64;
-    println!("{}", "-".repeat(90));
+    println!("{}", "-".repeat(80));
     println!(
-        "{:<40} {:>10.1} {:>10.1} {:>10.1} {:>10.1}",
+        "{:<40} {:>8.1} {:>8.1} {:>8.1} {:>8.1}",
         "MEAN",
-        sum_jr / n,
-        sum_jc / n,
-        sum_dr / n,
-        sum_dc / n
+        if np > 0 { sp / np as f64 } else { 0.0 },
+        if np > 0 { sc / np as f64 } else { 0.0 },
+        sq / n,
+        sb / n
     );
 
-    // Write TSV results
+    // Write TSV
     let tsv_path = format!("{OUTPUT_DIR}/parity_results.tsv");
     let mut tsv = String::new();
-    tsv.push_str("image\tjpeg_rule\tjpeg_cluster\tdng_rule\tdng_cluster\n");
-    for (name, jr, jc, dr, dc) in &results {
-        tsv.push_str(&format!("{name}\t{jr:.2}\t{jc:.2}\t{dr:.2}\t{dc:.2}\n"));
+    tsv.push_str("image\tparity\tceiling\tquality\tbaseline\n");
+    for r in &results {
+        tsv.push_str(&format!(
+            "{}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\n",
+            r.name, r.parity, r.ceiling, r.quality, r.baseline
+        ));
     }
     fs::write(&tsv_path, &tsv).unwrap();
     println!("\nResults saved to {tsv_path}");
 }
 
-/// Process a DNG through darktable (linear output), apply zenfilters, compare vs expert.
+/// Process DNG: get darktable display output + our pipeline output, compare.
+/// Returns (parity_score, ceiling_score).
 #[allow(clippy::too_many_arguments)]
-fn process_dng(
+fn process_dng_parity(
     dng_path: &Path,
-    expert_path: &Path,
-    cluster_params: &TunedParams,
-    rule_params: &TunedParams,
+    expert_raw: &[u8],
+    ew: u32,
+    eh: u32,
+    params: &TunedParams,
     dt_config: &DtConfig,
     m1: &GamutMatrix,
     m1_inv: &GamutMatrix,
     ctx: &mut FilterContext,
     zs: &Zensim,
+    out_prefix: &str,
 ) -> Option<(f64, f64)> {
-    // Decode DNG through darktable to get linear f32
-    let output = match darktable::decode_file(dng_path, dt_config) {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("    DNG decode error: {e}");
-            return None;
-        }
-    };
+    // 1. Get darktable display-referred output (default tone mapping)
+    let (dt_display, dtw, dth) = darktable_display_output(dng_path)?;
+
+    // 2. Get darktable linear output for our pipeline
+    let output = darktable::decode_file(dng_path, dt_config).ok()?;
     let pixels = output.pixels;
     let dw = pixels.width();
     let dh = pixels.height();
-
-    // Get raw bytes and interpret as f32
     let raw_bytes = pixels.copy_to_contiguous_bytes();
     let linear_f32: &[f32] = bytemuck::cast_slice(&raw_bytes);
 
-    // Convert linear f32 to sRGB u8 for resize
-    let mut srgb_full = vec![0u8; dw as usize * dh as usize * 3];
-    {
-        let mut planes = OklabPlanes::new(dw, dh);
-        scatter_to_oklab(linear_f32, &mut planes, 3, m1, 1.0);
-        gather_oklab_to_srgb_u8(&planes, &mut srgb_full, 3, m1_inv);
-    }
+    // 3. Apply our pipeline directly on linear data (no sRGB u8 intermediate)
+    let our_srgb = apply_pipeline_linear(linear_f32, dw, dh, params, m1, m1_inv, ctx);
 
-    // Load and resize both DNG output and expert to same dimensions
-    let dng_img = RgbImage::from_raw(dw, dh, srgb_full)?;
-    let dng_resized =
-        image::DynamicImage::ImageRgb8(dng_img).resize(MAX_DIM, MAX_DIM, FilterType::Triangle);
-    let expert_img = image::open(expert_path).ok()?;
-    let expert_resized = expert_img.resize(MAX_DIM, MAX_DIM, FilterType::Triangle);
+    // 4. Resize all to common dimensions for comparison
+    // Our output vs darktable display → parity
+    let (our_r, dt_r, w, h) = resize_pair(&our_srgb, dw, dh, &dt_display, dtw, dth);
+    let parity = zensim_score(&our_r, &dt_r, w, h, zs);
 
-    // Crop to common dimensions
-    let w = dng_resized.width().min(expert_resized.width());
-    let h = dng_resized.height().min(expert_resized.height());
-    let dng_cropped = dng_resized.crop_imm(0, 0, w, h).to_rgb8().into_raw();
-    let expert_cropped = expert_resized.crop_imm(0, 0, w, h).to_rgb8().into_raw();
+    // Darktable display vs expert → ceiling
+    let (dt_r2, expert_r, w2, h2) = resize_pair(&dt_display, dtw, dth, expert_raw, ew, eh);
+    let ceiling = zensim_score(&dt_r2, &expert_r, w2, h2, zs);
 
-    // Apply cluster params to DNG-sourced pixels
-    let dng_cluster = apply_pipeline_u8(&dng_cropped, w, h, cluster_params, m1, m1_inv, ctx);
-    let dng_rule = apply_pipeline_u8(&dng_cropped, w, h, rule_params, m1, m1_inv, ctx);
+    // Save DNG-specific comparison images (reuse already-resized data)
+    save_rgb(&our_r, w, h, &format!("{out_prefix}_4_dng_ours.jpg"));
+    save_rgb(&dt_r, w, h, &format!("{out_prefix}_5_dng_dt.jpg"));
 
-    let score_cluster = zensim_score(&dng_cluster, &expert_cropped, w, h, zs);
-    let score_rule = zensim_score(&dng_rule, &expert_cropped, w, h, zs);
-
-    Some((score_cluster, score_rule))
-}
-
-fn save_rgb(data: &[u8], w: u32, h: u32, path: &str) {
-    if let Some(img) = RgbImage::from_raw(w, h, data.to_vec()) {
-        let _ = img.save(path);
-    }
+    Some((parity, ceiling))
 }
