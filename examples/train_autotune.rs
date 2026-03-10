@@ -104,49 +104,11 @@ fn clamp_params(a: &mut [f32; N_PARAMS]) {
 }
 
 fn params_to_array(p: &TunedParams) -> [f32; N_PARAMS] {
-    [
-        p.exposure,
-        p.contrast,
-        p.highlights,
-        p.shadows,
-        p.saturation,
-        p.vibrance,
-        p.temperature,
-        p.tint,
-        p.black_point,
-        p.white_point,
-        p.sigmoid_contrast,
-        p.sigmoid_skew,
-        p.clarity,
-        p.sharpen,
-        p.highlight_recovery,
-        p.shadow_lift,
-        p.local_tonemap,
-        p.gamut_expand,
-    ]
+    p.to_array()
 }
 
 fn array_to_params(a: &[f32; N_PARAMS]) -> TunedParams {
-    TunedParams {
-        exposure: a[0],
-        contrast: a[1],
-        highlights: a[2],
-        shadows: a[3],
-        saturation: a[4],
-        vibrance: a[5],
-        temperature: a[6],
-        tint: a[7],
-        black_point: a[8],
-        white_point: a[9],
-        sigmoid_contrast: a[10],
-        sigmoid_skew: a[11],
-        clarity: a[12],
-        sharpen: a[13],
-        highlight_recovery: a[14],
-        shadow_lift: a[15],
-        local_tonemap: a[16],
-        gamut_expand: a[17],
-    }
+    TunedParams::from_array(a)
 }
 
 fn squared_distance(a: &[f32], b: &[f32]) -> f32 {
@@ -599,36 +561,7 @@ fn phase_baseline(pairs: &[(PathBuf, PathBuf)], features: &[[f32; N_FEAT]]) -> V
     for (i, (orig_path, expert_path)) in pairs.iter().enumerate() {
         let score = match load_pair(orig_path, expert_path, MAX_DIM) {
             Some((orig_px, expert_px, w, h)) => {
-                // Reconstruct ImageFeatures from cached feature array
-                let feat_array = &features[i];
-                let img_features = ImageFeatures {
-                    l_histogram: {
-                        let mut h = [0.0f32; 64];
-                        h.copy_from_slice(&feat_array[..64]);
-                        h
-                    },
-                    a_histogram: {
-                        let mut h = [0.0f32; 32];
-                        h.copy_from_slice(&feat_array[64..96]);
-                        h
-                    },
-                    b_histogram: {
-                        let mut h = [0.0f32; 32];
-                        h.copy_from_slice(&feat_array[96..128]);
-                        h
-                    },
-                    l_percentiles: {
-                        let mut p = [0.0f32; 7];
-                        p.copy_from_slice(&feat_array[128..135]);
-                        p
-                    },
-                    channel_stats: {
-                        let mut s = [0.0f32; 6];
-                        s.copy_from_slice(&feat_array[135..141]);
-                        s
-                    },
-                    dynamic_range: feat_array[141],
-                };
+                let img_features = reconstruct_features(&features[i]);
                 let params = rule_based_tune(&img_features);
                 score_params(
                     &orig_px, &expert_px, w, h, &params, &m1, &m1_inv, &mut ctx, &zs,
@@ -859,34 +792,7 @@ fn phase_optimize(
 }
 
 fn reconstruct_features(feat_array: &[f32; N_FEAT]) -> ImageFeatures {
-    ImageFeatures {
-        l_histogram: {
-            let mut h = [0.0f32; 64];
-            h.copy_from_slice(&feat_array[..64]);
-            h
-        },
-        a_histogram: {
-            let mut h = [0.0f32; 32];
-            h.copy_from_slice(&feat_array[64..96]);
-            h
-        },
-        b_histogram: {
-            let mut h = [0.0f32; 32];
-            h.copy_from_slice(&feat_array[96..128]);
-            h
-        },
-        l_percentiles: {
-            let mut p = [0.0f32; 7];
-            p.copy_from_slice(&feat_array[128..135]);
-            p
-        },
-        channel_stats: {
-            let mut s = [0.0f32; 6];
-            s.copy_from_slice(&feat_array[135..141]);
-            s
-        },
-        dynamic_range: feat_array[141],
-    }
+    ImageFeatures::from_tensor(feat_array)
 }
 
 // ── Evaluation & export ──────────────────────────────────────────────

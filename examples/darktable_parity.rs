@@ -70,26 +70,8 @@ fn zensim_score(a: &[u8], b: &[u8], w: u32, h: u32, zs: &Zensim) -> f64 {
 }
 
 fn array_to_params(a: &[f32]) -> TunedParams {
-    TunedParams {
-        exposure: a[0],
-        contrast: a[1],
-        highlights: a[2],
-        shadows: a[3],
-        saturation: a[4],
-        vibrance: a[5],
-        temperature: a[6],
-        tint: a[7],
-        black_point: a[8],
-        white_point: a[9],
-        sigmoid_contrast: a[10],
-        sigmoid_skew: a[11],
-        clarity: a[12],
-        sharpen: a[13],
-        highlight_recovery: a[14],
-        shadow_lift: a[15],
-        local_tonemap: a[16],
-        gamut_expand: a[17],
-    }
+    let arr: &[f32; 18] = a.try_into().expect("expected 18-float param slice");
+    TunedParams::from_array(arr)
 }
 
 fn build_pipeline(params: &TunedParams) -> Pipeline {

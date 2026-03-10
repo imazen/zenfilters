@@ -181,6 +181,31 @@ impl ImageFeatures {
         v.push(self.dynamic_range);
         v
     }
+
+    /// Reconstruct `ImageFeatures` from a 142-float tensor (inverse of `to_tensor`).
+    ///
+    /// Panics if `tensor` is not exactly 142 elements.
+    pub fn from_tensor(tensor: &[f32]) -> Self {
+        assert_eq!(tensor.len(), 142, "expected 142-float tensor");
+        let mut l_histogram = [0.0f32; 64];
+        l_histogram.copy_from_slice(&tensor[..64]);
+        let mut a_histogram = [0.0f32; 32];
+        a_histogram.copy_from_slice(&tensor[64..96]);
+        let mut b_histogram = [0.0f32; 32];
+        b_histogram.copy_from_slice(&tensor[96..128]);
+        let mut l_percentiles = [0.0f32; 7];
+        l_percentiles.copy_from_slice(&tensor[128..135]);
+        let mut channel_stats = [0.0f32; 6];
+        channel_stats.copy_from_slice(&tensor[135..141]);
+        Self {
+            l_histogram,
+            a_histogram,
+            b_histogram,
+            l_percentiles,
+            channel_stats,
+            dynamic_range: tensor[141],
+        }
+    }
 }
 
 /// Predicted filter parameters from a model or rule-based system.
@@ -315,6 +340,59 @@ impl TunedParams {
             let mut ge = GamutExpand::default();
             ge.strength = self.gamut_expand;
             pipeline.push(Box::new(ge));
+        }
+    }
+
+    /// Pack parameters into a fixed-size array.
+    ///
+    /// Order: exposure, contrast, highlights, shadows, saturation, vibrance,
+    /// temperature, tint, black_point, white_point, sigmoid_contrast,
+    /// sigmoid_skew, clarity, sharpen, highlight_recovery, shadow_lift,
+    /// local_tonemap, gamut_expand.
+    pub fn to_array(&self) -> [f32; LINEAR_MODEL_OUTPUTS] {
+        [
+            self.exposure,
+            self.contrast,
+            self.highlights,
+            self.shadows,
+            self.saturation,
+            self.vibrance,
+            self.temperature,
+            self.tint,
+            self.black_point,
+            self.white_point,
+            self.sigmoid_contrast,
+            self.sigmoid_skew,
+            self.clarity,
+            self.sharpen,
+            self.highlight_recovery,
+            self.shadow_lift,
+            self.local_tonemap,
+            self.gamut_expand,
+        ]
+    }
+
+    /// Reconstruct from a fixed-size array (inverse of `to_array`).
+    pub fn from_array(a: &[f32; LINEAR_MODEL_OUTPUTS]) -> Self {
+        Self {
+            exposure: a[0],
+            contrast: a[1],
+            highlights: a[2],
+            shadows: a[3],
+            saturation: a[4],
+            vibrance: a[5],
+            temperature: a[6],
+            tint: a[7],
+            black_point: a[8],
+            white_point: a[9],
+            sigmoid_contrast: a[10],
+            sigmoid_skew: a[11],
+            clarity: a[12],
+            sharpen: a[13],
+            highlight_recovery: a[14],
+            shadow_lift: a[15],
+            local_tonemap: a[16],
+            gamut_expand: a[17],
         }
     }
 }
@@ -782,5 +860,57 @@ mod tests {
         let params = model.predict(&features);
         assert!((params.saturation - 1.0).abs() < 1e-6);
         assert!((params.sigmoid_contrast - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn tensor_roundtrip() {
+        let mut planes = OklabPlanes::new(64, 64);
+        for (i, v) in planes.l.iter_mut().enumerate() {
+            *v = (i as f32 / (64.0 * 64.0)).sqrt();
+        }
+        for (i, v) in planes.a.iter_mut().enumerate() {
+            *v = (i as f32 - 2048.0) / 20000.0;
+        }
+        for (i, v) in planes.b.iter_mut().enumerate() {
+            *v = (i as f32 - 1500.0) / 20000.0;
+        }
+        let features = ImageFeatures::extract(&planes);
+        let tensor = features.to_tensor();
+        let restored = ImageFeatures::from_tensor(&tensor);
+        assert_eq!(features.l_histogram, restored.l_histogram);
+        assert_eq!(features.a_histogram, restored.a_histogram);
+        assert_eq!(features.l_percentiles, restored.l_percentiles);
+        assert_eq!(features.channel_stats, restored.channel_stats);
+        assert!((features.dynamic_range - restored.dynamic_range).abs() < 1e-6);
+    }
+
+    #[test]
+    fn params_array_roundtrip() {
+        let params = TunedParams {
+            exposure: 0.5,
+            contrast: -0.2,
+            highlights: 0.3,
+            shadows: -0.4,
+            saturation: 1.2,
+            vibrance: 0.1,
+            temperature: -0.05,
+            tint: 0.03,
+            black_point: 0.01,
+            white_point: 0.95,
+            sigmoid_contrast: 1.5,
+            sigmoid_skew: 0.6,
+            clarity: 0.15,
+            sharpen: 0.3,
+            highlight_recovery: 0.2,
+            shadow_lift: 0.1,
+            local_tonemap: 0.05,
+            gamut_expand: 0.25,
+        };
+        let arr = params.to_array();
+        let restored = TunedParams::from_array(&arr);
+        assert!((params.exposure - restored.exposure).abs() < 1e-6);
+        assert!((params.saturation - restored.saturation).abs() < 1e-6);
+        assert!((params.sigmoid_skew - restored.sigmoid_skew).abs() < 1e-6);
+        assert!((params.gamut_expand - restored.gamut_expand).abs() < 1e-6);
     }
 }
