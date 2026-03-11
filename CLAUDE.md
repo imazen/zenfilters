@@ -6,18 +6,18 @@ Oklab perceptual color space image filter library with SIMD dispatch via archmag
 
 ### 1. Feature Parity with Lightroom
 
-Before training a neural model, zenfilters needs all the adjustment capabilities Lightroom offers. Current coverage: 39 filters across exposure, tone, color, detail, and effects.
+Before training a neural model, zenfilters needs all the adjustment capabilities Lightroom offers. Current coverage: 45 filters across exposure, tone, color, detail, and effects.
 
-**Missing filters (high priority for model expressiveness):**
-- **Whites/Blacks sliders** — separate from white_point/black_point; LR has both pairs
-- **Parametric Tone Curve** — region-based with movable dividers (we have point curve only)
+**DONE (high priority, completed 2026-03-10):**
+- ~~Whites/Blacks sliders~~ → `WhitesBlacks` (smoothstep-weighted extreme luminance control)
+- ~~Parametric Tone Curve~~ → `ParametricCurve` (4 zones, 3 movable dividers, LUT-based)
+- ~~Sharpening Detail + Masking~~ → `AdaptiveSharpen` now has `detail` + `masking` fields (4 controls)
+- ~~Noise Reduction Detail + Contrast~~ → `NoiseReduction` now has `luminance_contrast` + `chroma_detail` (5 controls)
+- ~~B&W Channel Mixer~~ → `BwMixer` (8 per-color luminance weights, chroma-aware)
+- ~~Camera Calibration~~ → `CameraCalibration` (R/G/B primary hue+sat shifts, shadow tint)
+
+**Still missing (lower priority or needs external data):**
 - **Tone Curve Saturation refinement** — per-region saturation on the curve
-- **Sharpening Detail + Masking** — LR has 4 sharpening controls (amount, radius, detail, masking); we have amount only
-- **Noise Reduction Detail + Contrast** — LR has 5 NR controls (luminance amount/detail/contrast, color amount/detail); we have luminance + chroma amount only
-- **B&W Channel Mixer** — per-color grayscale contribution (red, orange, yellow, green, aqua, blue, purple, magenta)
-- **Camera Calibration** — RGB primary hue/saturation shifts
-
-**Missing filters (lower priority, harder to implement):**
 - **Lens Blur** — AI depth-based bokeh with bokeh shape styles
 - **Transform/Upright** — perspective correction (auto, guided, level, vertical, full)
 - **Lens Distortion** — barrel/pincushion correction with profiles
@@ -34,13 +34,14 @@ Replace or supplement the 64-cluster K-means model with a proper neural network 
 
 ### 3. Better Image Comparison Metric
 
-Build a spatially-aware comparison system that goes beyond global zensim scores.
+**DONE (core infrastructure, 2026-03-10):**
+- `regional.rs` module: `RegionalFeatures::extract()` + `RegionalComparison::compare()`
+- 5 luminance zones × 32-bin L histograms + chroma mean
+- 4 chroma zones × 32-bin L histograms
+- 6 hue sectors × 32-bin a + b histograms
+- Weighted aggregate score (midtones > extremes, skin > sky, saturated > neutral)
 
-- **Regional masks**: Divide image into semantically meaningful regions (sky, skin, shadows, highlights, midtones) using masks similar to those in HSL adjust and tone curve
-- **Per-region histograms**: Compare L/a/b distributions within each region, not just globally
-- **Weighted scoring**: Weight regions by perceptual importance (skin > sky > deep shadows)
-- **Use existing mask infrastructure**: Leverage the luminance/chroma masking already in filters like clarity, local_tone_map
-- **Goal**: More diagnostic comparison — know WHERE edits diverge, not just that they do
+**TODO:** Integrate into parity/comparison examples, validate against zensim on real data
 
 ## Known Issues
 
