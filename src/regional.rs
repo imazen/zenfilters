@@ -94,6 +94,10 @@ pub struct RegionalFeatures {
 
     /// Per-chroma-zone L histograms.
     pub chroma_l_hist: [[f32; HIST_BINS]; CHROMA_ZONES],
+    /// Per-chroma-zone chroma histograms (captures chroma distribution within band).
+    pub chroma_c_hist: [[f32; HIST_BINS]; CHROMA_ZONES],
+    /// Per-chroma-zone mean chroma value.
+    pub chroma_mean: [f32; CHROMA_ZONES],
     /// Per-chroma-zone pixel count (fraction of total).
     pub chroma_fraction: [f32; CHROMA_ZONES],
 
@@ -125,6 +129,8 @@ impl Default for RegionalFeatures {
             lum_chroma_mean: [0.0; LUM_ZONES],
             lum_fraction: [0.0; LUM_ZONES],
             chroma_l_hist: [[0.0; HIST_BINS]; CHROMA_ZONES],
+            chroma_c_hist: [[0.0; HIST_BINS]; CHROMA_ZONES],
+            chroma_mean: [0.0; CHROMA_ZONES],
             chroma_fraction: [0.0; CHROMA_ZONES],
             hue_a_hist: [[0.0; HIST_BINS]; HUE_SECTORS],
             hue_b_hist: [[0.0; HIST_BINS]; HUE_SECTORS],
@@ -200,6 +206,7 @@ impl RegionalFeatures {
         let mut lum_counts = [0u32; LUM_ZONES];
         let mut lum_chroma_sum = [0.0f64; LUM_ZONES];
         let mut chroma_counts = [0u32; CHROMA_ZONES];
+        let mut chroma_sum = [0.0f64; CHROMA_ZONES];
         let mut hue_counts = [0u32; HUE_SECTORS];
 
         for i in 0..n {
@@ -218,8 +225,11 @@ impl RegionalFeatures {
             // Chroma zone
             let cz = chroma_zone(chroma);
             chroma_counts[cz] += 1;
+            chroma_sum[cz] += chroma as f64;
             let bin = hist_bin(l, 0.0, 1.0);
             feat.chroma_l_hist[cz][bin] += 1.0;
+            let c_bin = hist_bin(chroma, 0.0, 0.33);
+            feat.chroma_c_hist[cz][c_bin] += 1.0;
 
             // Hue sector (only for saturated pixels)
             if chroma >= CHROMA_BOUNDS[0] {
@@ -250,17 +260,27 @@ impl RegionalFeatures {
             }
         }
 
-        for (&c, (frac, hist)) in chroma_counts.iter().zip(
-            feat.chroma_fraction
-                .iter_mut()
-                .zip(feat.chroma_l_hist.iter_mut()),
-        ) {
+        for (z, (&c, (frac, (l_hist, c_hist)))) in chroma_counts
+            .iter()
+            .zip(
+                feat.chroma_fraction.iter_mut().zip(
+                    feat.chroma_l_hist
+                        .iter_mut()
+                        .zip(feat.chroma_c_hist.iter_mut()),
+                ),
+            )
+            .enumerate()
+        {
             *frac = c as f32 * inv_n;
             if c > 0 {
                 let inv_c = 1.0 / c as f32;
-                for bin in hist.iter_mut() {
+                for bin in l_hist.iter_mut() {
                     *bin *= inv_c;
                 }
+                for bin in c_hist.iter_mut() {
+                    *bin *= inv_c;
+                }
+                feat.chroma_mean[z] = (chroma_sum[z] / c as f64) as f32;
             }
         }
 
@@ -464,8 +484,18 @@ pub struct ZoneLabels {
 }
 
 /// Compute histogram intersection distance between two normalized histograms.
-/// Returns 0.0 for identical, 1.0 for completely disjoint.
+/// Returns 0.0 for identical (including both empty), 1.0 for completely disjoint.
 fn hist_distance(a: &[f32; HIST_BINS], b: &[f32; HIST_BINS]) -> f32 {
+    let sum_a: f32 = a.iter().sum();
+    let sum_b: f32 = b.iter().sum();
+    // Two empty histograms are identical, not maximally different
+    if sum_a < 1e-6 && sum_b < 1e-6 {
+        return 0.0;
+    }
+    // One empty, one non-empty: completely disjoint
+    if sum_a < 1e-6 || sum_b < 1e-6 {
+        return 1.0;
+    }
     let intersection: f32 = a.iter().zip(b.iter()).map(|(&x, &y)| x.min(y)).sum();
     1.0 - intersection.min(1.0)
 }
@@ -500,10 +530,12 @@ impl RegionalComparison {
             .zip(result.lum_zone_dist.iter_mut())
             .enumerate()
         {
-            let d = hist_distance(&a.lum_l_hist[z], &b.lum_l_hist[z]);
-            // Also factor in chroma mean difference
-            let chroma_diff = (a.lum_chroma_mean[z] - b.lum_chroma_mean[z]).abs();
-            *dist = d + chroma_diff * 2.0;
+            let l_dist = hist_distance(&a.lum_l_hist[z], &b.lum_l_hist[z]);
+            // Chroma mean difference, normalized to [0,1] (max Oklab chroma ~0.33)
+            let chroma_diff = ((a.lum_chroma_mean[z] - b.lum_chroma_mean[z]).abs() / 0.33)
+                .min(1.0);
+            // Blend: 70% L histogram, 30% chroma mean difference
+            *dist = l_dist * 0.7 + chroma_diff * 0.3;
             // Weight by presence: if a zone has few pixels, reduce its influence
             let presence = (a.lum_fraction[z] + b.lum_fraction[z]) * 0.5;
             let w = lw * presence;
@@ -519,7 +551,11 @@ impl RegionalComparison {
             .zip(result.chroma_zone_dist.iter_mut())
             .enumerate()
         {
-            *dist = hist_distance(&a.chroma_l_hist[z], &b.chroma_l_hist[z]);
+            let l_dist = hist_distance(&a.chroma_l_hist[z], &b.chroma_l_hist[z]);
+            let c_dist = hist_distance(&a.chroma_c_hist[z], &b.chroma_c_hist[z]);
+            let mean_diff = ((a.chroma_mean[z] - b.chroma_mean[z]).abs() / 0.33).min(1.0);
+            // Blend: 40% L histogram, 40% chroma histogram, 20% mean chroma
+            *dist = l_dist * 0.4 + c_dist * 0.4 + mean_diff * 0.2;
             let presence = (a.chroma_fraction[z] + b.chroma_fraction[z]) * 0.5;
             let w = cw * presence;
             chroma_total += *dist * w;
@@ -553,10 +589,13 @@ impl RegionalComparison {
         {
             let l_dist = hist_distance(&a.texture_l_hist[tz], &b.texture_l_hist[tz]);
             let c_dist = hist_distance(&a.texture_chroma_hist[tz], &b.texture_chroma_hist[tz]);
-            // Also factor in mean L and chroma differences
-            let l_diff = (a.texture_l_mean[tz] - b.texture_l_mean[tz]).abs();
-            let c_diff = (a.texture_chroma_mean[tz] - b.texture_chroma_mean[tz]).abs();
-            *dist = (l_dist + c_dist) * 0.5 + l_diff + c_diff * 2.0;
+            // Mean L difference normalized to [0,1]
+            let l_diff = (a.texture_l_mean[tz] - b.texture_l_mean[tz]).abs().min(1.0);
+            // Mean chroma difference normalized to [0,1] (max Oklab chroma ~0.33)
+            let c_diff = ((a.texture_chroma_mean[tz] - b.texture_chroma_mean[tz]).abs() / 0.33)
+                .min(1.0);
+            // Blend: 35% L histogram, 25% chroma histogram, 25% mean L, 15% mean chroma
+            *dist = l_dist * 0.35 + c_dist * 0.25 + l_diff * 0.25 + c_diff * 0.15;
             let presence = (a.texture_fraction[tz] + b.texture_fraction[tz]) * 0.5;
             let w = tw * presence;
             texture_total += *dist * w;
@@ -790,5 +829,264 @@ mod tests {
             cmp.texture_zone_dist,
             cmp.aggregate
         );
+    }
+
+    // === Algorithmic validation tests ===
+
+    #[test]
+    fn hist_distance_empty_vs_empty_is_zero() {
+        let a = [0.0f32; HIST_BINS];
+        let b = [0.0f32; HIST_BINS];
+        assert_eq!(hist_distance(&a, &b), 0.0, "two empty histograms should be identical");
+    }
+
+    #[test]
+    fn hist_distance_empty_vs_nonempty_is_one() {
+        let a = [0.0f32; HIST_BINS];
+        let mut b = [0.0f32; HIST_BINS];
+        b[0] = 1.0; // normalized histogram with all weight in bin 0
+        assert_eq!(hist_distance(&a, &b), 1.0, "empty vs non-empty should be 1.0");
+    }
+
+    #[test]
+    fn hist_distance_identical_is_zero() {
+        let mut h = [0.0f32; HIST_BINS];
+        h[5] = 0.3;
+        h[10] = 0.5;
+        h[15] = 0.2;
+        assert!((hist_distance(&h, &h)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn hist_distance_disjoint_is_one() {
+        let mut a = [0.0f32; HIST_BINS];
+        let mut b = [0.0f32; HIST_BINS];
+        a[0] = 1.0;
+        b[31] = 1.0;
+        assert!((hist_distance(&a, &b) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn hist_distance_half_overlap() {
+        let mut a = [0.0f32; HIST_BINS];
+        let mut b = [0.0f32; HIST_BINS];
+        a[0] = 0.5;
+        a[1] = 0.5;
+        b[1] = 0.5;
+        b[2] = 0.5;
+        // Overlap in bin 1: min(0.5, 0.5) = 0.5, all others 0 → intersection=0.5 → dist=0.5
+        assert!((hist_distance(&a, &b) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn all_zone_distances_bounded_0_1() {
+        // Two very different images — distances should still be in [0,1]
+        let a = uniform_planes(0.1, 0.2, 0.0, 64, 64);
+        let b = uniform_planes(0.9, -0.1, 0.15, 64, 64);
+        let fa = RegionalFeatures::extract(&a);
+        let fb = RegionalFeatures::extract(&b);
+        let cmp = RegionalComparison::compare(&fa, &fb);
+
+        for (i, &d) in cmp.lum_zone_dist.iter().enumerate() {
+            assert!(d >= 0.0 && d <= 1.0, "lum_zone_dist[{i}]={d} out of [0,1]");
+        }
+        for (i, &d) in cmp.chroma_zone_dist.iter().enumerate() {
+            assert!(d >= 0.0 && d <= 1.0, "chroma_zone_dist[{i}]={d} out of [0,1]");
+        }
+        for (i, &d) in cmp.hue_sector_dist.iter().enumerate() {
+            assert!(d >= 0.0 && d <= 1.0, "hue_sector_dist[{i}]={d} out of [0,1]");
+        }
+        for (i, &d) in cmp.texture_zone_dist.iter().enumerate() {
+            assert!(d >= 0.0 && d <= 1.0, "texture_zone_dist[{i}]={d} out of [0,1]");
+        }
+        assert!(
+            cmp.aggregate >= 0.0 && cmp.aggregate <= 1.0,
+            "aggregate={} out of [0,1]", cmp.aggregate,
+        );
+    }
+
+    #[test]
+    fn lum_zone_classification_correct() {
+        // Each pixel at known L should land in the expected zone
+        let cases: [(f32, usize); 5] = [
+            (0.05, 0), // DeepShadow: L < 0.15
+            (0.25, 1), // Shadow: 0.15-0.35
+            (0.50, 2), // Midtone: 0.35-0.65
+            (0.75, 3), // Highlight: 0.65-0.85
+            (0.95, 4), // Specular: >= 0.85
+        ];
+        for (l, expected_zone) in cases {
+            assert_eq!(
+                lum_zone(l), expected_zone,
+                "L={l} should be zone {expected_zone}"
+            );
+        }
+    }
+
+    #[test]
+    fn chroma_zone_classification_correct() {
+        let cases: [(f32, usize); 4] = [
+            (0.01, 0), // Neutral: < 0.03
+            (0.05, 1), // LowSat: 0.03-0.08
+            (0.10, 2), // MedSat: 0.08-0.15
+            (0.20, 3), // HighSat: >= 0.15
+        ];
+        for (c, expected_zone) in cases {
+            assert_eq!(
+                chroma_zone(c), expected_zone,
+                "chroma={c} should be zone {expected_zone}"
+            );
+        }
+    }
+
+    #[test]
+    fn hue_sector_classification_correct() {
+        let cases: [(f32, usize); 6] = [
+            (30.0, 0),  // Warm: 0-60
+            (90.0, 1),  // YellGreen: 60-120
+            (150.0, 2), // GreenCyan: 120-180
+            (220.0, 3), // Cool: 180-260
+            (290.0, 4), // Purple: 260-320
+            (340.0, 5), // MagRed: 320-360
+        ];
+        for (hue, expected) in cases {
+            assert_eq!(
+                hue_sector(hue), expected,
+                "hue={hue}° should be sector {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn texture_zone_classification_correct() {
+        // Smooth: low var, low grad
+        assert_eq!(texture_zone(0.001, 0.01), 0);
+        // Gradient: low var, moderate grad
+        assert_eq!(texture_zone(0.001, 0.02), 1);
+        // Textured: high var, low-mod grad
+        assert_eq!(texture_zone(0.005, 0.01), 2);
+        // Edge: any var, high grad
+        assert_eq!(texture_zone(0.001, 0.05), 3);
+        assert_eq!(texture_zone(0.010, 0.05), 3);
+    }
+
+    #[test]
+    fn lum_histograms_are_normalized() {
+        // Gradient image spanning all zones
+        let mut planes = OklabPlanes::new(64, 64);
+        for (i, v) in planes.l.iter_mut().enumerate() {
+            *v = i as f32 / (64.0 * 64.0 - 1.0);
+        }
+        let feat = RegionalFeatures::extract(&planes);
+        for z in 0..LUM_ZONES {
+            if feat.lum_fraction[z] > 0.01 {
+                let sum: f32 = feat.lum_l_hist[z].iter().sum();
+                assert!(
+                    (sum - 1.0).abs() < 0.02,
+                    "lum_l_hist[{z}] should sum to ~1.0, got {sum}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn chroma_histograms_are_normalized() {
+        let mut planes = OklabPlanes::new(32, 32);
+        planes.l.fill(0.5);
+        for (i, v) in planes.a.iter_mut().enumerate() {
+            *v = (i as f32 / 1024.0 - 0.5) * 0.3;
+        }
+        let feat = RegionalFeatures::extract(&planes);
+        for z in 0..CHROMA_ZONES {
+            if feat.chroma_fraction[z] > 0.01 {
+                let l_sum: f32 = feat.chroma_l_hist[z].iter().sum();
+                let c_sum: f32 = feat.chroma_c_hist[z].iter().sum();
+                assert!(
+                    (l_sum - 1.0).abs() < 0.02,
+                    "chroma_l_hist[{z}] should sum to ~1.0, got {l_sum}"
+                );
+                assert!(
+                    (c_sum - 1.0).abs() < 0.02,
+                    "chroma_c_hist[{z}] should sum to ~1.0, got {c_sum}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn chroma_mean_tracks_actual_chroma() {
+        // All pixels at known chroma level
+        let planes = uniform_planes(0.5, 0.1, 0.0, 32, 32); // chroma = 0.1 → MedSat zone
+        let feat = RegionalFeatures::extract(&planes);
+        // MedSat zone (index 2) should have mean ~0.1
+        assert!(
+            (feat.chroma_mean[2] - 0.1).abs() < 0.01,
+            "chroma_mean[MedSat] should be ~0.1, got {}",
+            feat.chroma_mean[2]
+        );
+    }
+
+    #[test]
+    fn symmetric_comparison() {
+        let a = uniform_planes(0.3, 0.1, 0.05, 64, 64);
+        let b = uniform_planes(0.7, -0.05, 0.1, 64, 64);
+        let fa = RegionalFeatures::extract(&a);
+        let fb = RegionalFeatures::extract(&b);
+        let ab = RegionalComparison::compare(&fa, &fb);
+        let ba = RegionalComparison::compare(&fb, &fa);
+        assert!(
+            (ab.aggregate - ba.aggregate).abs() < 1e-5,
+            "comparison should be symmetric: {:.6} vs {:.6}",
+            ab.aggregate, ba.aggregate
+        );
+    }
+
+    #[test]
+    fn slight_shift_small_distance() {
+        // Two images that differ by a small luminance shift
+        let a = uniform_planes(0.50, 0.0, 0.0, 64, 64);
+        let b = uniform_planes(0.52, 0.0, 0.0, 64, 64);
+        let fa = RegionalFeatures::extract(&a);
+        let fb = RegionalFeatures::extract(&b);
+        let cmp = RegionalComparison::compare(&fa, &fb);
+        assert!(
+            cmp.aggregate < 0.15,
+            "small luminance shift should produce small distance: {}",
+            cmp.aggregate,
+        );
+    }
+
+    #[test]
+    fn large_shift_large_distance() {
+        let a = uniform_planes(0.1, 0.0, 0.0, 64, 64);
+        let b = uniform_planes(0.9, 0.0, 0.0, 64, 64);
+        let fa = RegionalFeatures::extract(&a);
+        let fb = RegionalFeatures::extract(&b);
+        let cmp = RegionalComparison::compare(&fa, &fb);
+        assert!(
+            cmp.aggregate > 0.2,
+            "large luminance shift should produce large distance: {}",
+            cmp.aggregate,
+        );
+    }
+
+    #[test]
+    fn monotonic_with_increasing_difference() {
+        // Distance should increase as images get more different
+        let base = uniform_planes(0.5, 0.0, 0.0, 64, 64);
+        let fb = RegionalFeatures::extract(&base);
+
+        let mut prev_dist = 0.0f32;
+        for shift in [0.05, 0.10, 0.20, 0.35] {
+            let shifted = uniform_planes(0.5 + shift, 0.0, 0.0, 64, 64);
+            let fs = RegionalFeatures::extract(&shifted);
+            let cmp = RegionalComparison::compare(&fb, &fs);
+            assert!(
+                cmp.aggregate >= prev_dist - 1e-5,
+                "distance should increase with larger shift: shift={shift} agg={} prev={}",
+                cmp.aggregate, prev_dist,
+            );
+            prev_dist = cmp.aggregate;
+        }
     }
 }
