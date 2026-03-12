@@ -168,7 +168,9 @@ fn apply_pipeline_basecurve(
 
 /// Get darktable's display-referred sRGB output for a DNG file.
 /// This uses darktable's default workflow (basecurve tone mapping).
-fn darktable_display_output(dng_path: &Path) -> Option<(Vec<u8>, u32, u32)> {
+/// Get darktable sRGB output for a DNG file with a specific workflow.
+/// `workflow`: "scene-referred (sigmoid)" (default), "display-referred", or "none"
+fn darktable_render(dng_path: &Path, workflow: &str) -> Option<(Vec<u8>, u32, u32)> {
     use std::sync::atomic::{AtomicU32, Ordering};
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -188,6 +190,8 @@ fn darktable_display_output(dng_path: &Path) -> Option<(Vec<u8>, u32, u32)> {
         .arg(":memory:")
         .arg("--configdir")
         .arg(tmp_dir.join("dtconf"))
+        .arg("--conf")
+        .arg(format!("plugins/darkroom/workflow={workflow}"))
         .stderr(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .status()
@@ -204,6 +208,16 @@ fn darktable_display_output(dng_path: &Path) -> Option<(Vec<u8>, u32, u32)> {
     let w = rgb.width();
     let h = rgb.height();
     Some((rgb.into_raw(), w, h))
+}
+
+/// Get darktable's default (scene-referred sigmoid) sRGB output.
+fn darktable_display_output(dng_path: &Path) -> Option<(Vec<u8>, u32, u32)> {
+    darktable_render(dng_path, "scene-referred (sigmoid)")
+}
+
+/// Get darktable's display-referred (basecurve) sRGB output.
+fn darktable_basecurve_output(dng_path: &Path) -> Option<(Vec<u8>, u32, u32)> {
+    darktable_render(dng_path, "display-referred")
 }
 
 /// Resize and crop two images to common dimensions <= MAX_DIM.
@@ -557,8 +571,8 @@ fn main() {
 
     // Summary
     println!("\n\n=== RESULTS ===");
-    println!("sig     = our DNG sigmoid pipeline vs darktable display");
-    println!("bc      = our DNG basecurve pipeline vs darktable display");
+    println!("sig     = our DNG sigmoid pipeline vs darktable sigmoid");
+    println!("bc      = our DNG basecurve pipeline vs darktable basecurve");
     println!("rDNG    = our DNG pipeline (rule-based) vs darktable display");
     println!("ceil    = darktable display vs expert");
     println!("k1      = our JPEG cluster pipeline (nearest) vs expert");
@@ -639,6 +653,28 @@ fn main() {
         mean_rule - mean_base0,
         ""
     );
+
+    // Best-of analysis: what if we picked sigmoid or basecurve per-image?
+    if np > 0 {
+        let mut best_sum = 0.0f64;
+        let mut sig_wins = 0;
+        let mut bc_wins = 0;
+        for r in &results {
+            if r.parity_base >= 0.0 && r.parity_basecurve >= 0.0 {
+                if r.parity_base >= r.parity_basecurve {
+                    best_sum += r.parity_base;
+                    sig_wins += 1;
+                } else {
+                    best_sum += r.parity_basecurve;
+                    bc_wins += 1;
+                }
+            }
+        }
+        println!(
+            "\nBest-of sigmoid/basecurve: {:.1} mean ({sig_wins} sigmoid, {bc_wins} basecurve wins)",
+            best_sum / np as f64
+        );
+    }
 
     // Regional summary
     let labels = RegionalComparison::zone_labels();
@@ -722,10 +758,13 @@ fn process_dng_parity(
     zs: &Zensim,
     out_prefix: &str,
 ) -> Option<DngParityResult> {
-    // 1. Get darktable display-referred output (default tone mapping)
-    let (dt_display, dtw, dth) = darktable_display_output(dng_path)?;
+    // 1. Get darktable scene-referred (sigmoid) output — the default in dt 5.5
+    let (dt_sigmoid, dtw, dth) = darktable_display_output(dng_path)?;
 
-    // 2. Get darktable linear output for our pipeline
+    // 2. Get darktable display-referred (basecurve) output for basecurve comparison
+    let dt_basecurve = darktable_basecurve_output(dng_path);
+
+    // 3. Get darktable linear output for our pipeline
     let output = darktable::decode_file(dng_path, dt_config).ok()?;
     let pixels = output.pixels;
     let dw = pixels.width();
@@ -733,50 +772,62 @@ fn process_dng_parity(
     let raw_bytes = pixels.copy_to_contiguous_bytes();
     let linear_f32: &[f32] = bytemuck::cast_slice(&raw_bytes);
 
-    // 3. Read EXIF for camera maker/model (for basecurve lookup)
+    // 4. Read EXIF for camera maker/model (for basecurve lookup)
     let dng_bytes = std::fs::read(dng_path).ok()?;
     let exif = zenraw::exif::read_metadata(&dng_bytes);
     let maker = exif.as_ref().and_then(|e| e.make.as_deref()).unwrap_or("");
     let model = exif.as_ref().and_then(|e| e.model.as_deref()).unwrap_or("");
 
-    // 4. Apply base-only sigmoid pipeline (no artistic adjustments)
+    // 5. Apply base-only sigmoid pipeline (no artistic adjustments)
     let identity_params = TunedParams::default();
     let base_only_srgb =
         apply_pipeline_linear(linear_f32, dw, dh, &identity_params, m1, m1_inv, ctx);
 
-    // 5. Apply camera basecurve pipeline
+    // 6. Apply camera basecurve pipeline
     let basecurve_srgb =
         apply_pipeline_basecurve(linear_f32, dw, dh, maker, model, m1, m1_inv);
     let preset = find_basecurve(maker, model);
 
-    // 6. Resize and compare vs darktable
-    let (base_r, dt_r, w, h) = resize_pair(&base_only_srgb, dw, dh, &dt_display, dtw, dth);
+    // 7. Compare our sigmoid vs dt sigmoid
+    let (base_r, dt_r, w, h) = resize_pair(&base_only_srgb, dw, dh, &dt_sigmoid, dtw, dth);
     let parity_base = zensim_score(&base_r, &dt_r, w, h, zs);
 
-    let (bc_r, dt_r_bc, w_bc, h_bc) = resize_pair(&basecurve_srgb, dw, dh, &dt_display, dtw, dth);
-    let parity_basecurve = zensim_score(&bc_r, &dt_r_bc, w_bc, h_bc, zs);
+    // 8. Compare our basecurve vs dt basecurve (if available)
+    let parity_basecurve = if let Some((ref dt_bc, dt_bc_w, dt_bc_h)) = dt_basecurve {
+        let (bc_r, dt_bc_r, w_bc, h_bc) =
+            resize_pair(&basecurve_srgb, dw, dh, dt_bc, dt_bc_w, dt_bc_h);
+        zensim_score(&bc_r, &dt_bc_r, w_bc, h_bc, zs)
+    } else {
+        // Fall back to comparing vs dt sigmoid
+        let (bc_r, dt_r_bc, w_bc, h_bc) =
+            resize_pair(&basecurve_srgb, dw, dh, &dt_sigmoid, dtw, dth);
+        zensim_score(&bc_r, &dt_r_bc, w_bc, h_bc, zs)
+    };
 
-    // 7. Apply rule-based adjustments on top of base sigmoid
+    // 9. Apply rule-based adjustments on top of base sigmoid
     let mut feat_planes = OklabPlanes::new(w, h);
     scatter_srgb_u8_to_oklab(&base_r, &mut feat_planes, 3, m1);
     let features = ImageFeatures::extract(&feat_planes);
     let rule_params = rule_based_tune(&features);
     let rule_srgb = apply_pipeline_linear(linear_f32, dw, dh, &rule_params, m1, m1_inv, ctx);
-    let (rule_r, dt_r3, w3, h3) = resize_pair(&rule_srgb, dw, dh, &dt_display, dtw, dth);
+    let (rule_r, dt_r3, w3, h3) = resize_pair(&rule_srgb, dw, dh, &dt_sigmoid, dtw, dth);
     let parity_rule = zensim_score(&rule_r, &dt_r3, w3, h3, zs);
 
-    // Darktable display vs expert → ceiling
-    let (dt_r2, expert_r, w2, h2) = resize_pair(&dt_display, dtw, dth, expert_raw, ew, eh);
+    // Darktable sigmoid vs expert → ceiling
+    let (dt_r2, expert_r, w2, h2) = resize_pair(&dt_sigmoid, dtw, dth, expert_raw, ew, eh);
     let ceiling = zensim_score(&dt_r2, &expert_r, w2, h2, zs);
 
-    // Regional comparison: DNG base vs darktable display
+    // Regional comparison: DNG sigmoid base vs darktable sigmoid
     let regional = regional_compare_srgb(&base_r, &dt_r, w, h, m1);
 
     // Save DNG-specific comparison images
     save_rgb(&base_r, w, h, &format!("{out_prefix}_4_dng_sigmoid.jpg"));
-    save_rgb(&bc_r, w_bc, h_bc, &format!("{out_prefix}_4b_dng_basecurve.jpg"));
+    save_rgb(&basecurve_srgb, dw, dh, &format!("{out_prefix}_4b_dng_basecurve.jpg"));
     save_rgb(&rule_r, w3, h3, &format!("{out_prefix}_5_dng_rule.jpg"));
-    save_rgb(&dt_r, w, h, &format!("{out_prefix}_6_dng_dt.jpg"));
+    save_rgb(&dt_r, w, h, &format!("{out_prefix}_6_dng_dt_sigmoid.jpg"));
+    if let Some((ref dt_bc, dt_bc_w, dt_bc_h)) = dt_basecurve {
+        save_rgb(dt_bc, dt_bc_w, dt_bc_h, &format!("{out_prefix}_6b_dng_dt_basecurve.jpg"));
+    }
 
     Some(DngParityResult {
         parity_base,
