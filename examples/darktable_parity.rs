@@ -172,7 +172,7 @@ fn apply_pipeline_basecurve(
 /// with per-channel processing and hue preservation.
 ///
 /// `exposure_mult`: Linear multiplier to approximate darktable's color calibration
-/// and input profile normalization (~1.8x matches darktable's scene-referred pipeline).
+/// and input profile normalization (~1.85x matches darktable's scene-referred pipeline for DSLRs).
 fn apply_dt_sigmoid_pipeline(
     linear_f32: &[f32],
     w: u32,
@@ -189,7 +189,11 @@ fn apply_dt_sigmoid_pipeline(
         }
     }
     dt_sigmoid::apply_dt_sigmoid(&mut rgb, &params);
-    // Convert to sRGB u8
+    linear_to_srgb_u8(&rgb, w, h)
+}
+
+/// Convert linear f32 RGB [0,1] to sRGB u8.
+fn linear_to_srgb_u8(rgb: &[f32], w: u32, h: u32) -> Vec<u8> {
     let n = (w as usize) * (h as usize);
     let mut output = vec![0u8; n * 3];
     for i in 0..n * 3 {
@@ -202,6 +206,112 @@ fn apply_dt_sigmoid_pipeline(
         output[i] = (srgb * 255.0 + 0.5) as u8;
     }
     output
+}
+
+/// Find the optimal exposure multiplier for dt_sigmoid using golden section search.
+///
+/// Searches [lo, hi] for the multiplier that maximizes zensim score against a reference image.
+/// Returns (best_multiplier, best_score).
+fn optimize_dt_sigmoid_exposure(
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+    reference: &[u8],
+    ref_w: u32,
+    ref_h: u32,
+    zs: &Zensim,
+    lo: f32,
+    hi: f32,
+) -> (f32, f64) {
+    let phi = (5.0f32.sqrt() - 1.0) / 2.0; // golden ratio conjugate
+
+    let eval = |mult: f32| -> f64 {
+        let out = apply_dt_sigmoid_pipeline(linear_f32, w, h, mult);
+        let (a, b, rw, rh) = resize_pair(&out, w, h, reference, ref_w, ref_h);
+        zensim_score(&a, &b, rw, rh, zs)
+    };
+
+    let mut a = lo;
+    let mut b = hi;
+    let mut c = b - phi * (b - a);
+    let mut d = a + phi * (b - a);
+    let mut fc = eval(c);
+    let mut fd = eval(d);
+
+    for _ in 0..25 {
+        if fc > fd {
+            // Maximum is in [a, d]
+            b = d;
+            d = c;
+            fd = fc;
+            c = b - phi * (b - a);
+            fc = eval(c);
+        } else {
+            // Maximum is in [c, b]
+            a = c;
+            c = d;
+            fc = fd;
+            d = a + phi * (b - a);
+            fd = eval(d);
+        }
+        if (b - a).abs() < 0.005 {
+            break;
+        }
+    }
+
+    let best_mult = (a + b) / 2.0;
+    let best_score = eval(best_mult);
+    (best_mult, best_score)
+}
+
+/// Generate a per-pixel absolute difference heatmap between two sRGB u8 images.
+/// Returns a colorized heatmap where:
+///   black = identical, blue = small diff, red = large diff, white = extreme diff
+fn diff_heatmap(a: &[u8], b: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let n = (w as usize) * (h as usize);
+    let mut out = vec![0u8; n * 3];
+    for i in 0..n {
+        let idx = i * 3;
+        // Compute per-channel absolute difference, take max
+        let dr = (a[idx] as i32 - b[idx] as i32).unsigned_abs();
+        let dg = (a[idx + 1] as i32 - b[idx + 1] as i32).unsigned_abs();
+        let db = (a[idx + 2] as i32 - b[idx + 2] as i32).unsigned_abs();
+        let d = dr.max(dg).max(db).min(255) as u8;
+        // Colorize: scale 4x so diffs are visible, then blue->red->white
+        let v = (d as u32 * 4).min(255) as u8;
+        if v < 128 {
+            // black -> blue -> cyan
+            out[idx] = 0;
+            out[idx + 1] = v;
+            out[idx + 2] = v * 2;
+        } else {
+            // yellow -> red -> white
+            let t = v - 128;
+            out[idx] = 128 + t;
+            out[idx + 1] = 128 - t;
+            out[idx + 2] = t;
+        }
+    }
+    out
+}
+
+/// Generate a side-by-side comparison image: [A | B | diff_heatmap]
+fn side_by_side(a: &[u8], b: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
+    let heat = diff_heatmap(a, b, w, h);
+    let total_w = w * 3;
+    let stride_a = (w as usize) * 3;
+    let stride_out = (total_w as usize) * 3;
+    let mut out = vec![0u8; stride_out * (h as usize)];
+    for y in 0..h as usize {
+        let row_a = &a[y * stride_a..(y + 1) * stride_a];
+        let row_b = &b[y * stride_a..(y + 1) * stride_a];
+        let row_h = &heat[y * stride_a..(y + 1) * stride_a];
+        let row_out = &mut out[y * stride_out..(y + 1) * stride_out];
+        row_out[..stride_a].copy_from_slice(row_a);
+        row_out[stride_a..stride_a * 2].copy_from_slice(row_b);
+        row_out[stride_a * 2..stride_a * 3].copy_from_slice(row_h);
+    }
+    (out, total_w, h)
 }
 
 /// Get darktable's display-referred sRGB output for a DNG file.
@@ -360,6 +470,8 @@ struct ImageResult {
     name: String,
     parity_base: f64,      // our Oklab sigmoid vs darktable sigmoid
     parity_dt_sig: f64,    // our dt_sigmoid (matching dt formula) vs darktable sigmoid
+    parity_dt_opt: f64,    // dt_sigmoid with per-image optimized exposure
+    optimal_mult: f32,     // the per-image optimal exposure multiplier
     parity_basecurve: f64, // our basecurve vs darktable basecurve
     parity_rule_dng: f64,  // our rule-based vs darktable sigmoid
     ceiling: f64,          // darktable sigmoid vs expert
@@ -554,11 +666,13 @@ fn main() {
             &zs,
             &format!("{OUTPUT_DIR}/{stem}"),
         );
-        let (parity_base, parity_dt_sig, parity_basecurve, parity_rule_dng, ceiling, basecurve_name, regional_dng) =
+        let (parity_base, parity_dt_sig, parity_dt_opt, optimal_mult, parity_basecurve, parity_rule_dng, ceiling, basecurve_name, regional_dng) =
             match dng_result {
                 Some(r) => (
                     r.parity_base,
                     r.parity_dt_sig,
+                    r.parity_dt_opt,
+                    r.optimal_mult,
                     r.parity_basecurve,
                     r.parity_rule,
                     r.ceiling,
@@ -567,7 +681,7 @@ fn main() {
                 ),
                 None => {
                     println!("  DNG failed");
-                    (-1.0, -1.0, -1.0, -1.0, -1.0, String::new(), None)
+                    (-1.0, -1.0, -1.0, 0.0, -1.0, -1.0, -1.0, String::new(), None)
                 }
             };
 
@@ -578,7 +692,7 @@ fn main() {
         };
 
         println!(
-            "  C{best_cluster:02} [{basecurve_name}] | sig={parity_base:.1} dtSig={parity_dt_sig:.1} rDNG={parity_rule_dng:.1} ceil={ceiling:.1} k1={quality:.1} k3={quality_k3:.1} rule={quality_rule:.1} base0={baseline:.1}"
+            "  C{best_cluster:02} [{basecurve_name}] | sig={parity_base:.1} dtF={parity_dt_sig:.1} dtO={parity_dt_opt:.1}({optimal_mult:.2}x) rDNG={parity_rule_dng:.1} ceil={ceiling:.1} k1={quality:.1} k3={quality_k3:.1} rule={quality_rule:.1} base0={baseline:.1}"
         );
         if let Some(ref reg) = regional_dng {
             print_regional("DNG→dt", reg);
@@ -597,6 +711,8 @@ fn main() {
             name: stem.to_string(),
             parity_base,
             parity_dt_sig,
+            parity_dt_opt,
+            optimal_mult,
             parity_basecurve,
             parity_rule_dng,
             ceiling,
@@ -613,8 +729,8 @@ fn main() {
     // Summary
     println!("\n\n=== RESULTS ===");
     println!("sig     = our DNG Oklab sigmoid vs darktable sigmoid");
-    println!("dtSig   = darktable sigmoid formula (linear RGB) vs darktable sigmoid");
-    println!("bc      = our DNG basecurve pipeline vs darktable basecurve");
+    println!("dtF     = dt_sigmoid formula, fixed 1.85x exposure");
+    println!("dtOpt   = dt_sigmoid formula, per-image optimized exposure");
     println!("rDNG    = our DNG pipeline (rule-based) vs darktable display");
     println!("ceil    = darktable display vs expert");
     println!("k1      = our JPEG cluster pipeline (nearest) vs expert");
@@ -624,12 +740,12 @@ fn main() {
 
     println!(
         "{:<35} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7}",
-        "Image", "Sig", "dtSig", "BC", "rDNG", "Ceil", "K1", "K3", "Rule", "Base0"
+        "Image", "Sig", "dtF", "dtOpt", "mult", "Ceil", "K1", "K3", "Rule", "Base0"
     );
     println!("{}", "-".repeat(114));
 
-    let (mut spb, mut sdts, mut sbc, mut spr, mut sc, mut sq, mut sq3, mut sqr, mut sb) =
-        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    let (mut spb, mut sdts, mut sdto, mut sc, mut sq, mut sq3, mut sqr, mut sb) =
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     let mut np = 0;
 
     for r in &results {
@@ -645,8 +761,8 @@ fn main() {
             &r.name[..r.name.len().min(35)],
             fmt(r.parity_base),
             fmt(r.parity_dt_sig),
-            fmt(r.parity_basecurve),
-            fmt(r.parity_rule_dng),
+            fmt(r.parity_dt_opt),
+            if r.optimal_mult > 0.0 { format!("{:.2}x", r.optimal_mult) } else { "---".to_string() },
             fmt(r.ceiling),
             fmt(r.quality),
             fmt(r.quality_k3),
@@ -656,8 +772,7 @@ fn main() {
         if r.parity_base >= 0.0 {
             spb += r.parity_base;
             sdts += r.parity_dt_sig;
-            sbc += r.parity_basecurve;
-            spr += r.parity_rule_dng;
+            sdto += r.parity_dt_opt;
             sc += r.ceiling;
             np += 1;
         }
@@ -674,12 +789,12 @@ fn main() {
     let mean_rule = sqr / n;
     let mean_base0 = sb / n;
     println!(
-        "{:<35} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1}",
+        "{:<35} {:>7.1} {:>7.1} {:>7.1} {:>7} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1}",
         "MEAN",
         if np > 0 { spb / np as f64 } else { 0.0 },
         if np > 0 { sdts / np as f64 } else { 0.0 },
-        if np > 0 { sbc / np as f64 } else { 0.0 },
-        if np > 0 { spr / np as f64 } else { 0.0 },
+        if np > 0 { sdto / np as f64 } else { 0.0 },
+        "",
         if np > 0 { sc / np as f64 } else { 0.0 },
         mean_k1,
         mean_k3,
@@ -700,29 +815,24 @@ fn main() {
         ""
     );
 
-    // Best-of analysis: what if we picked the best tone mapper per-image?
+    // Exposure multiplier statistics
     if np > 0 {
-        let mut best_sum = 0.0f64;
-        let mut sig_wins = 0;
-        let mut dts_wins = 0;
-        let mut bc_wins = 0;
-        for r in &results {
-            if r.parity_base >= 0.0 {
-                let best = r.parity_base.max(r.parity_dt_sig).max(r.parity_basecurve);
-                best_sum += best;
-                if best == r.parity_base {
-                    sig_wins += 1;
-                } else if best == r.parity_dt_sig {
-                    dts_wins += 1;
-                } else {
-                    bc_wins += 1;
-                }
-            }
+        let mults: Vec<f32> = results.iter()
+            .filter(|r| r.optimal_mult > 0.0)
+            .map(|r| r.optimal_mult)
+            .collect();
+        if !mults.is_empty() {
+            let mean_m: f32 = mults.iter().sum::<f32>() / mults.len() as f32;
+            let min_m = mults.iter().copied().reduce(f32::min).unwrap();
+            let max_m = mults.iter().copied().reduce(f32::max).unwrap();
+            let fixed_exp: f32 = std::env::var("ZEN_DT_EXPOSURE")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1.85);
+            println!(
+                "\nOptimal exposure multiplier: mean={mean_m:.2}x  range=[{min_m:.2}, {max_m:.2}]  (fixed={fixed_exp:.2}x)"
+            );
         }
-        println!(
-            "\nBest-of sig/dtSig/bc: {:.1} mean ({sig_wins} oklab-sig, {dts_wins} dt-sig, {bc_wins} basecurve wins)",
-            best_sum / np as f64
-        );
     }
 
     // Regional summary
@@ -758,18 +868,18 @@ fn main() {
     let tsv_path = format!("{OUTPUT_DIR}/parity_results.tsv");
     let mut tsv = String::new();
     tsv.push_str(
-        "image\tparity_sigmoid\tparity_dt_sigmoid\tparity_basecurve\tbasecurve\tparity_rule_dng\tceiling\tquality_k1\tquality_k3\tquality_rule\tbaseline\tregional_dng\tregional_jpeg\n",
+        "image\tparity_sigmoid\tparity_dt_fixed\tparity_dt_opt\topt_mult\tparity_rule_dng\tceiling\tquality_k1\tquality_k3\tquality_rule\tbaseline\tregional_dng\tregional_jpeg\n",
     );
     for r in &results {
         let reg_dng = r.regional_dng.as_ref().map_or(-1.0, |r| r.aggregate);
         let reg_jpeg = r.regional_jpeg.as_ref().map_or(-1.0, |r| r.aggregate);
         tsv.push_str(&format!(
-            "{}\t{:.2}\t{:.2}\t{:.2}\t{}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.4}\t{:.4}\n",
+            "{}\t{:.2}\t{:.2}\t{:.2}\t{:.3}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.4}\t{:.4}\n",
             r.name,
             r.parity_base,
             r.parity_dt_sig,
-            r.parity_basecurve,
-            r.basecurve_name,
+            r.parity_dt_opt,
+            r.optimal_mult,
             r.parity_rule_dng,
             r.ceiling,
             r.quality,
@@ -788,6 +898,8 @@ fn main() {
 struct DngParityResult {
     parity_base: f64,       // our sigmoid (Oklab) vs darktable sigmoid
     parity_dt_sig: f64,     // our dt_sigmoid (linear RGB) vs darktable sigmoid
+    parity_dt_opt: f64,     // dt_sigmoid with per-image optimized exposure
+    optimal_mult: f32,      // the per-image optimal exposure multiplier
     parity_basecurve: f64,  // camera basecurve vs darktable basecurve
     parity_rule: f64,       // rule-based vs darktable
     ceiling: f64,           // darktable vs expert
@@ -839,9 +951,7 @@ fn process_dng_parity(
         apply_pipeline_basecurve(linear_f32, dw, dh, maker, model, m1, m1_inv);
     let preset = find_basecurve(maker, model);
 
-    // 7. Apply dt_sigmoid (matching darktable's exact formula)
-    // Apply dt_sigmoid with ~1.8x exposure correction to approximate darktable's
-    // color calibration and input profile normalization
+    // 7. Apply dt_sigmoid with fixed exposure multiplier
     let dt_exp: f32 = std::env::var("ZEN_DT_EXPOSURE")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -852,9 +962,16 @@ fn process_dng_parity(
     let (base_r, dt_r, w, h) = resize_pair(&base_only_srgb, dw, dh, &dt_sig_out, dtw, dth);
     let parity_base = zensim_score(&base_r, &dt_r, w, h, zs);
 
-    // 9. Compare our dt_sigmoid vs darktable sigmoid output
+    // 9. Compare our dt_sigmoid (fixed exposure) vs darktable sigmoid output
     let (dts_r, dt_r_dts, w_dts, h_dts) = resize_pair(&dt_sig_srgb, dw, dh, &dt_sig_out, dtw, dth);
     let parity_dt_sig = zensim_score(&dts_r, &dt_r_dts, w_dts, h_dts, zs);
+
+    // 9b. Per-image exposure optimization: golden section search for best multiplier
+    let (optimal_mult, parity_dt_opt) = optimize_dt_sigmoid_exposure(
+        linear_f32, dw, dh,
+        &dt_sig_out, dtw, dth,
+        zs, 1.0, 4.0,
+    );
 
     // 10. Compare our basecurve vs dt basecurve (if available)
     let parity_basecurve = if let Some((ref dt_bc, dt_bc_w, dt_bc_h)) = dt_basecurve {
@@ -886,19 +1003,23 @@ fn process_dng_parity(
 
     // Save DNG-specific comparison images
     save_rgb(&base_r, w, h, &format!("{out_prefix}_4_dng_sigmoid.jpg"));
-    save_rgb(&basecurve_srgb, dw, dh, &format!("{out_prefix}_4b_dng_basecurve.jpg"));
-    save_rgb(&rule_r, w3, h3, &format!("{out_prefix}_5_dng_rule.jpg"));
-    save_rgb(&dt_r, w, h, &format!("{out_prefix}_6_dng_dt_sigmoid.jpg"));
-    if let Some((ref dt_bc, dt_bc_w, dt_bc_h)) = dt_basecurve {
-        save_rgb(dt_bc, dt_bc_w, dt_bc_h, &format!("{out_prefix}_6b_dng_dt_basecurve.jpg"));
-    }
+    save_rgb(&dts_r, w_dts, h_dts, &format!("{out_prefix}_4c_dng_dtsig_fixed.jpg"));
+    save_rgb(&dt_r, w, h, &format!("{out_prefix}_6_dt_reference.jpg"));
 
-    // Save dt_sigmoid output
-    save_rgb(&dts_r, w_dts, h_dts, &format!("{out_prefix}_4c_dng_dt_sigmoid.jpg"));
+    // Save optimized dt_sigmoid output
+    let opt_out = apply_dt_sigmoid_pipeline(linear_f32, dw, dh, optimal_mult);
+    let (opt_r, _, _, _) = resize_pair(&opt_out, dw, dh, &dt_sig_out, dtw, dth);
+    save_rgb(&opt_r, w, h, &format!("{out_prefix}_4d_dng_dtsig_opt.jpg"));
+
+    // Generate side-by-side comparison: [our_best | darktable | diff_heatmap]
+    let (sbs, sbs_w, sbs_h) = side_by_side(&opt_r, &dt_r, w, h);
+    save_rgb(&sbs, sbs_w, sbs_h, &format!("{out_prefix}_diff_sbs.jpg"));
 
     Some(DngParityResult {
         parity_base,
         parity_dt_sig,
+        parity_dt_opt,
+        optimal_mult,
         parity_basecurve,
         parity_rule,
         ceiling,
