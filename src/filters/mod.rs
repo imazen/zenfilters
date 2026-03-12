@@ -3,6 +3,7 @@ mod alpha;
 mod auto_exposure;
 #[cfg(feature = "experimental")]
 mod auto_tune;
+mod basecurve;
 mod bilateral;
 mod black_point;
 mod blur;
@@ -51,6 +52,7 @@ pub use auto_tune::{
     CLUSTER_COUNT, ClusterModel, ImageFeatures, LINEAR_MODEL_INPUTS, LINEAR_MODEL_OUTPUTS,
     LinearModel, TunedParams, rule_based_tune,
 };
+pub use basecurve::{BasecurveToneMap, BasecurvePreset, find_basecurve, NEUTRAL_CURVE};
 pub use bilateral::Bilateral;
 pub use black_point::BlackPoint;
 pub use blur::Blur;

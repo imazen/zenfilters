@@ -280,9 +280,11 @@ impl TunedParams {
         let mut pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
 
         // Base tone mapping: scene-referred → display-referred
+        // chroma_compression=0.4 emulates RGB-space desaturation in highlights
         let mut base_sig = Sigmoid::default();
         base_sig.contrast = base_contrast;
         base_sig.skew = base_skew;
+        base_sig.chroma_compression = 0.4;
         pipeline.push(Box::new(base_sig));
 
         self.push_artistic_filters(&mut pipeline);
