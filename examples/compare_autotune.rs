@@ -8,8 +8,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use image::imageops::FilterType;
-use image::{GenericImageView, RgbImage};
+use imgref::ImgVec;
+use rgb::Rgb;
+use zencodecs::{DecodeRequest, EncodeRequest, ImageFormat};
 use zenfilters::filters::*;
 use zenfilters::{FilterContext, OklabPlanes, gather_oklab_to_srgb_u8, scatter_srgb_u8_to_oklab};
 use zenpixels::ColorPrimaries;
@@ -36,22 +37,54 @@ fn load_u32s(path: &Path) -> Vec<u32> {
     bytemuck::cast_slice(&bytes).to_vec()
 }
 
+fn load_resized(path: &Path, max_dim: u32) -> Option<(Vec<u8>, u32, u32)> {
+    use zenresize::{Filter, PixelDescriptor, ResizeConfig, Resizer};
+    let bytes = fs::read(path).ok()?;
+    let decoded = DecodeRequest::new(&bytes).decode().ok()?;
+    let (iw, ih) = (decoded.width(), decoded.height());
+    use zenpixels_convert::PixelBufferConvertTypedExt;
+    let rgb8 = decoded.into_buffer().to_rgb8().copy_to_contiguous_bytes();
+
+    if iw <= max_dim && ih <= max_dim {
+        return Some((rgb8, iw, ih));
+    }
+    let scale = max_dim as f64 / iw.max(ih) as f64;
+    let nw = ((iw as f64 * scale) as u32).max(1);
+    let nh = ((ih as f64 * scale) as u32).max(1);
+    let config = ResizeConfig::builder(iw, ih, nw, nh)
+        .filter(Filter::Lanczos)
+        .format(PixelDescriptor::RGB8_SRGB)
+        .build();
+    let mut resizer = Resizer::new(&config);
+    Some((resizer.resize(&rgb8), nw, nh))
+}
+
+fn crop_rgb8(data: &[u8], w: u32, h: u32, tw: u32, th: u32) -> Vec<u8> {
+    if tw == w && th == h { return data.to_vec(); }
+    let tw = tw.min(w);
+    let th = th.min(h);
+    let mut out = vec![0u8; (tw as usize) * (th as usize) * 3];
+    for y in 0..th as usize {
+        let src_off = y * (w as usize) * 3;
+        let dst_off = y * (tw as usize) * 3;
+        let row_bytes = (tw as usize) * 3;
+        out[dst_off..dst_off + row_bytes].copy_from_slice(&data[src_off..src_off + row_bytes]);
+    }
+    out
+}
+
 fn load_pair(
     orig_path: &Path,
     expert_path: &Path,
     max_dim: u32,
 ) -> Option<(Vec<u8>, Vec<u8>, u32, u32)> {
-    let orig_img = image::open(orig_path).ok()?;
-    let expert_img = image::open(expert_path).ok()?;
-    let orig_r = orig_img.resize(max_dim, max_dim, FilterType::Triangle);
-    let expert_r = expert_img.resize(max_dim, max_dim, FilterType::Triangle);
-    let (ow, oh) = orig_r.dimensions();
-    let (ew, eh) = expert_r.dimensions();
+    let (orig_px, ow, oh) = load_resized(orig_path, max_dim)?;
+    let (expert_px, ew, eh) = load_resized(expert_path, max_dim)?;
     let w = ow.min(ew);
     let h = oh.min(eh);
-    let orig_c = orig_r.crop_imm(0, 0, w, h).to_rgb8();
-    let expert_c = expert_r.crop_imm(0, 0, w, h).to_rgb8();
-    Some((orig_c.into_raw(), expert_c.into_raw(), w, h))
+    let orig_c = crop_rgb8(&orig_px, ow, oh, w, h);
+    let expert_c = crop_rgb8(&expert_px, ew, eh, w, h);
+    Some((orig_c, expert_c, w, h))
 }
 
 fn build_pipeline(params: &TunedParams) -> zenfilters::Pipeline {
@@ -213,10 +246,16 @@ fn main() {
         let prefix = format!("{OUTPUT_DIR}/c{cluster_id:02}_{name}");
         let save = |pixels: &[u8], suffix: &str| {
             let path = format!("{prefix}_{suffix}.jpg");
-            RgbImage::from_raw(w, h, pixels.to_vec())
-                .unwrap()
-                .save(&path)
-                .unwrap();
+            let rgb_pixels: Vec<Rgb<u8>> = pixels
+                .chunks_exact(3)
+                .map(|c| Rgb { r: c[0], g: c[1], b: c[2] })
+                .collect();
+            let img = ImgVec::new(rgb_pixels, w as usize, h as usize);
+            let encoded = EncodeRequest::new(ImageFormat::Jpeg)
+                .with_quality(90.0)
+                .encode_rgb8(img.as_ref())
+                .expect("JPEG encode failed");
+            fs::write(&path, encoded.data()).expect("failed to write JPEG");
             path
         };
 

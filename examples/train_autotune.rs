@@ -17,8 +17,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use image::GenericImageView;
-use image::imageops::FilterType;
+use zencodecs::DecodeRequest;
 use zenfilters::filters::*;
 use zenfilters::{FilterContext, OklabPlanes, gather_oklab_to_srgb_u8, scatter_srgb_u8_to_oklab};
 use zenpixels::ColorPrimaries;
@@ -172,11 +171,26 @@ fn discover_pairs() -> Vec<(PathBuf, PathBuf)> {
 
 /// Load a JPEG and resize to fit within max_dim, returning (pixels, w, h).
 fn load_resized(path: &Path, max_dim: u32) -> Option<(Vec<u8>, u32, u32)> {
-    let img = image::open(path).ok()?;
-    let resized = img.resize(max_dim, max_dim, FilterType::Triangle);
-    let (w, h) = resized.dimensions();
-    let rgb = resized.to_rgb8();
-    Some((rgb.into_raw(), w, h))
+    use zenresize::{Filter, PixelDescriptor, ResizeConfig, Resizer};
+    let bytes = fs::read(path).ok()?;
+    let decoded = DecodeRequest::new(&bytes).decode().ok()?;
+    let (iw, ih) = (decoded.width(), decoded.height());
+    use zenpixels_convert::PixelBufferConvertTypedExt;
+    let rgb8 = decoded.into_buffer().to_rgb8().copy_to_contiguous_bytes();
+
+    if iw <= max_dim && ih <= max_dim {
+        return Some((rgb8, iw, ih));
+    }
+    let scale = max_dim as f64 / iw.max(ih) as f64;
+    let nw = ((iw as f64 * scale) as u32).max(1);
+    let nh = ((ih as f64 * scale) as u32).max(1);
+    let config = ResizeConfig::builder(iw, ih, nw, nh)
+        .filter(Filter::Lanczos)
+        .format(PixelDescriptor::RGB8_SRGB)
+        .build();
+    let mut resizer = Resizer::new(&config);
+    let resized = resizer.resize(&rgb8);
+    Some((resized, nw, nh))
 }
 
 /// Load a pair of images resized to matching dimensions.
@@ -197,14 +211,19 @@ fn load_pair(
     }
 
     // Crop both to common dimensions
-    let orig_img = image::open(orig_path).ok()?;
-    let expert_img = image::open(expert_path).ok()?;
-    let orig_resized = orig_img.resize(max_dim, max_dim, FilterType::Triangle);
-    let expert_resized = expert_img.resize(max_dim, max_dim, FilterType::Triangle);
-    let orig_cropped = orig_resized.crop_imm(0, 0, w, h).to_rgb8();
-    let expert_cropped = expert_resized.crop_imm(0, 0, w, h).to_rgb8();
-
-    Some((orig_cropped.into_raw(), expert_cropped.into_raw(), w, h))
+    fn crop_rgb8(data: &[u8], w: u32, _h: u32, tw: u32, th: u32) -> Vec<u8> {
+        let mut out = vec![0u8; (tw as usize) * (th as usize) * 3];
+        for y in 0..th as usize {
+            let src_off = y * (w as usize) * 3;
+            let dst_off = y * (tw as usize) * 3;
+            let row_bytes = (tw as usize) * 3;
+            out[dst_off..dst_off + row_bytes].copy_from_slice(&data[src_off..src_off + row_bytes]);
+        }
+        out
+    }
+    let orig_cropped = crop_rgb8(&orig_px, ow, oh, w, h);
+    let expert_cropped = crop_rgb8(&expert_px, ew, eh, w, h);
+    Some((orig_cropped, expert_cropped, w, h))
 }
 
 // ── Feature extraction ───────────────────────────────────────────────

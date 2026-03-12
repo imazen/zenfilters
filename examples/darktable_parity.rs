@@ -15,8 +15,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use image::RgbImage;
-use image::imageops::FilterType;
+use imgref::ImgVec;
+use rgb::Rgb;
+use zencodecs::{DecodeRequest, EncodeRequest, ImageFormat};
 use zenfilters::filters::*;
 use zenfilters::regional::{RegionalComparison, RegionalFeatures};
 use zenfilters::{
@@ -27,6 +28,7 @@ use zenpixels::ColorPrimaries;
 use zenpixels_convert::gamut::GamutMatrix;
 use zenpixels_convert::oklab;
 use zenraw::darktable::{self, DtConfig};
+use zenresize::{Filter, PixelDescriptor, ResizeConfig, Resizer};
 use zensim::{RgbSlice, Zensim, ZensimProfile};
 
 const DNG_DIR: &str = "/mnt/v/input/fivek/dng";
@@ -373,7 +375,7 @@ fn darktable_render(dng_path: &Path, workflow: &str) -> Option<(Vec<u8>, u32, u3
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp_dir = PathBuf::from(format!("/tmp/dt_parity_{}_{}", std::process::id(), id));
     fs::create_dir_all(&tmp_dir).ok()?;
-    let out_path = tmp_dir.join("output.tif");
+    let out_path = tmp_dir.join("output.png");
 
     let status = Command::new("darktable-cli")
         .arg(dng_path)
@@ -399,12 +401,15 @@ fn darktable_render(dng_path: &Path, workflow: &str) -> Option<(Vec<u8>, u32, u3
         return None;
     }
 
-    let img = image::open(&out_path).ok()?;
+    let png_bytes = fs::read(&out_path).ok()?;
     let _ = fs::remove_dir_all(&tmp_dir);
-    let rgb = img.to_rgb8();
-    let w = rgb.width();
-    let h = rgb.height();
-    Some((rgb.into_raw(), w, h))
+    let decoded = DecodeRequest::new(&png_bytes).decode().ok()?;
+    let w = decoded.width();
+    let h = decoded.height();
+    use zenpixels_convert::PixelBufferConvertTypedExt;
+    let rgb8_buf = decoded.into_buffer().to_rgb8();
+    let bytes = rgb8_buf.copy_to_contiguous_bytes();
+    Some((bytes, w, h))
 }
 
 /// Get darktable's default (scene-referred sigmoid) sRGB output.
@@ -418,29 +423,60 @@ fn darktable_basecurve_output(dng_path: &Path) -> Option<(Vec<u8>, u32, u32)> {
     darktable_render(dng_path, "display-referred")
 }
 
+/// Downscale sRGB u8 RGB data to fit within max_dim using zenresize (SIMD).
+fn downscale_rgb8(data: &[u8], w: u32, h: u32, max_dim: u32) -> (Vec<u8>, u32, u32) {
+    if w <= max_dim && h <= max_dim {
+        return (data.to_vec(), w, h);
+    }
+    let scale = max_dim as f64 / w.max(h) as f64;
+    let nw = ((w as f64 * scale) as u32).max(1);
+    let nh = ((h as f64 * scale) as u32).max(1);
+    let config = ResizeConfig::builder(w, h, nw, nh)
+        .filter(Filter::Lanczos)
+        .format(PixelDescriptor::RGB8_SRGB)
+        .build();
+    let mut resizer = Resizer::new(&config);
+    (resizer.resize(data), nw, nh)
+}
+
+/// Crop u8 RGB data to target dimensions (top-left).
+fn crop_u8(data: &[u8], w: u32, h: u32, tw: u32, th: u32) -> Vec<u8> {
+    if tw == w && th == h { return data.to_vec(); }
+    let tw = tw.min(w);
+    let th = th.min(h);
+    let mut out = vec![0u8; (tw as usize) * (th as usize) * 3];
+    for y in 0..th as usize {
+        let src_off = y * (w as usize) * 3;
+        let dst_off = y * (tw as usize) * 3;
+        let row_bytes = (tw as usize) * 3;
+        out[dst_off..dst_off + row_bytes].copy_from_slice(&data[src_off..src_off + row_bytes]);
+    }
+    out
+}
+
 /// Resize and crop two images to common dimensions <= MAX_DIM.
 fn resize_pair(
-    a: &[u8],
-    aw: u32,
-    ah: u32,
-    b: &[u8],
-    bw: u32,
-    bh: u32,
+    a: &[u8], aw: u32, ah: u32,
+    b: &[u8], bw: u32, bh: u32,
 ) -> (Vec<u8>, Vec<u8>, u32, u32) {
-    let img_a = image::DynamicImage::ImageRgb8(RgbImage::from_raw(aw, ah, a.to_vec()).unwrap());
-    let img_b = image::DynamicImage::ImageRgb8(RgbImage::from_raw(bw, bh, b.to_vec()).unwrap());
-    let ra = img_a.resize(MAX_DIM, MAX_DIM, FilterType::Triangle);
-    let rb = img_b.resize(MAX_DIM, MAX_DIM, FilterType::Triangle);
-    let w = ra.width().min(rb.width());
-    let h = ra.height().min(rb.height());
-    let ca = ra.crop_imm(0, 0, w, h).to_rgb8().into_raw();
-    let cb = rb.crop_imm(0, 0, w, h).to_rgb8().into_raw();
+    let (ra, raw, rah) = downscale_rgb8(a, aw, ah, MAX_DIM);
+    let (rb, rbw, rbh) = downscale_rgb8(b, bw, bh, MAX_DIM);
+    let w = raw.min(rbw);
+    let h = rah.min(rbh);
+    let ca = crop_u8(&ra, raw, rah, w, h);
+    let cb = crop_u8(&rb, rbw, rbh, w, h);
     (ca, cb, w, h)
 }
 
 fn save_rgb(data: &[u8], w: u32, h: u32, path: &str) {
-    if let Some(img) = RgbImage::from_raw(w, h, data.to_vec()) {
-        let _ = img.save(path);
+    let pixels: &[Rgb<u8>] = bytemuck::cast_slice(data);
+    let img = ImgVec::new(pixels.to_vec(), w as usize, h as usize);
+    match EncodeRequest::new(ImageFormat::Jpeg)
+        .with_quality(90.0)
+        .encode_rgb8(img.as_ref())
+    {
+        Ok(encoded) => { let _ = fs::write(path, encoded.data()); }
+        Err(e) => eprintln!("    save error: {e}"),
     }
 }
 
@@ -613,28 +649,34 @@ fn main() {
         println!("\n[{}/{}] {}", si + 1, num_samples, stem);
 
         // Load expert
-        let expert_img = match image::open(expert_path) {
-            Ok(i) => i,
-            Err(_) => {
-                println!("  SKIP: can't load expert");
-                continue;
-            }
+        let expert_bytes = match fs::read(expert_path) {
+            Ok(b) => b,
+            Err(_) => { println!("  SKIP: can't load expert"); continue; }
         };
-        let expert_rgb = expert_img.to_rgb8();
-        let (ew, eh) = (expert_rgb.width(), expert_rgb.height());
-        let expert_raw = expert_rgb.into_raw();
+        let expert_decoded = match DecodeRequest::new(&expert_bytes).decode() {
+            Ok(d) => d,
+            Err(_) => { println!("  SKIP: can't decode expert"); continue; }
+        };
+        let (ew, eh) = (expert_decoded.width(), expert_decoded.height());
+        let expert_raw = {
+            use zenpixels_convert::PixelBufferConvertTypedExt;
+            expert_decoded.into_buffer().to_rgb8().copy_to_contiguous_bytes()
+        };
 
         // Load original JPEG
-        let orig_img = match image::open(orig_path) {
-            Ok(i) => i,
-            Err(_) => {
-                println!("  SKIP: can't load original");
-                continue;
-            }
+        let orig_bytes = match fs::read(orig_path) {
+            Ok(b) => b,
+            Err(_) => { println!("  SKIP: can't load original"); continue; }
         };
-        let orig_rgb = orig_img.to_rgb8();
-        let (ow, oh) = (orig_rgb.width(), orig_rgb.height());
-        let orig_raw = orig_rgb.into_raw();
+        let orig_decoded = match DecodeRequest::new(&orig_bytes).decode() {
+            Ok(d) => d,
+            Err(_) => { println!("  SKIP: can't decode original"); continue; }
+        };
+        let (ow, oh) = (orig_decoded.width(), orig_decoded.height());
+        let orig_raw = {
+            use zenpixels_convert::PixelBufferConvertTypedExt;
+            orig_decoded.into_buffer().to_rgb8().copy_to_contiguous_bytes()
+        };
 
         // --- Baseline: original vs expert (no processing) ---
         let (orig_r, expert_r, w, h) = resize_pair(&orig_raw, ow, oh, &expert_raw, ew, eh);

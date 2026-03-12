@@ -27,13 +27,18 @@ zenpixels-convert = { version = "0.1", path = "../zenpixels/zenpixels-convert" }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
-image = "0.25"
-imageproc = "0.26"
+imgref = "1.12"
 palette = { version = "0.7", default-features = false, features = ["std"] }
+rgb = { version = "0.8", default-features = false, features = ["as-bytes"] }
+zencodecs = { version = "0.1", path = "../zencodecs", features = ["jpeg", "png"] }
 zenraw = { version = "0.1", path = "../zenraw", features = ["darktable", "exif"] }
+zenresize = { version = "0.1", path = "../zenresize", default-features = false, features = ["std"] }
 zensim = { version = "0.2", path = "../zensim/zensim", default-features = false }
 zenpixels = { version = "0.1", path = "../zenpixels/zenpixels", features = ["planar", "rgb"] }
 zenpixels-convert = { version = "0.1", path = "../zenpixels/zenpixels-convert", features = ["planar"] }
+
+# Keep image only for tests that still need it (reference_validation, quality_validation)
+image = "0.25"
 
 [[example]]
 name = "train_autotune"
@@ -45,6 +50,10 @@ required-features = ["experimental"]
 
 [[example]]
 name = "darktable_parity"
+required-features = ["experimental"]
+
+[[example]]
+name = "mobile_parity"
 required-features = ["experimental"]
 
 [[test]]
@@ -64,3 +73,6 @@ required-features = ["srgb-filters"]
 zenpixels = { path = "../zenpixels/zenpixels" }
 zensim = { path = "../zensim/zensim" }
 whereat = { path = "../whereat" }
+zencodecs = { path = "../zencodecs" }
+zencodec = { path = "../zencodec" }
+zenresize = { path = "../zenresize" }
