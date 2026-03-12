@@ -15,6 +15,7 @@ mod clarity;
 mod color_grading;
 mod color_matrix;
 mod contrast;
+pub mod dt_sigmoid;
 mod dehaze;
 mod devignette;
 mod exposure;

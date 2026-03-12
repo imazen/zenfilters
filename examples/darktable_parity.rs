@@ -166,6 +166,34 @@ fn apply_pipeline_basecurve(
     output
 }
 
+/// Apply darktable-compatible sigmoid tone mapping in linear RGB space.
+///
+/// Uses the exact generalized log-logistic sigmoid from darktable's sigmoid module
+/// with per-channel processing and hue preservation.
+fn apply_dt_sigmoid_pipeline(
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+) -> Vec<u8> {
+    use zenfilters::filters::dt_sigmoid;
+    let params = dt_sigmoid::default_params();
+    let mut rgb = linear_f32.to_vec();
+    dt_sigmoid::apply_dt_sigmoid(&mut rgb, &params);
+    // Convert to sRGB u8
+    let n = (w as usize) * (h as usize);
+    let mut output = vec![0u8; n * 3];
+    for i in 0..n * 3 {
+        let v = rgb[i].clamp(0.0, 1.0);
+        let srgb = if v <= 0.003_130_8 {
+            v * 12.92
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        };
+        output[i] = (srgb * 255.0 + 0.5) as u8;
+    }
+    output
+}
+
 /// Get darktable's display-referred sRGB output for a DNG file.
 /// This uses darktable's default workflow (basecurve tone mapping).
 /// Get darktable sRGB output for a DNG file with a specific workflow.
@@ -320,17 +348,18 @@ fn print_zone_summary<F, const N: usize>(
 
 struct ImageResult {
     name: String,
-    parity_base: f64,     // our DNG pipeline (sigmoid) vs darktable display
-    parity_basecurve: f64, // our DNG pipeline (camera basecurve) vs darktable display
-    parity_rule_dng: f64, // our DNG pipeline (rule-based) vs darktable display
-    ceiling: f64,         // darktable display vs expert
-    quality: f64,         // our JPEG cluster pipeline (k=1) vs expert
-    quality_k3: f64,      // our JPEG cluster pipeline (k=3 blend) vs expert
-    quality_rule: f64,    // our JPEG rule-based pipeline vs expert
-    baseline: f64,        // untouched original vs expert
-    basecurve_name: String, // which basecurve was matched
-    regional_dng: Option<RegionalComparison>,  // DNG base vs darktable
-    regional_jpeg: Option<RegionalComparison>, // best JPEG pipeline vs expert
+    parity_base: f64,      // our Oklab sigmoid vs darktable sigmoid
+    parity_dt_sig: f64,    // our dt_sigmoid (matching dt formula) vs darktable sigmoid
+    parity_basecurve: f64, // our basecurve vs darktable basecurve
+    parity_rule_dng: f64,  // our rule-based vs darktable sigmoid
+    ceiling: f64,          // darktable sigmoid vs expert
+    quality: f64,          // our JPEG cluster pipeline (k=1) vs expert
+    quality_k3: f64,       // our JPEG cluster pipeline (k=3 blend) vs expert
+    quality_rule: f64,     // our JPEG rule-based pipeline vs expert
+    baseline: f64,         // untouched original vs expert
+    basecurve_name: String,
+    regional_dng: Option<RegionalComparison>,
+    regional_jpeg: Option<RegionalComparison>,
 }
 
 fn main() {
@@ -515,10 +544,11 @@ fn main() {
             &zs,
             &format!("{OUTPUT_DIR}/{stem}"),
         );
-        let (parity_base, parity_basecurve, parity_rule_dng, ceiling, basecurve_name, regional_dng) =
+        let (parity_base, parity_dt_sig, parity_basecurve, parity_rule_dng, ceiling, basecurve_name, regional_dng) =
             match dng_result {
                 Some(r) => (
                     r.parity_base,
+                    r.parity_dt_sig,
                     r.parity_basecurve,
                     r.parity_rule,
                     r.ceiling,
@@ -527,7 +557,7 @@ fn main() {
                 ),
                 None => {
                     println!("  DNG failed");
-                    (-1.0, -1.0, -1.0, -1.0, String::new(), None)
+                    (-1.0, -1.0, -1.0, -1.0, -1.0, String::new(), None)
                 }
             };
 
@@ -538,7 +568,7 @@ fn main() {
         };
 
         println!(
-            "  C{best_cluster:02} [{basecurve_name}] | sig={parity_base:.1} bc={parity_basecurve:.1} rDNG={parity_rule_dng:.1} ceil={ceiling:.1} k1={quality:.1} k3={quality_k3:.1} rule={quality_rule:.1} base0={baseline:.1}"
+            "  C{best_cluster:02} [{basecurve_name}] | sig={parity_base:.1} dtSig={parity_dt_sig:.1} rDNG={parity_rule_dng:.1} ceil={ceiling:.1} k1={quality:.1} k3={quality_k3:.1} rule={quality_rule:.1} base0={baseline:.1}"
         );
         if let Some(ref reg) = regional_dng {
             print_regional("DNG→dt", reg);
@@ -556,6 +586,7 @@ fn main() {
         results.push(ImageResult {
             name: stem.to_string(),
             parity_base,
+            parity_dt_sig,
             parity_basecurve,
             parity_rule_dng,
             ceiling,
@@ -571,7 +602,8 @@ fn main() {
 
     // Summary
     println!("\n\n=== RESULTS ===");
-    println!("sig     = our DNG sigmoid pipeline vs darktable sigmoid");
+    println!("sig     = our DNG Oklab sigmoid vs darktable sigmoid");
+    println!("dtSig   = darktable sigmoid formula (linear RGB) vs darktable sigmoid");
     println!("bc      = our DNG basecurve pipeline vs darktable basecurve");
     println!("rDNG    = our DNG pipeline (rule-based) vs darktable display");
     println!("ceil    = darktable display vs expert");
@@ -581,13 +613,13 @@ fn main() {
     println!("base0   = untouched original vs expert\n");
 
     println!(
-        "{:<35} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7}",
-        "Image", "Sig", "BC", "rDNG", "Ceil", "K1", "K3", "Rule", "Base0"
+        "{:<35} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7}",
+        "Image", "Sig", "dtSig", "BC", "rDNG", "Ceil", "K1", "K3", "Rule", "Base0"
     );
-    println!("{}", "-".repeat(106));
+    println!("{}", "-".repeat(114));
 
-    let (mut spb, mut sbc, mut spr, mut sc, mut sq, mut sq3, mut sqr, mut sb) =
-        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    let (mut spb, mut sdts, mut sbc, mut spr, mut sc, mut sq, mut sq3, mut sqr, mut sb) =
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     let mut np = 0;
 
     for r in &results {
@@ -599,9 +631,10 @@ fn main() {
             }
         };
         println!(
-            "{:<35} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7.1} {:>7.1}",
+            "{:<35} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7.1} {:>7.1}",
             &r.name[..r.name.len().min(35)],
             fmt(r.parity_base),
+            fmt(r.parity_dt_sig),
             fmt(r.parity_basecurve),
             fmt(r.parity_rule_dng),
             fmt(r.ceiling),
@@ -612,6 +645,7 @@ fn main() {
         );
         if r.parity_base >= 0.0 {
             spb += r.parity_base;
+            sdts += r.parity_dt_sig;
             sbc += r.parity_basecurve;
             spr += r.parity_rule_dng;
             sc += r.ceiling;
@@ -624,15 +658,16 @@ fn main() {
     }
 
     let n = results.len() as f64;
-    println!("{}", "-".repeat(106));
+    println!("{}", "-".repeat(114));
     let mean_k1 = sq / n;
     let mean_k3 = sq3 / n;
     let mean_rule = sqr / n;
     let mean_base0 = sb / n;
     println!(
-        "{:<35} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1}",
+        "{:<35} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1}",
         "MEAN",
         if np > 0 { spb / np as f64 } else { 0.0 },
+        if np > 0 { sdts / np as f64 } else { 0.0 },
         if np > 0 { sbc / np as f64 } else { 0.0 },
         if np > 0 { spr / np as f64 } else { 0.0 },
         if np > 0 { sc / np as f64 } else { 0.0 },
@@ -642,8 +677,9 @@ fn main() {
         mean_base0
     );
     println!(
-        "{:<35} {:>7} {:>7} {:>7} {:>7} {:>+7.1} {:>+7.1} {:>+7.1} {:>7}",
+        "{:<35} {:>7} {:>7} {:>7} {:>7} {:>7} {:>+7.1} {:>+7.1} {:>+7.1} {:>7}",
         "DELTA vs base0",
+        "",
         "",
         "",
         "",
@@ -654,24 +690,27 @@ fn main() {
         ""
     );
 
-    // Best-of analysis: what if we picked sigmoid or basecurve per-image?
+    // Best-of analysis: what if we picked the best tone mapper per-image?
     if np > 0 {
         let mut best_sum = 0.0f64;
         let mut sig_wins = 0;
+        let mut dts_wins = 0;
         let mut bc_wins = 0;
         for r in &results {
-            if r.parity_base >= 0.0 && r.parity_basecurve >= 0.0 {
-                if r.parity_base >= r.parity_basecurve {
-                    best_sum += r.parity_base;
+            if r.parity_base >= 0.0 {
+                let best = r.parity_base.max(r.parity_dt_sig).max(r.parity_basecurve);
+                best_sum += best;
+                if best == r.parity_base {
                     sig_wins += 1;
+                } else if best == r.parity_dt_sig {
+                    dts_wins += 1;
                 } else {
-                    best_sum += r.parity_basecurve;
                     bc_wins += 1;
                 }
             }
         }
         println!(
-            "\nBest-of sigmoid/basecurve: {:.1} mean ({sig_wins} sigmoid, {bc_wins} basecurve wins)",
+            "\nBest-of sig/dtSig/bc: {:.1} mean ({sig_wins} oklab-sig, {dts_wins} dt-sig, {bc_wins} basecurve wins)",
             best_sum / np as f64
         );
     }
@@ -709,15 +748,16 @@ fn main() {
     let tsv_path = format!("{OUTPUT_DIR}/parity_results.tsv");
     let mut tsv = String::new();
     tsv.push_str(
-        "image\tparity_sigmoid\tparity_basecurve\tbasecurve\tparity_rule_dng\tceiling\tquality_k1\tquality_k3\tquality_rule\tbaseline\tregional_dng\tregional_jpeg\n",
+        "image\tparity_sigmoid\tparity_dt_sigmoid\tparity_basecurve\tbasecurve\tparity_rule_dng\tceiling\tquality_k1\tquality_k3\tquality_rule\tbaseline\tregional_dng\tregional_jpeg\n",
     );
     for r in &results {
         let reg_dng = r.regional_dng.as_ref().map_or(-1.0, |r| r.aggregate);
         let reg_jpeg = r.regional_jpeg.as_ref().map_or(-1.0, |r| r.aggregate);
         tsv.push_str(&format!(
-            "{}\t{:.2}\t{:.2}\t{}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.4}\t{:.4}\n",
+            "{}\t{:.2}\t{:.2}\t{:.2}\t{}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.4}\t{:.4}\n",
             r.name,
             r.parity_base,
+            r.parity_dt_sig,
             r.parity_basecurve,
             r.basecurve_name,
             r.parity_rule_dng,
@@ -734,12 +774,13 @@ fn main() {
     println!("\nResults saved to {tsv_path}");
 }
 
-/// DNG parity result: scores for sigmoid, basecurve, and rule-based pipelines.
+/// DNG parity result: scores for sigmoid, basecurve, dt_sigmoid, and rule-based pipelines.
 struct DngParityResult {
-    parity_base: f64,      // sigmoid pipeline vs darktable
-    parity_basecurve: f64, // camera basecurve vs darktable
-    parity_rule: f64,      // rule-based vs darktable
-    ceiling: f64,          // darktable vs expert
+    parity_base: f64,       // our sigmoid (Oklab) vs darktable sigmoid
+    parity_dt_sig: f64,     // our dt_sigmoid (linear RGB) vs darktable sigmoid
+    parity_basecurve: f64,  // camera basecurve vs darktable basecurve
+    parity_rule: f64,       // rule-based vs darktable
+    ceiling: f64,           // darktable vs expert
     basecurve_name: String,
     regional: RegionalComparison,
 }
@@ -759,7 +800,7 @@ fn process_dng_parity(
     out_prefix: &str,
 ) -> Option<DngParityResult> {
     // 1. Get darktable scene-referred (sigmoid) output — the default in dt 5.5
-    let (dt_sigmoid, dtw, dth) = darktable_display_output(dng_path)?;
+    let (dt_sig_out, dtw, dth) = darktable_display_output(dng_path)?;
 
     // 2. Get darktable display-referred (basecurve) output for basecurve comparison
     let dt_basecurve = darktable_basecurve_output(dng_path);
@@ -788,19 +829,26 @@ fn process_dng_parity(
         apply_pipeline_basecurve(linear_f32, dw, dh, maker, model, m1, m1_inv);
     let preset = find_basecurve(maker, model);
 
-    // 7. Compare our sigmoid vs dt sigmoid
-    let (base_r, dt_r, w, h) = resize_pair(&base_only_srgb, dw, dh, &dt_sigmoid, dtw, dth);
+    // 7. Apply dt_sigmoid (matching darktable's exact formula)
+    let dt_sig_srgb = apply_dt_sigmoid_pipeline(linear_f32, dw, dh);
+
+    // 8. Compare our sigmoid vs dt sigmoid output
+    let (base_r, dt_r, w, h) = resize_pair(&base_only_srgb, dw, dh, &dt_sig_out, dtw, dth);
     let parity_base = zensim_score(&base_r, &dt_r, w, h, zs);
 
-    // 8. Compare our basecurve vs dt basecurve (if available)
+    // 9. Compare our dt_sigmoid vs darktable sigmoid output
+    let (dts_r, dt_r_dts, w_dts, h_dts) = resize_pair(&dt_sig_srgb, dw, dh, &dt_sig_out, dtw, dth);
+    let parity_dt_sig = zensim_score(&dts_r, &dt_r_dts, w_dts, h_dts, zs);
+
+    // 10. Compare our basecurve vs dt basecurve (if available)
     let parity_basecurve = if let Some((ref dt_bc, dt_bc_w, dt_bc_h)) = dt_basecurve {
         let (bc_r, dt_bc_r, w_bc, h_bc) =
             resize_pair(&basecurve_srgb, dw, dh, dt_bc, dt_bc_w, dt_bc_h);
         zensim_score(&bc_r, &dt_bc_r, w_bc, h_bc, zs)
     } else {
-        // Fall back to comparing vs dt sigmoid
+        // Fall back to comparing vs dt sigmoid output
         let (bc_r, dt_r_bc, w_bc, h_bc) =
-            resize_pair(&basecurve_srgb, dw, dh, &dt_sigmoid, dtw, dth);
+            resize_pair(&basecurve_srgb, dw, dh, &dt_sig_out, dtw, dth);
         zensim_score(&bc_r, &dt_r_bc, w_bc, h_bc, zs)
     };
 
@@ -810,11 +858,11 @@ fn process_dng_parity(
     let features = ImageFeatures::extract(&feat_planes);
     let rule_params = rule_based_tune(&features);
     let rule_srgb = apply_pipeline_linear(linear_f32, dw, dh, &rule_params, m1, m1_inv, ctx);
-    let (rule_r, dt_r3, w3, h3) = resize_pair(&rule_srgb, dw, dh, &dt_sigmoid, dtw, dth);
+    let (rule_r, dt_r3, w3, h3) = resize_pair(&rule_srgb, dw, dh, &dt_sig_out, dtw, dth);
     let parity_rule = zensim_score(&rule_r, &dt_r3, w3, h3, zs);
 
     // Darktable sigmoid vs expert → ceiling
-    let (dt_r2, expert_r, w2, h2) = resize_pair(&dt_sigmoid, dtw, dth, expert_raw, ew, eh);
+    let (dt_r2, expert_r, w2, h2) = resize_pair(&dt_sig_out, dtw, dth, expert_raw, ew, eh);
     let ceiling = zensim_score(&dt_r2, &expert_r, w2, h2, zs);
 
     // Regional comparison: DNG sigmoid base vs darktable sigmoid
@@ -829,8 +877,12 @@ fn process_dng_parity(
         save_rgb(dt_bc, dt_bc_w, dt_bc_h, &format!("{out_prefix}_6b_dng_dt_basecurve.jpg"));
     }
 
+    // Save dt_sigmoid output
+    save_rgb(&dts_r, w_dts, h_dts, &format!("{out_prefix}_4c_dng_dt_sigmoid.jpg"));
+
     Some(DngParityResult {
         parity_base,
+        parity_dt_sig,
         parity_basecurve,
         parity_rule,
         ceiling,
