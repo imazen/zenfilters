@@ -302,9 +302,9 @@ fn process_appledng(
     let (enhanced_params, enhanced_score) = optimize_enhanced_pipeline(
         &small_linear, cw, ch, &small_ref, zs, bl_mult, search_lo, search_hi,
     );
-    println!("  Enhanced: c={:.2} sk={:.2} sat={:.2} hue={:.2} wht={:.0} RGB=[{:.2},{:.2},{:.2}] → {enhanced_score:.1} ({:.1}s)",
+    println!("  Enhanced: c={:.2} sk={:.2} sat={:.2} γ={:.2} blk={:.3} RGB=[{:.2},{:.2},{:.2}] → {enhanced_score:.1} ({:.1}s)",
         enhanced_params.contrast, enhanced_params.skew, enhanced_params.saturation,
-        enhanced_params.hue_preservation, enhanced_params.display_white,
+        enhanced_params.gamma, enhanced_params.black_lift,
         enhanced_params.rgb_mult[0], enhanced_params.rgb_mult[1], enhanced_params.rgb_mult[2],
         t0.elapsed().as_secs_f32());
 
@@ -469,9 +469,9 @@ fn process_standard_dng(
     let (enhanced_params, enhanced_score) = optimize_enhanced_pipeline(
         &small_linear, cw, ch, &small_ref, zs, bl_mult.max(1.0), search_lo, search_hi,
     );
-    println!("  Enhanced: c={:.2} sk={:.2} sat={:.2} hue={:.2} wht={:.0} → {enhanced_score:.1} ({:.1}s)",
+    println!("  Enhanced: c={:.2} sk={:.2} sat={:.2} γ={:.2} blk={:.3} → {enhanced_score:.1} ({:.1}s)",
         enhanced_params.contrast, enhanced_params.skew, enhanced_params.saturation,
-        enhanced_params.hue_preservation, enhanced_params.display_white,
+        enhanced_params.gamma, enhanced_params.black_lift,
         t0.elapsed().as_secs_f32());
     if enhanced_score > parity_rgb {
         parity_rgb = enhanced_score;
@@ -914,11 +914,13 @@ struct PipelineParams {
     skew: f32,
     /// Post-sigmoid saturation multiplier (1.0 = no change).
     saturation: f32,
-    /// dt_sigmoid hue preservation (0-1, default 1.0).
-    hue_preservation: f32,
-    /// Display white target (0-100, default 100).
-    display_white: f32,
+    /// Post-sigmoid gamma (power curve, 1.0 = no change, <1 brightens midtones).
+    gamma: f32,
+    /// Black point lift (0.0 = no lift, 0.05 = slight fade).
+    black_lift: f32,
 }
+
+const N_PARAMS: usize = 8;
 
 impl PipelineParams {
     fn from_uniform(mult: f32) -> Self {
@@ -927,34 +929,34 @@ impl PipelineParams {
             contrast: 1.5,
             skew: 0.0,
             saturation: 1.0,
-            hue_preservation: 1.0,
-            display_white: 100.0,
+            gamma: 1.0,
+            black_lift: 0.0,
         }
     }
 
-    fn to_array(&self) -> [f32; 8] {
+    fn to_array(&self) -> [f32; N_PARAMS] {
         [
             self.rgb_mult[0], self.rgb_mult[1], self.rgb_mult[2],
             self.contrast, self.skew, self.saturation,
-            self.hue_preservation, self.display_white,
+            self.gamma, self.black_lift,
         ]
     }
 
-    fn from_array(a: &[f32; 8]) -> Self {
+    fn from_array(a: &[f32; N_PARAMS]) -> Self {
         Self {
             rgb_mult: [a[0], a[1], a[2]],
             contrast: a[3].clamp(0.5, 5.0),
             skew: a[4].clamp(-1.0, 1.0),
             saturation: a[5].clamp(0.0, 3.0),
-            hue_preservation: a[6].clamp(0.0, 1.0),
-            display_white: a[7].clamp(50.0, 100.0),
+            gamma: a[6].clamp(0.3, 3.0),
+            black_lift: a[7].clamp(0.0, 0.15),
         }
     }
 }
 
-/// Apply enhanced pipeline: exposure → dt_sigmoid(contrast, skew) → saturation → sRGB.
+/// Apply enhanced pipeline: exposure → dt_sigmoid → saturation → gamma → black lift → sRGB.
 fn apply_enhanced_pipeline(linear_f32: &[f32], _w: u32, _h: u32, p: &PipelineParams) -> Vec<u8> {
-    let params = dt_sigmoid::compute_params(p.contrast, p.skew, p.display_white, 0.0152, p.hue_preservation);
+    let params = dt_sigmoid::compute_params(p.contrast, p.skew, 100.0, 0.0152, 1.0);
 
     let mut rgb = linear_f32.to_vec();
     let n = rgb.len() / 3;
@@ -970,7 +972,7 @@ fn apply_enhanced_pipeline(linear_f32: &[f32], _w: u32, _h: u32, p: &PipelinePar
     // Apply dt_sigmoid tone mapping
     dt_sigmoid::apply_dt_sigmoid(&mut rgb, &params);
 
-    // Apply saturation adjustment in linear RGB (simple method: scale deviation from luminance)
+    // Apply saturation adjustment in linear RGB (scale deviation from luminance)
     if (p.saturation - 1.0).abs() > 0.01 {
         for i in 0..n {
             let base = i * 3;
@@ -984,7 +986,29 @@ fn apply_enhanced_pipeline(linear_f32: &[f32], _w: u32, _h: u32, p: &PipelinePar
         }
     }
 
-    linear_to_srgb_u8(&rgb)
+    // Convert to sRGB u8 with optional gamma and black lift
+    let mut output = vec![0u8; rgb.len()];
+    let apply_gamma = (p.gamma - 1.0).abs() > 0.01;
+    let apply_lift = p.black_lift > 0.001;
+    for (i, &v) in rgb.iter().enumerate() {
+        let v = v.clamp(0.0, 1.0);
+        // sRGB OETF
+        let mut srgb = if v <= 0.003_130_8 {
+            v * 12.92
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        };
+        // Post-sRGB gamma adjustment (operates on display values)
+        if apply_gamma {
+            srgb = srgb.powf(p.gamma);
+        }
+        // Black lift (raise shadows)
+        if apply_lift {
+            srgb = p.black_lift + srgb * (1.0 - p.black_lift);
+        }
+        output[i] = (srgb.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+    }
+    output
 }
 
 /// Optimize enhanced pipeline with coordinate descent on all 6 parameters.
@@ -1008,23 +1032,23 @@ fn optimize_enhanced_pipeline(
     );
     params.rgb_mult = [best_mult; 3];
 
-    // Phase 2: Coordinate descent on all 8 parameters (4 rounds)
-    let ranges: [(f32, f32); 8] = [
+    // Phase 2: Coordinate descent on all parameters (5 rounds)
+    let ranges: [(f32, f32); N_PARAMS] = [
         (range_lo, range_hi),                // R
         (range_lo, range_hi),                // G
         (range_lo, range_hi),                // B
         (0.5, 4.0),                          // contrast
         (-0.8, 0.8),                         // skew
         (0.3, 2.5),                          // saturation
-        (0.0, 1.0),                          // hue_preservation
-        (60.0, 100.0),                       // display_white
+        (0.3, 3.0),                          // gamma
+        (0.0, 0.15),                         // black_lift
     ];
 
     let mut best_score = eval(&params);
 
     for round in 0..5 {
         let mut improved = false;
-        for dim in 0..8 {
+        for dim in 0..N_PARAMS {
             let mut arr = params.to_array();
             let lo = if dim < 3 {
                 (arr[dim] * 0.5).max(ranges[dim].0)
