@@ -212,32 +212,135 @@ fn process_appledng(
     let search_hi = (bl_mult * 4.0).max(8.0).min(64.0);
     println!("  Search range: {search_lo:.2}..{search_hi:.1}x (BL={bl_ev:+.2} EV → {bl_mult:.1}x)");
 
-    // Optimize uniform exposure
-    let (optimal_mult, parity_uniform) = optimize_dt_sigmoid_exposure(
+    // ── Try Apple ProfileToneCurve ──────────────────────────────────────
+    let dng_profile = zenraw::apple::extract_dng_profile(dng_bytes);
+    let tone_curve_lut = dng_profile.as_ref()
+        .and_then(|p| p.tone_curve.as_deref())
+        .and_then(ToneCurveLut::from_profile_tone_curve);
+
+    let mut parity_uniform = 0.0f64;
+    let mut parity_rgb = 0.0f64;
+    let mut optimal_mult = bl_mult;
+    let mut rgb_mult = [bl_mult; 3];
+    let best_small;
+    let mut method = "dt_sigmoid";
+
+    if let Some(ref lut) = tone_curve_lut {
+        println!("  Profile: {:?}", dng_profile.as_ref().and_then(|p| p.name.as_deref()));
+        lut.print_diagnostics();
+
+        // Quick test: apply the curve at BaselineExposure and check output range
+        let test_mult = bl_mult;
+        let test_out = apply_apple_curve_uniform(&small_linear, test_mult, lut, true);
+        let test_mean: f64 = test_out.iter().map(|&v| v as f64).sum::<f64>() / test_out.len() as f64;
+        let test_score = zensim_score(&test_out, &small_ref, cw, ch, zs);
+        println!("  Test at BL mult {test_mult:.1}x (sRGB): mean={test_mean:.1}, zensim={test_score:.1}");
+        let test_out2 = apply_apple_curve_uniform(&small_linear, test_mult, lut, false);
+        let test_mean2: f64 = test_out2.iter().map(|&v| v as f64).sum::<f64>() / test_out2.len() as f64;
+        let test_score2 = zensim_score(&test_out2, &small_ref, cw, ch, zs);
+        println!("  Test at BL mult {test_mult:.1}x (no gamma): mean={test_mean2:.1}, zensim={test_score2:.1}");
+        // Also test dt_sigmoid at same mult
+        let test_sig = apply_dt_sigmoid_uniform(&small_linear, cw, ch, test_mult);
+        let sig_mean: f64 = test_sig.iter().map(|&v| v as f64).sum::<f64>() / test_sig.len() as f64;
+        let sig_score = zensim_score(&test_sig, &small_ref, cw, ch, zs);
+        println!("  Test at BL mult {test_mult:.1}x (sigmoid): mean={sig_mean:.1}, zensim={sig_score:.1}");
+        // Reference mean
+        let ref_mean: f64 = small_ref.iter().map(|&v| v as f64).sum::<f64>() / small_ref.len() as f64;
+        println!("  Reference mean: {ref_mean:.1}");
+        // Save diagnostic images
+        let prefix = format!("{OUTPUT_DIR}/{label}");
+        save_rgb8_jpeg(&test_out, cw, ch, &format!("{prefix}_apple_curve_srgb.jpg"));
+        save_rgb8_jpeg(&test_out2, cw, ch, &format!("{prefix}_apple_curve_nogamma.jpg"));
+        save_rgb8_jpeg(&test_sig, cw, ch, &format!("{prefix}_sigmoid_bl.jpg"));
+
+        // Try both gamma modes and pick the winner
+        for apply_gamma in [true, false] {
+            let gamma_label = if apply_gamma { "sRGB gamma" } else { "no gamma" };
+
+            let (mult, score) = optimize_apple_curve_exposure(
+                &small_linear, cw, ch, &small_ref, zs, lut,
+                search_lo, search_hi, apply_gamma,
+            );
+            println!("  Apple curve ({gamma_label}): uniform {mult:.3}x → parity={score:.1}");
+
+            let (rgb, rgb_score) = optimize_apple_rgb_exposure(
+                &small_linear, cw, ch, &small_ref, zs, lut,
+                mult, search_lo, search_hi, apply_gamma,
+            );
+            println!("  Apple curve ({gamma_label}): RGB [{:.3},{:.3},{:.3}] → parity={rgb_score:.1}",
+                rgb[0], rgb[1], rgb[2]);
+
+            if rgb_score > parity_rgb {
+                parity_uniform = score;
+                parity_rgb = rgb_score;
+                optimal_mult = mult;
+                rgb_mult = rgb;
+                method = if apply_gamma { "apple+srgb" } else { "apple_direct" };
+            }
+        }
+    }
+
+    // ── Try basic dt_sigmoid with RGB exposure ─────────────────────────
+    let (sig_mult, sig_uniform) = optimize_dt_sigmoid_exposure(
         &small_linear, cw, ch, &small_ref, cw, ch, zs, search_lo, search_hi,
     );
-    println!("  Uniform mult: {optimal_mult:.3}x → parity={parity_uniform:.1} ({:.1}s)",
+    let (sig_rgb, sig_rgb_score) = optimize_rgb_exposure_range(
+        &small_linear, cw, ch, &small_ref, cw, ch, zs, sig_mult, search_lo, search_hi,
+    );
+    println!("  dt_sigmoid basic: uniform {sig_mult:.3}x → {sig_uniform:.1}, RGB → {sig_rgb_score:.1} ({:.1}s)",
         t0.elapsed().as_secs_f32());
 
-    // Optimize per-channel RGB (wider range for APPLEDNG)
-    let (rgb_mult, parity_rgb) = optimize_rgb_exposure_range(
-        &small_linear, cw, ch, &small_ref, cw, ch, zs, optimal_mult, search_lo, search_hi,
+    if sig_rgb_score > parity_rgb {
+        parity_uniform = sig_uniform;
+        parity_rgb = sig_rgb_score;
+        optimal_mult = sig_mult;
+        rgb_mult = sig_rgb;
+        method = "dt_sigmoid";
+    }
+
+    // ── Enhanced pipeline: dt_sigmoid + contrast/skew/saturation tuning ──
+    let (enhanced_params, enhanced_score) = optimize_enhanced_pipeline(
+        &small_linear, cw, ch, &small_ref, zs, bl_mult, search_lo, search_hi,
     );
-    let delta = parity_rgb - parity_uniform;
-    println!("  RGB mult: [{:.3}, {:.3}, {:.3}] → parity={parity_rgb:.1} (Δ={delta:+.1}) ({:.1}s)",
-        rgb_mult[0], rgb_mult[1], rgb_mult[2], t0.elapsed().as_secs_f32());
-    println!("  RGB ratios: R/G={:.3}  B/G={:.3}",
-        rgb_mult[0] / rgb_mult[1], rgb_mult[2] / rgb_mult[1]);
+    println!("  Enhanced: contrast={:.2} skew={:.2} sat={:.2} RGB=[{:.2},{:.2},{:.2}] → {enhanced_score:.1} ({:.1}s)",
+        enhanced_params.contrast, enhanced_params.skew, enhanced_params.saturation,
+        enhanced_params.rgb_mult[0], enhanced_params.rgb_mult[1], enhanced_params.rgb_mult[2],
+        t0.elapsed().as_secs_f32());
+
+    if enhanced_score > parity_rgb {
+        parity_uniform = 0.0; // not applicable for enhanced
+        parity_rgb = enhanced_score;
+        optimal_mult = enhanced_params.rgb_mult[1]; // use G channel as reference
+        rgb_mult = enhanced_params.rgb_mult;
+        method = "enhanced";
+    }
+
+    println!("  BEST method: {method} → parity={parity_rgb:.1} ({:.1}s)",
+        t0.elapsed().as_secs_f32());
+
+    // Generate output with best method
+    best_small = match method {
+        "enhanced" => {
+            apply_enhanced_pipeline(&small_linear, cw, ch, &enhanced_params)
+        }
+        m if m.starts_with("apple") => {
+            let lut = tone_curve_lut.as_ref().unwrap();
+            let apply_gamma = method == "apple+srgb";
+            apply_apple_curve_rgb(&small_linear, rgb_mult, lut, apply_gamma)
+        }
+        _ => {
+            apply_dt_sigmoid_rgb(&small_linear, cw, ch, rgb_mult)
+        }
+    };
 
     // Regional comparison
-    let best_small = apply_dt_sigmoid_rgb(&small_linear, cw, ch, rgb_mult);
     let regional = regional_compare_srgb(&best_small, &small_ref, cw, ch, m1);
     print_regional(&regional);
 
     // Save comparison images
     let prefix = format!("{OUTPUT_DIR}/{label}");
     save_rgb8_jpeg(&small_ref, cw, ch, &format!("{prefix}_apple_preview.jpg"));
-    save_rgb8_jpeg(&best_small, cw, ch, &format!("{prefix}_our_rgb.jpg"));
+    save_rgb8_jpeg(&best_small, cw, ch, &format!("{prefix}_our_{method}.jpg"));
     let (sbs, sbs_w, sbs_h) = side_by_side(&best_small, &small_ref, cw, ch);
     save_rgb8_jpeg(&sbs, sbs_w, sbs_h, &format!("{prefix}_sbs.jpg"));
     let heat = diff_heatmap(&best_small, &small_ref, cw, ch);
@@ -259,7 +362,7 @@ fn process_appledng(
         dims: (dw, dh),
         linear_mean: mean_v as f32,
         regional,
-        reference_source: "apple_preview",
+        reference_source: method,
     })
 }
 
@@ -354,8 +457,30 @@ fn process_standard_dng(
     println!("  RGB ratios: R/G={:.3}  B/G={:.3}",
         rgb_mult[0] / rgb_mult[1], rgb_mult[2] / rgb_mult[1]);
 
+    // Enhanced pipeline
+    let mut parity_rgb = parity_rgb;
+    let mut rgb_mult = rgb_mult;
+    let mut optimal_mult = optimal_mult;
+    let mut reference_source = "darktable";
+    let (enhanced_params, enhanced_score) = optimize_enhanced_pipeline(
+        &small_linear, cw, ch, &small_ref, zs, bl_mult.max(1.0), search_lo, search_hi,
+    );
+    println!("  Enhanced: contrast={:.2} skew={:.2} sat={:.2} → {enhanced_score:.1} ({:.1}s)",
+        enhanced_params.contrast, enhanced_params.skew, enhanced_params.saturation,
+        t0.elapsed().as_secs_f32());
+    if enhanced_score > parity_rgb {
+        parity_rgb = enhanced_score;
+        rgb_mult = enhanced_params.rgb_mult;
+        optimal_mult = enhanced_params.rgb_mult[1];
+        reference_source = "enhanced";
+    }
+
     // Regional comparison
-    let best_small = apply_dt_sigmoid_rgb(&small_linear, cw, ch, rgb_mult);
+    let best_small = if reference_source == "enhanced" {
+        apply_enhanced_pipeline(&small_linear, cw, ch, &enhanced_params)
+    } else {
+        apply_dt_sigmoid_rgb(&small_linear, cw, ch, rgb_mult)
+    };
     let regional = regional_compare_srgb(&best_small, &small_ref, cw, ch, m1);
     print_regional(&regional);
 
@@ -394,7 +519,7 @@ fn process_standard_dng(
         dims: (dw, dh),
         linear_mean: mean_v as f32,
         regional,
-        reference_source: "darktable",
+        reference_source,
     })
 }
 
@@ -627,6 +752,296 @@ fn linear_to_srgb_u8(rgb: &[f32]) -> Vec<u8> {
         output[i] = (srgb * 255.0 + 0.5) as u8;
     }
     output
+}
+
+// ── Apple ProfileToneCurve pipeline ──────────────────────────────────────
+
+/// LUT built from Apple's ProfileToneCurve (257 control points → fast lookup).
+struct ToneCurveLut {
+    lut: Vec<f32>,
+}
+
+impl ToneCurveLut {
+    /// Build from raw ProfileToneCurve data (514 floats = 257 x,y pairs).
+    fn from_profile_tone_curve(tc: &[f32]) -> Option<Self> {
+        let n_points = tc.len() / 2;
+        if n_points < 2 { return None; }
+
+        let points: Vec<(f32, f32)> = (0..n_points)
+            .map(|i| (tc[i * 2], tc[i * 2 + 1]))
+            .collect();
+
+        let lut_size = 4096usize;
+        let mut lut = vec![0.0f32; lut_size + 1];
+        for i in 0..=lut_size {
+            let x = i as f32 / lut_size as f32;
+            lut[i] = interpolate_curve(&points, x);
+        }
+        Some(ToneCurveLut { lut })
+    }
+
+    /// Evaluate the curve at x (clamped to [0, 1]).
+    fn eval(&self, x: f32) -> f32 {
+        let x = x.clamp(0.0, 1.0);
+        let lut_max = (self.lut.len() - 1) as f32;
+        let idx_f = x * lut_max;
+        let idx = idx_f as usize;
+        let frac = idx_f - idx as f32;
+        if idx >= self.lut.len() - 1 {
+            self.lut[self.lut.len() - 1]
+        } else {
+            self.lut[idx] * (1.0 - frac) + self.lut[idx + 1] * frac
+        }
+    }
+
+    /// Print diagnostic info about the curve shape.
+    fn print_diagnostics(&self) {
+        let mid = self.eval(0.18);
+        let half = self.eval(0.5);
+        let quarter = self.eval(0.25);
+        let max = self.eval(1.0);
+        println!("    curve(0.18)={mid:.4} curve(0.25)={quarter:.4} curve(0.50)={half:.4} curve(1.0)={max:.4}");
+        // If curve(0.18) > 0.35, the curve likely includes gamma-like encoding
+        if mid > 0.35 {
+            println!("    → Curve appears to include gamma encoding (skip sRGB)");
+        } else {
+            println!("    → Curve output is linear (apply sRGB gamma)");
+        }
+    }
+}
+
+fn interpolate_curve(points: &[(f32, f32)], x: f32) -> f32 {
+    if x <= points[0].0 { return points[0].1; }
+    if x >= points[points.len() - 1].0 { return points[points.len() - 1].1; }
+    let idx = points.partition_point(|p| p.0 < x);
+    if idx == 0 { return points[0].1; }
+    let (x0, y0) = points[idx - 1];
+    let (x1, y1) = points[idx];
+    let t = if (x1 - x0).abs() < 1e-10 { 0.0 } else { (x - x0) / (x1 - x0) };
+    y0 + t * (y1 - y0)
+}
+
+/// Apply Apple ProfileToneCurve with per-channel exposure, output sRGB gamma.
+fn apply_apple_curve_rgb(
+    linear_f32: &[f32], rgb_mult: [f32; 3], lut: &ToneCurveLut, apply_srgb_gamma: bool,
+) -> Vec<u8> {
+    let n = linear_f32.len();
+    let mut output = vec![0u8; n];
+    let npix = n / 3;
+    for i in 0..npix {
+        let base = i * 3;
+        for c in 0..3 {
+            let v = linear_f32[base + c] * rgb_mult[c];
+            let mapped = lut.eval(v);
+            let final_v = if apply_srgb_gamma {
+                // Curve output is linear → apply sRGB transfer
+                let m = mapped.clamp(0.0, 1.0);
+                if m <= 0.003_130_8 { m * 12.92 } else { 1.055 * m.powf(1.0 / 2.4) - 0.055 }
+            } else {
+                // Curve already includes gamma-like encoding
+                mapped.clamp(0.0, 1.0)
+            };
+            output[base + c] = (final_v * 255.0 + 0.5) as u8;
+        }
+    }
+    output
+}
+
+fn apply_apple_curve_uniform(
+    linear_f32: &[f32], mult: f32, lut: &ToneCurveLut, apply_srgb_gamma: bool,
+) -> Vec<u8> {
+    apply_apple_curve_rgb(linear_f32, [mult, mult, mult], lut, apply_srgb_gamma)
+}
+
+fn optimize_apple_curve_exposure(
+    linear_f32: &[f32], w: u32, h: u32,
+    reference: &[u8], zs: &Zensim, lut: &ToneCurveLut,
+    lo: f32, hi: f32, apply_srgb_gamma: bool,
+) -> (f32, f64) {
+    golden_search(
+        |mult| {
+            let out = apply_apple_curve_uniform(linear_f32, mult, lut, apply_srgb_gamma);
+            zensim_score(&out, reference, w, h, zs)
+        },
+        lo, hi,
+    )
+}
+
+fn optimize_apple_rgb_exposure(
+    linear_f32: &[f32], w: u32, h: u32,
+    reference: &[u8], zs: &Zensim, lut: &ToneCurveLut,
+    uniform_mult: f32, range_lo: f32, range_hi: f32, apply_srgb_gamma: bool,
+) -> ([f32; 3], f64) {
+    let mut rgb = [uniform_mult; 3];
+    let mut best_score = 0.0f64;
+
+    let eval = |m: [f32; 3]| -> f64 {
+        let out = apply_apple_curve_rgb(linear_f32, m, lut, apply_srgb_gamma);
+        zensim_score(&out, reference, w, h, zs)
+    };
+
+    for _ in 0..3 {
+        for ch in 0..3 {
+            let lo = (rgb[ch] * 0.5).max(range_lo);
+            let hi = (rgb[ch] * 2.0).min(range_hi);
+            let (best_val, score) = golden_search(
+                |v| { let mut m = rgb; m[ch] = v; eval(m) },
+                lo, hi,
+            );
+            rgb[ch] = best_val;
+            best_score = score;
+        }
+    }
+    (rgb, best_score)
+}
+
+// ── Enhanced pipeline: dt_sigmoid with tunable parameters ────────────────
+
+/// Tunable parameters for the enhanced pipeline.
+#[derive(Clone, Copy, Debug)]
+struct PipelineParams {
+    /// Per-channel exposure multipliers.
+    rgb_mult: [f32; 3],
+    /// dt_sigmoid contrast (default 1.5).
+    contrast: f32,
+    /// dt_sigmoid skew (default 0.0).
+    skew: f32,
+    /// Post-sigmoid saturation multiplier (1.0 = no change).
+    saturation: f32,
+}
+
+impl PipelineParams {
+    fn from_uniform(mult: f32) -> Self {
+        Self {
+            rgb_mult: [mult; 3],
+            contrast: 1.5,
+            skew: 0.0,
+            saturation: 1.0,
+        }
+    }
+
+    fn to_array(&self) -> [f32; 6] {
+        [
+            self.rgb_mult[0], self.rgb_mult[1], self.rgb_mult[2],
+            self.contrast, self.skew, self.saturation,
+        ]
+    }
+
+    fn from_array(a: &[f32; 6]) -> Self {
+        Self {
+            rgb_mult: [a[0], a[1], a[2]],
+            contrast: a[3].clamp(0.5, 5.0),
+            skew: a[4].clamp(-1.0, 1.0),
+            saturation: a[5].clamp(0.0, 3.0),
+        }
+    }
+}
+
+/// Apply enhanced pipeline: exposure → dt_sigmoid(contrast, skew) → saturation → sRGB.
+fn apply_enhanced_pipeline(linear_f32: &[f32], _w: u32, _h: u32, p: &PipelineParams) -> Vec<u8> {
+    let params = dt_sigmoid::compute_params(p.contrast, p.skew, 100.0, 0.0152, 1.0);
+
+    let mut rgb = linear_f32.to_vec();
+    let n = rgb.len() / 3;
+
+    // Apply per-channel exposure
+    for i in 0..n {
+        let base = i * 3;
+        rgb[base] *= p.rgb_mult[0];
+        rgb[base + 1] *= p.rgb_mult[1];
+        rgb[base + 2] *= p.rgb_mult[2];
+    }
+
+    // Apply dt_sigmoid tone mapping
+    dt_sigmoid::apply_dt_sigmoid(&mut rgb, &params);
+
+    // Apply saturation adjustment in linear RGB (simple method: scale deviation from luminance)
+    if (p.saturation - 1.0).abs() > 0.01 {
+        for i in 0..n {
+            let base = i * 3;
+            let r = rgb[base];
+            let g = rgb[base + 1];
+            let b = rgb[base + 2];
+            let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            rgb[base] = lum + (r - lum) * p.saturation;
+            rgb[base + 1] = lum + (g - lum) * p.saturation;
+            rgb[base + 2] = lum + (b - lum) * p.saturation;
+        }
+    }
+
+    linear_to_srgb_u8(&rgb)
+}
+
+/// Optimize enhanced pipeline with coordinate descent on all 6 parameters.
+fn optimize_enhanced_pipeline(
+    linear_f32: &[f32], w: u32, h: u32,
+    reference: &[u8], zs: &Zensim,
+    initial_mult: f32, range_lo: f32, range_hi: f32,
+) -> (PipelineParams, f64) {
+    // Start with uniform exposure at the initial mult
+    let mut params = PipelineParams::from_uniform(initial_mult);
+
+    let eval = |p: &PipelineParams| -> f64 {
+        let out = apply_enhanced_pipeline(linear_f32, w, h, p);
+        zensim_score(&out, reference, w, h, zs)
+    };
+
+    // Phase 1: Find best uniform exposure with default sigmoid
+    let (best_mult, _) = golden_search(
+        |mult| eval(&PipelineParams::from_uniform(mult)),
+        range_lo, range_hi,
+    );
+    params.rgb_mult = [best_mult; 3];
+
+    // Phase 2: Coordinate descent on all 6 parameters (3 rounds)
+    let ranges: [(f32, f32); 6] = [
+        (range_lo, range_hi),                // R
+        (range_lo, range_hi),                // G
+        (range_lo, range_hi),                // B
+        (0.5, 4.0),                          // contrast
+        (-0.8, 0.8),                         // skew
+        (0.3, 2.5),                          // saturation
+    ];
+
+    let mut best_score = eval(&params);
+
+    for round in 0..4 {
+        let mut improved = false;
+        for dim in 0..6 {
+            let mut arr = params.to_array();
+            let lo = if dim < 3 {
+                (arr[dim] * 0.5).max(ranges[dim].0)
+            } else {
+                ranges[dim].0
+            };
+            let hi = if dim < 3 {
+                (arr[dim] * 2.0).min(ranges[dim].1)
+            } else {
+                ranges[dim].1
+            };
+
+            let (best_val, score) = golden_search(
+                |v| {
+                    let mut a = arr;
+                    a[dim] = v;
+                    eval(&PipelineParams::from_array(&a))
+                },
+                lo, hi,
+            );
+
+            if score > best_score + 0.05 {
+                arr[dim] = best_val;
+                params = PipelineParams::from_array(&arr);
+                best_score = score;
+                improved = true;
+            }
+        }
+        if !improved && round > 0 {
+            break;
+        }
+    }
+
+    (params, best_score)
 }
 
 // ── Optimization ────────────────────────────────────────────────────────
