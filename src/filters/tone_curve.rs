@@ -57,6 +57,30 @@ impl ToneCurve {
         Self { lut }
     }
 
+    /// Create a tone curve from a pre-computed LUT.
+    ///
+    /// Accepts any number of entries (resampled to 256 via linear interpolation).
+    /// Input values are clamped to \[0, 1\].
+    pub fn from_lut(lut_data: &[f32]) -> Self {
+        if lut_data.len() < 2 {
+            return Self::default();
+        }
+
+        let mut lut = [0.0f32; 256];
+        let src_max = (lut_data.len() - 1) as f32;
+
+        for (i, v) in lut.iter_mut().enumerate() {
+            let t = i as f32 / 255.0; // position in [0, 1]
+            let src_idx = t * src_max;
+            let lo = src_idx as usize;
+            let hi = (lo + 1).min(lut_data.len() - 1);
+            let frac = src_idx - lo as f32;
+            *v = (lut_data[lo] * (1.0 - frac) + lut_data[hi] * frac).clamp(0.0, 1.0);
+        }
+
+        Self { lut }
+    }
+
     fn is_identity(&self) -> bool {
         self.lut
             .iter()
@@ -253,6 +277,80 @@ mod tests {
         let a_orig = planes.a.clone();
         curve.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.a, a_orig);
+    }
+
+    #[test]
+    fn from_lut_identity() {
+        // 256-entry identity LUT
+        let identity: Vec<f32> = (0..256).map(|i| i as f32 / 255.0).collect();
+        let curve = ToneCurve::from_lut(&identity);
+        assert!(
+            curve.is_identity(),
+            "identity LUT should produce identity curve"
+        );
+    }
+
+    #[test]
+    fn from_lut_gamma() {
+        // Gamma 2.2 curve as a 4096-entry LUT (like Apple ProfileToneCurve)
+        let gamma_lut: Vec<f32> = (0..4096)
+            .map(|i| {
+                let x = i as f32 / 4095.0;
+                x.powf(1.0 / 2.2)
+            })
+            .collect();
+        let curve = ToneCurve::from_lut(&gamma_lut);
+
+        // Check midpoint: gamma(0.5) = 0.5^(1/2.2) ≈ 0.73
+        let mid = curve.lut[128]; // x = 0.502
+        assert!((mid - 0.73).abs() < 0.02, "gamma(0.5) ≈ 0.73, got {mid}");
+
+        // Should brighten dark values
+        assert!(
+            curve.lut[64] > 64.0 / 255.0,
+            "gamma should brighten shadows"
+        );
+    }
+
+    #[test]
+    fn from_lut_small() {
+        // Tiny 3-entry LUT [0.0, 0.8, 1.0] — should resample to 256
+        let curve = ToneCurve::from_lut(&[0.0, 0.8, 1.0]);
+        assert!((curve.lut[0] - 0.0).abs() < 0.01);
+        assert!((curve.lut[255] - 1.0).abs() < 0.01);
+        // Midpoint should be ~0.8
+        assert!(
+            (curve.lut[128] - 0.8).abs() < 0.02,
+            "mid={}",
+            curve.lut[128]
+        );
+    }
+
+    #[test]
+    fn from_lut_preserves_chroma() {
+        let gamma_lut: Vec<f32> = (0..256)
+            .map(|i| {
+                let x = i as f32 / 255.0;
+                x.powf(0.5)
+            })
+            .collect();
+        let curve = ToneCurve::from_lut(&gamma_lut);
+
+        let mut planes = OklabPlanes::new(4, 4);
+        for v in &mut planes.l {
+            *v = 0.5;
+        }
+        for v in &mut planes.a {
+            *v = 0.1;
+        }
+        for v in &mut planes.b {
+            *v = -0.05;
+        }
+        let a_orig = planes.a.clone();
+        let b_orig = planes.b.clone();
+        curve.apply(&mut planes, &mut FilterContext::new());
+        assert_eq!(planes.a, a_orig, "from_lut should not modify a channel");
+        assert_eq!(planes.b, b_orig, "from_lut should not modify b channel");
     }
 
     #[test]

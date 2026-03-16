@@ -12,6 +12,7 @@ mod bw_mixer;
 mod camera_calibration;
 #[allow(clippy::excessive_precision)]
 pub mod cat16;
+mod channel_curves;
 mod chromatic_aberration;
 mod clarity;
 mod color_grading;
@@ -62,6 +63,7 @@ pub use blur::Blur;
 pub use brilliance::Brilliance;
 pub use bw_mixer::BwMixer;
 pub use camera_calibration::CameraCalibration;
+pub use channel_curves::ChannelCurves;
 pub use chromatic_aberration::ChromaticAberration;
 pub use clarity::Clarity;
 pub use color_grading::ColorGrading;
