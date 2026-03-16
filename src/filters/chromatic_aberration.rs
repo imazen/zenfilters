@@ -95,6 +95,16 @@ impl Filter for ChromaticAberration {
         true
     }
 
+    fn neighborhood_radius(&self, width: u32, height: u32) -> u32 {
+        // Radial shift displaces pixels by up to |shift| * diagonal/2.
+        // Max vertical displacement ≈ height/2 * |shift|.
+        // Max horizontal displacement ≈ width/2 * |shift|.
+        // Report the larger of the two.
+        let max_shift = self.shift_a.abs().max(self.shift_b.abs());
+        let max_disp = (width.max(height) as f32 / 2.0) * max_shift;
+        (max_disp + 1.0).ceil() as u32
+    }
+
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.is_identity() {
             return;

@@ -216,6 +216,13 @@ impl Filter for NoiseReduction {
         true
     }
 
+    fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
+        // À trous wavelet: B3 kernel (5 taps) at step = 2^scale.
+        // Max reach = 2 * 2^(scales-1) for the coarsest scale.
+        let max_step = 1u32 << (self.scales.max(1) - 1);
+        2 * max_step
+    }
+
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.is_identity() {
             return;

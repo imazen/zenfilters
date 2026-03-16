@@ -54,6 +54,10 @@ impl Filter for LocalToneMap {
         true
     }
 
+    fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
+        (self.sigma * 3.0).ceil() as u32
+    }
+
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.compression.abs() < 1e-6 && (self.detail_boost - 1.0).abs() < 1e-6 {
             return;

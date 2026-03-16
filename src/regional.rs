@@ -532,8 +532,7 @@ impl RegionalComparison {
         {
             let l_dist = hist_distance(&a.lum_l_hist[z], &b.lum_l_hist[z]);
             // Chroma mean difference, normalized to [0,1] (max Oklab chroma ~0.33)
-            let chroma_diff = ((a.lum_chroma_mean[z] - b.lum_chroma_mean[z]).abs() / 0.33)
-                .min(1.0);
+            let chroma_diff = ((a.lum_chroma_mean[z] - b.lum_chroma_mean[z]).abs() / 0.33).min(1.0);
             // Blend: 70% L histogram, 30% chroma mean difference
             *dist = l_dist * 0.7 + chroma_diff * 0.3;
             // Weight by presence: if a zone has few pixels, reduce its influence
@@ -592,8 +591,8 @@ impl RegionalComparison {
             // Mean L difference normalized to [0,1]
             let l_diff = (a.texture_l_mean[tz] - b.texture_l_mean[tz]).abs().min(1.0);
             // Mean chroma difference normalized to [0,1] (max Oklab chroma ~0.33)
-            let c_diff = ((a.texture_chroma_mean[tz] - b.texture_chroma_mean[tz]).abs() / 0.33)
-                .min(1.0);
+            let c_diff =
+                ((a.texture_chroma_mean[tz] - b.texture_chroma_mean[tz]).abs() / 0.33).min(1.0);
             // Blend: 35% L histogram, 25% chroma histogram, 25% mean L, 15% mean chroma
             *dist = l_dist * 0.35 + c_dist * 0.25 + l_diff * 0.25 + c_diff * 0.15;
             let presence = (a.texture_fraction[tz] + b.texture_fraction[tz]) * 0.5;
@@ -837,7 +836,11 @@ mod tests {
     fn hist_distance_empty_vs_empty_is_zero() {
         let a = [0.0f32; HIST_BINS];
         let b = [0.0f32; HIST_BINS];
-        assert_eq!(hist_distance(&a, &b), 0.0, "two empty histograms should be identical");
+        assert_eq!(
+            hist_distance(&a, &b),
+            0.0,
+            "two empty histograms should be identical"
+        );
     }
 
     #[test]
@@ -845,7 +848,11 @@ mod tests {
         let a = [0.0f32; HIST_BINS];
         let mut b = [0.0f32; HIST_BINS];
         b[0] = 1.0; // normalized histogram with all weight in bin 0
-        assert_eq!(hist_distance(&a, &b), 1.0, "empty vs non-empty should be 1.0");
+        assert_eq!(
+            hist_distance(&a, &b),
+            1.0,
+            "empty vs non-empty should be 1.0"
+        );
     }
 
     #[test]
@@ -891,17 +898,27 @@ mod tests {
             assert!(d >= 0.0 && d <= 1.0, "lum_zone_dist[{i}]={d} out of [0,1]");
         }
         for (i, &d) in cmp.chroma_zone_dist.iter().enumerate() {
-            assert!(d >= 0.0 && d <= 1.0, "chroma_zone_dist[{i}]={d} out of [0,1]");
+            assert!(
+                d >= 0.0 && d <= 1.0,
+                "chroma_zone_dist[{i}]={d} out of [0,1]"
+            );
         }
         for (i, &d) in cmp.hue_sector_dist.iter().enumerate() {
-            assert!(d >= 0.0 && d <= 1.0, "hue_sector_dist[{i}]={d} out of [0,1]");
+            assert!(
+                d >= 0.0 && d <= 1.0,
+                "hue_sector_dist[{i}]={d} out of [0,1]"
+            );
         }
         for (i, &d) in cmp.texture_zone_dist.iter().enumerate() {
-            assert!(d >= 0.0 && d <= 1.0, "texture_zone_dist[{i}]={d} out of [0,1]");
+            assert!(
+                d >= 0.0 && d <= 1.0,
+                "texture_zone_dist[{i}]={d} out of [0,1]"
+            );
         }
         assert!(
             cmp.aggregate >= 0.0 && cmp.aggregate <= 1.0,
-            "aggregate={} out of [0,1]", cmp.aggregate,
+            "aggregate={} out of [0,1]",
+            cmp.aggregate,
         );
     }
 
@@ -917,7 +934,8 @@ mod tests {
         ];
         for (l, expected_zone) in cases {
             assert_eq!(
-                lum_zone(l), expected_zone,
+                lum_zone(l),
+                expected_zone,
                 "L={l} should be zone {expected_zone}"
             );
         }
@@ -933,7 +951,8 @@ mod tests {
         ];
         for (c, expected_zone) in cases {
             assert_eq!(
-                chroma_zone(c), expected_zone,
+                chroma_zone(c),
+                expected_zone,
                 "chroma={c} should be zone {expected_zone}"
             );
         }
@@ -951,7 +970,8 @@ mod tests {
         ];
         for (hue, expected) in cases {
             assert_eq!(
-                hue_sector(hue), expected,
+                hue_sector(hue),
+                expected,
                 "hue={hue}° should be sector {expected}"
             );
         }
@@ -1037,7 +1057,8 @@ mod tests {
         assert!(
             (ab.aggregate - ba.aggregate).abs() < 1e-5,
             "comparison should be symmetric: {:.6} vs {:.6}",
-            ab.aggregate, ba.aggregate
+            ab.aggregate,
+            ba.aggregate
         );
     }
 
@@ -1084,7 +1105,8 @@ mod tests {
             assert!(
                 cmp.aggregate >= prev_dist - 1e-5,
                 "distance should increase with larger shift: shift={shift} agg={} prev={}",
-                cmp.aggregate, prev_dist,
+                cmp.aggregate,
+                prev_dist,
             );
             prev_dist = cmp.aggregate;
         }

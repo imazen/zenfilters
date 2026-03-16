@@ -60,7 +60,9 @@ fn load_resized(path: &Path, max_dim: u32) -> Option<(Vec<u8>, u32, u32)> {
 }
 
 fn crop_rgb8(data: &[u8], w: u32, h: u32, tw: u32, th: u32) -> Vec<u8> {
-    if tw == w && th == h { return data.to_vec(); }
+    if tw == w && th == h {
+        return data.to_vec();
+    }
     let tw = tw.min(w);
     let th = th.min(h);
     let mut out = vec![0u8; (tw as usize) * (th as usize) * 3];
@@ -248,7 +250,11 @@ fn main() {
             let path = format!("{prefix}_{suffix}.jpg");
             let rgb_pixels: Vec<Rgb<u8>> = pixels
                 .chunks_exact(3)
-                .map(|c| Rgb { r: c[0], g: c[1], b: c[2] })
+                .map(|c| Rgb {
+                    r: c[0],
+                    g: c[1],
+                    b: c[2],
+                })
                 .collect();
             let img = ImgVec::new(rgb_pixels, w as usize, h as usize);
             let encoded = EncodeRequest::new(ImageFormat::Jpeg)

@@ -25,6 +25,20 @@ pub trait Filter: Send + Sync {
         false
     }
 
+    /// Maximum spatial radius this filter needs, in pixels.
+    ///
+    /// For Gaussian-based filters: `ceil(3 * sigma)`. For wavelet filters:
+    /// the maximum tap distance across all scales. For per-pixel filters: 0.
+    ///
+    /// Used by windowed pipeline processors to determine how many rows of
+    /// overlap context to buffer around each processing strip.
+    ///
+    /// For filters whose radius depends on image dimensions (e.g., Dehaze),
+    /// return the radius for the given `width` and `height`.
+    fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
+        0
+    }
+
     /// Apply the filter in-place to the given planes.
     ///
     /// `ctx` provides reusable scratch buffers — neighborhood filters should

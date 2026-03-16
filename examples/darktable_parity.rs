@@ -178,12 +178,7 @@ fn apply_pipeline_basecurve(
 ///
 /// `exposure_mult`: Linear multiplier to approximate darktable's color calibration
 /// and input profile normalization (~1.85x matches darktable's scene-referred pipeline for DSLRs).
-fn apply_dt_sigmoid_pipeline(
-    linear_f32: &[f32],
-    w: u32,
-    h: u32,
-    exposure_mult: f32,
-) -> Vec<u8> {
+fn apply_dt_sigmoid_pipeline(linear_f32: &[f32], w: u32, h: u32, exposure_mult: f32) -> Vec<u8> {
     use zenfilters::filters::dt_sigmoid;
     let params = dt_sigmoid::default_params();
     let mut rgb = linear_f32.to_vec();
@@ -200,12 +195,7 @@ fn apply_dt_sigmoid_pipeline(
 /// Apply dt_sigmoid with per-channel exposure multipliers [R, G, B].
 ///
 /// Each channel gets its own multiplier to capture color calibration differences.
-fn apply_dt_sigmoid_rgb(
-    linear_f32: &[f32],
-    w: u32,
-    h: u32,
-    rgb_mult: [f32; 3],
-) -> Vec<u8> {
+fn apply_dt_sigmoid_rgb(linear_f32: &[f32], w: u32, h: u32, rgb_mult: [f32; 3]) -> Vec<u8> {
     use zenfilters::filters::dt_sigmoid;
     let params = dt_sigmoid::default_params();
     let mut rgb = linear_f32.to_vec();
@@ -248,15 +238,21 @@ fn golden_search(f: impl Fn(f32) -> f64, lo: f32, hi: f32) -> (f32, f64) {
     let mut fd = f(d);
     for _ in 0..25 {
         if fc > fd {
-            b = d; d = c; fd = fc;
+            b = d;
+            d = c;
+            fd = fc;
             c = b - phi * (b - a);
             fc = f(c);
         } else {
-            a = c; c = d; fc = fd;
+            a = c;
+            c = d;
+            fc = fd;
             d = a + phi * (b - a);
             fd = f(d);
         }
-        if (b - a).abs() < 0.005 { break; }
+        if (b - a).abs() < 0.005 {
+            break;
+        }
     }
     let best = (a + b) / 2.0;
     (best, f(best))
@@ -264,9 +260,15 @@ fn golden_search(f: impl Fn(f32) -> f64, lo: f32, hi: f32) -> (f32, f64) {
 
 /// Find the optimal uniform exposure multiplier for dt_sigmoid.
 fn optimize_dt_sigmoid_exposure(
-    linear_f32: &[f32], w: u32, h: u32,
-    reference: &[u8], ref_w: u32, ref_h: u32,
-    zs: &Zensim, lo: f32, hi: f32,
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+    reference: &[u8],
+    ref_w: u32,
+    ref_h: u32,
+    zs: &Zensim,
+    lo: f32,
+    hi: f32,
 ) -> (f32, f64) {
     golden_search(
         |mult| {
@@ -274,7 +276,8 @@ fn optimize_dt_sigmoid_exposure(
             let (a, b, rw, rh) = resize_pair(&out, w, h, reference, ref_w, ref_h);
             zensim_score(&a, &b, rw, rh, zs)
         },
-        lo, hi,
+        lo,
+        hi,
     )
 }
 
@@ -283,9 +286,14 @@ fn optimize_dt_sigmoid_exposure(
 /// Starts from the uniform optimum, then optimizes each channel independently,
 /// repeating for `rounds` iterations.
 fn optimize_rgb_exposure(
-    linear_f32: &[f32], w: u32, h: u32,
-    reference: &[u8], ref_w: u32, ref_h: u32,
-    zs: &Zensim, uniform_mult: f32,
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+    reference: &[u8],
+    ref_w: u32,
+    ref_h: u32,
+    zs: &Zensim,
+    uniform_mult: f32,
 ) -> ([f32; 3], f64) {
     let mut rgb = [uniform_mult; 3];
     let mut best_score = 0.0f64;
@@ -305,7 +313,8 @@ fn optimize_rgb_exposure(
                     m[ch] = v;
                     eval(m)
                 },
-                (rgb[ch] * 0.6).max(0.5), rgb[ch] * 1.6,
+                (rgb[ch] * 0.6).max(0.5),
+                rgb[ch] * 1.6,
             );
             rgb[ch] = best_val;
             best_score = score;
@@ -441,7 +450,9 @@ fn downscale_rgb8(data: &[u8], w: u32, h: u32, max_dim: u32) -> (Vec<u8>, u32, u
 
 /// Crop u8 RGB data to target dimensions (top-left).
 fn crop_u8(data: &[u8], w: u32, h: u32, tw: u32, th: u32) -> Vec<u8> {
-    if tw == w && th == h { return data.to_vec(); }
+    if tw == w && th == h {
+        return data.to_vec();
+    }
     let tw = tw.min(w);
     let th = th.min(h);
     let mut out = vec![0u8; (tw as usize) * (th as usize) * 3];
@@ -456,8 +467,12 @@ fn crop_u8(data: &[u8], w: u32, h: u32, tw: u32, th: u32) -> Vec<u8> {
 
 /// Resize and crop two images to common dimensions <= MAX_DIM.
 fn resize_pair(
-    a: &[u8], aw: u32, ah: u32,
-    b: &[u8], bw: u32, bh: u32,
+    a: &[u8],
+    aw: u32,
+    ah: u32,
+    b: &[u8],
+    bw: u32,
+    bh: u32,
 ) -> (Vec<u8>, Vec<u8>, u32, u32) {
     let (ra, raw, rah) = downscale_rgb8(a, aw, ah, MAX_DIM);
     let (rb, rbw, rbh) = downscale_rgb8(b, bw, bh, MAX_DIM);
@@ -475,7 +490,9 @@ fn save_rgb(data: &[u8], w: u32, h: u32, path: &str) {
         .with_quality(90.0)
         .encode_rgb8(img.as_ref())
     {
-        Ok(encoded) => { let _ = fs::write(path, encoded.data()); }
+        Ok(encoded) => {
+            let _ = fs::write(path, encoded.data());
+        }
         Err(e) => eprintln!("    save error: {e}"),
     }
 }
@@ -554,14 +571,14 @@ fn print_zone_summary<F, const N: usize>(
 
 struct ImageResult {
     name: String,
-    parity_dt_opt: f64,    // dt_sigmoid with per-image optimized uniform exposure
-    parity_rgb: f64,       // dt_sigmoid with per-channel [R,G,B] optimized exposure
-    optimal_mult: f32,     // the per-image optimal uniform exposure multiplier
-    rgb_mult: [f32; 3],    // per-channel optimal multipliers
-    ceiling: f64,          // darktable sigmoid vs expert
-    quality_k3: f64,       // our JPEG cluster pipeline (k=3 blend) vs expert
-    quality_rule: f64,     // our JPEG rule-based pipeline vs expert
-    baseline: f64,         // untouched original vs expert
+    parity_dt_opt: f64, // dt_sigmoid with per-image optimized uniform exposure
+    parity_rgb: f64,    // dt_sigmoid with per-channel [R,G,B] optimized exposure
+    optimal_mult: f32,  // the per-image optimal uniform exposure multiplier
+    rgb_mult: [f32; 3], // per-channel optimal multipliers
+    ceiling: f64,       // darktable sigmoid vs expert
+    quality_k3: f64,    // our JPEG cluster pipeline (k=3 blend) vs expert
+    quality_rule: f64,  // our JPEG rule-based pipeline vs expert
+    baseline: f64,      // untouched original vs expert
     illuminant_xy: Option<(f32, f32)>,
     regional_dng: Option<RegionalComparison>,
     regional_jpeg: Option<RegionalComparison>,
@@ -651,31 +668,49 @@ fn main() {
         // Load expert
         let expert_bytes = match fs::read(expert_path) {
             Ok(b) => b,
-            Err(_) => { println!("  SKIP: can't load expert"); continue; }
+            Err(_) => {
+                println!("  SKIP: can't load expert");
+                continue;
+            }
         };
         let expert_decoded = match DecodeRequest::new(&expert_bytes).decode() {
             Ok(d) => d,
-            Err(_) => { println!("  SKIP: can't decode expert"); continue; }
+            Err(_) => {
+                println!("  SKIP: can't decode expert");
+                continue;
+            }
         };
         let (ew, eh) = (expert_decoded.width(), expert_decoded.height());
         let expert_raw = {
             use zenpixels_convert::PixelBufferConvertTypedExt;
-            expert_decoded.into_buffer().to_rgb8().copy_to_contiguous_bytes()
+            expert_decoded
+                .into_buffer()
+                .to_rgb8()
+                .copy_to_contiguous_bytes()
         };
 
         // Load original JPEG
         let orig_bytes = match fs::read(orig_path) {
             Ok(b) => b,
-            Err(_) => { println!("  SKIP: can't load original"); continue; }
+            Err(_) => {
+                println!("  SKIP: can't load original");
+                continue;
+            }
         };
         let orig_decoded = match DecodeRequest::new(&orig_bytes).decode() {
             Ok(d) => d,
-            Err(_) => { println!("  SKIP: can't decode original"); continue; }
+            Err(_) => {
+                println!("  SKIP: can't decode original");
+                continue;
+            }
         };
         let (ow, oh) = (orig_decoded.width(), orig_decoded.height());
         let orig_raw = {
             use zenpixels_convert::PixelBufferConvertTypedExt;
-            orig_decoded.into_buffer().to_rgb8().copy_to_contiguous_bytes()
+            orig_decoded
+                .into_buffer()
+                .to_rgb8()
+                .copy_to_contiguous_bytes()
         };
 
         // --- Baseline: original vs expert (no processing) ---
@@ -755,22 +790,29 @@ fn main() {
             &zs,
             &format!("{OUTPUT_DIR}/{stem}"),
         );
-        let (parity_dt_opt, parity_rgb, optimal_mult, rgb_mult, ceiling, illuminant_xy, regional_dng) =
-            match dng_result {
-                Some(r) => (
-                    r.parity_dt_opt,
-                    r.parity_rgb,
-                    r.optimal_mult,
-                    r.rgb_mult,
-                    r.ceiling,
-                    r.illuminant_xy,
-                    Some(r.regional),
-                ),
-                None => {
-                    println!("  DNG failed");
-                    (-1.0, -1.0, 0.0, [0.0; 3], -1.0, None, None)
-                }
-            };
+        let (
+            parity_dt_opt,
+            parity_rgb,
+            optimal_mult,
+            rgb_mult,
+            ceiling,
+            illuminant_xy,
+            regional_dng,
+        ) = match dng_result {
+            Some(r) => (
+                r.parity_dt_opt,
+                r.parity_rgb,
+                r.optimal_mult,
+                r.rgb_mult,
+                r.ceiling,
+                r.illuminant_xy,
+                Some(r.regional),
+            ),
+            None => {
+                println!("  DNG failed");
+                (-1.0, -1.0, 0.0, [0.0; 3], -1.0, None, None)
+            }
+        };
 
         // --- Regional analysis: best JPEG pipeline vs expert ---
         let regional_jpeg = {
@@ -821,20 +863,30 @@ fn main() {
     );
     println!("{}", "-".repeat(104));
 
-    let (mut sdto, mut srgb, mut sc, mut sq3, mut sb) =
-        (0.0, 0.0, 0.0, 0.0, 0.0);
+    let (mut sdto, mut srgb, mut sc, mut sq3, mut sb) = (0.0, 0.0, 0.0, 0.0, 0.0);
     let mut np = 0;
 
     for r in &results {
         let fmt = |v: f64| -> String {
-            if v < 0.0 { "---".to_string() } else { format!("{v:.1}") }
+            if v < 0.0 {
+                "---".to_string()
+            } else {
+                format!("{v:.1}")
+            }
         };
-        let rgb_str = format!("{:.2},{:.2},{:.2}", r.rgb_mult[0], r.rgb_mult[1], r.rgb_mult[2]);
+        let rgb_str = format!(
+            "{:.2},{:.2},{:.2}",
+            r.rgb_mult[0], r.rgb_mult[1], r.rgb_mult[2]
+        );
         println!(
             "{:<28} {:>6} {:>6} {:>6} {:>20} {:>6} {:>6} {:>6.1}",
             &r.name[..r.name.len().min(28)],
             fmt(r.parity_dt_opt),
-            if r.optimal_mult > 0.0 { format!("{:.2}x", r.optimal_mult) } else { "---".to_string() },
+            if r.optimal_mult > 0.0 {
+                format!("{:.2}x", r.optimal_mult)
+            } else {
+                "---".to_string()
+            },
             fmt(r.parity_rgb),
             rgb_str,
             fmt(r.ceiling),
@@ -858,20 +910,26 @@ fn main() {
     println!(
         "{:<28} {:>6.1} {:>6} {:>6.1} {:>20} {:>6.1} {:>6.1} {:>6.1}",
         "MEAN",
-        mean_dto, "",
-        mean_rgb, "",
+        mean_dto,
+        "",
+        mean_rgb,
+        "",
         if np > 0 { sc / np as f64 } else { 0.0 },
         sq3 / n,
         sb / n,
     );
     println!(
         "{:<28} {:>6} {:>6} {:>+6.1}",
-        "RGB vs uniform", "", "", mean_rgb - mean_dto,
+        "RGB vs uniform",
+        "",
+        "",
+        mean_rgb - mean_dto,
     );
 
     // Exposure multiplier statistics
     if np > 0 {
-        let mults: Vec<f32> = results.iter()
+        let mults: Vec<f32> = results
+            .iter()
             .filter(|r| r.optimal_mult > 0.0)
             .map(|r| r.optimal_mult)
             .collect();
@@ -883,7 +941,8 @@ fn main() {
         }
 
         // Per-channel stats
-        let rgb_mults: Vec<[f32; 3]> = results.iter()
+        let rgb_mults: Vec<[f32; 3]> = results
+            .iter()
             .filter(|r| r.rgb_mult[0] > 0.0)
             .map(|r| r.rgb_mult)
             .collect();
@@ -902,35 +961,64 @@ fn main() {
         if !xys.is_empty() {
             let mean_x = xys.iter().map(|xy| xy.0).sum::<f32>() / xys.len() as f32;
             let mean_y = xys.iter().map(|xy| xy.1).sum::<f32>() / xys.len() as f32;
-            println!("Illuminant xy: mean=({mean_x:.4}, {mean_y:.4})  D65=(0.3127, 0.3290)  n={}", xys.len());
+            println!(
+                "Illuminant xy: mean=({mean_x:.4}, {mean_y:.4})  D65=(0.3127, 0.3290)  n={}",
+                xys.len()
+            );
         }
     }
 
     // Regional summary
     let labels = RegionalComparison::zone_labels();
     {
-        let dng_regs: Vec<&RegionalComparison> =
-            results.iter().filter_map(|r| r.regional_dng.as_ref()).collect();
-        let jpeg_regs: Vec<&RegionalComparison> =
-            results.iter().filter_map(|r| r.regional_jpeg.as_ref()).collect();
+        let dng_regs: Vec<&RegionalComparison> = results
+            .iter()
+            .filter_map(|r| r.regional_dng.as_ref())
+            .collect();
+        let jpeg_regs: Vec<&RegionalComparison> = results
+            .iter()
+            .filter_map(|r| r.regional_jpeg.as_ref())
+            .collect();
 
         if !dng_regs.is_empty() {
-            println!("\n=== REGIONAL: DNG base vs darktable ({} images) ===", dng_regs.len());
-            print_zone_summary("  Luminance", labels.luminance, &dng_regs, |r| &r.lum_zone_dist);
+            println!(
+                "\n=== REGIONAL: DNG base vs darktable ({} images) ===",
+                dng_regs.len()
+            );
+            print_zone_summary("  Luminance", labels.luminance, &dng_regs, |r| {
+                &r.lum_zone_dist
+            });
             print_zone_summary("  Hue      ", labels.hue, &dng_regs, |r| &r.hue_sector_dist);
-            print_zone_summary("  Chroma   ", labels.chroma, &dng_regs, |r| &r.chroma_zone_dist);
-            print_zone_summary("  Texture  ", labels.texture, &dng_regs, |r| &r.texture_zone_dist);
-            let mean_agg: f32 = dng_regs.iter().map(|r| r.aggregate).sum::<f32>() / dng_regs.len() as f32;
+            print_zone_summary("  Chroma   ", labels.chroma, &dng_regs, |r| {
+                &r.chroma_zone_dist
+            });
+            print_zone_summary("  Texture  ", labels.texture, &dng_regs, |r| {
+                &r.texture_zone_dist
+            });
+            let mean_agg: f32 =
+                dng_regs.iter().map(|r| r.aggregate).sum::<f32>() / dng_regs.len() as f32;
             println!("  Aggregate: {mean_agg:.4}");
         }
 
         if !jpeg_regs.is_empty() {
-            println!("\n=== REGIONAL: JPEG pipeline vs expert ({} images) ===", jpeg_regs.len());
-            print_zone_summary("  Luminance", labels.luminance, &jpeg_regs, |r| &r.lum_zone_dist);
-            print_zone_summary("  Hue      ", labels.hue, &jpeg_regs, |r| &r.hue_sector_dist);
-            print_zone_summary("  Chroma   ", labels.chroma, &jpeg_regs, |r| &r.chroma_zone_dist);
-            print_zone_summary("  Texture  ", labels.texture, &jpeg_regs, |r| &r.texture_zone_dist);
-            let mean_agg: f32 = jpeg_regs.iter().map(|r| r.aggregate).sum::<f32>() / jpeg_regs.len() as f32;
+            println!(
+                "\n=== REGIONAL: JPEG pipeline vs expert ({} images) ===",
+                jpeg_regs.len()
+            );
+            print_zone_summary("  Luminance", labels.luminance, &jpeg_regs, |r| {
+                &r.lum_zone_dist
+            });
+            print_zone_summary("  Hue      ", labels.hue, &jpeg_regs, |r| {
+                &r.hue_sector_dist
+            });
+            print_zone_summary("  Chroma   ", labels.chroma, &jpeg_regs, |r| {
+                &r.chroma_zone_dist
+            });
+            print_zone_summary("  Texture  ", labels.texture, &jpeg_regs, |r| {
+                &r.texture_zone_dist
+            });
+            let mean_agg: f32 =
+                jpeg_regs.iter().map(|r| r.aggregate).sum::<f32>() / jpeg_regs.len() as f32;
             println!("  Aggregate: {mean_agg:.4}");
         }
     }
@@ -967,11 +1055,11 @@ fn main() {
 
 /// DNG parity result: scores for dt_sigmoid with uniform and per-channel exposure.
 struct DngParityResult {
-    parity_dt_opt: f64,     // dt_sigmoid with per-image optimized uniform exposure
-    parity_rgb: f64,        // dt_sigmoid with per-channel [R,G,B] optimized exposure
-    optimal_mult: f32,      // optimal uniform exposure multiplier
-    rgb_mult: [f32; 3],     // per-channel optimal multipliers
-    ceiling: f64,           // darktable vs expert
+    parity_dt_opt: f64, // dt_sigmoid with per-image optimized uniform exposure
+    parity_rgb: f64,    // dt_sigmoid with per-channel [R,G,B] optimized exposure
+    optimal_mult: f32,  // optimal uniform exposure multiplier
+    rgb_mult: [f32; 3], // per-channel optimal multipliers
+    ceiling: f64,       // darktable vs expert
     illuminant_xy: Option<(f32, f32)>,
     regional: RegionalComparison,
 }
@@ -1011,26 +1099,16 @@ fn process_dng_parity(
         } else {
             e.color_matrix_1.as_deref()
         };
-        cat16::illuminant_xy_from_dng(
-            e.as_shot_white_xy,
-            e.as_shot_neutral.as_deref(),
-            cm,
-        )
+        cat16::illuminant_xy_from_dng(e.as_shot_white_xy, e.as_shot_neutral.as_deref(), cm)
     });
 
     // 4. Optimize uniform exposure multiplier
-    let (optimal_mult, parity_dt_opt) = optimize_dt_sigmoid_exposure(
-        linear_f32, dw, dh,
-        &dt_sig_out, dtw, dth,
-        zs, 1.0, 4.0,
-    );
+    let (optimal_mult, parity_dt_opt) =
+        optimize_dt_sigmoid_exposure(linear_f32, dw, dh, &dt_sig_out, dtw, dth, zs, 1.0, 4.0);
 
     // 5. Optimize per-channel [R,G,B] exposure multipliers
-    let (rgb_mult, parity_rgb) = optimize_rgb_exposure(
-        linear_f32, dw, dh,
-        &dt_sig_out, dtw, dth,
-        zs, optimal_mult,
-    );
+    let (rgb_mult, parity_rgb) =
+        optimize_rgb_exposure(linear_f32, dw, dh, &dt_sig_out, dtw, dth, zs, optimal_mult);
 
     // 6. Darktable sigmoid vs expert → ceiling
     let (dt_r2, expert_r, w2, h2) = resize_pair(&dt_sig_out, dtw, dth, expert_raw, ew, eh);

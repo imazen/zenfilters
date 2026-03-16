@@ -35,6 +35,11 @@ impl Filter for Dehaze {
         true
     }
 
+    fn neighborhood_radius(&self, width: u32, height: u32) -> u32 {
+        let sigma = (width.min(height) as f32 / 8.0).max(10.0);
+        (sigma * 3.0).ceil() as u32
+    }
+
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.strength.abs() < 1e-6 {
             return;

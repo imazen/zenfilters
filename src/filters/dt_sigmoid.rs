@@ -28,17 +28,35 @@ pub struct DtSigmoidParams {
 }
 
 /// The core generalized log-logistic sigmoid function.
-fn loglogistic_sigmoid(value: f32, magnitude: f32, paper_exp: f32, film_fog: f32, film_power: f32, paper_power: f32) -> f32 {
+fn loglogistic_sigmoid(
+    value: f32,
+    magnitude: f32,
+    paper_exp: f32,
+    film_fog: f32,
+    film_power: f32,
+    paper_power: f32,
+) -> f32 {
     let clamped = value.max(0.0);
     let film_response = (film_fog + clamped).powf(film_power);
-    let paper_response = magnitude * (film_response / (paper_exp + film_response)).powf(paper_power);
-    if paper_response.is_nan() { magnitude } else { paper_response }
+    let paper_response =
+        magnitude * (film_response / (paper_exp + film_response)).powf(paper_power);
+    if paper_response.is_nan() {
+        magnitude
+    } else {
+        paper_response
+    }
 }
 
 /// Compute internal sigmoid parameters from user-facing contrast and skew.
 ///
 /// Follows darktable's commit_params() logic.
-pub fn compute_params(contrast: f32, skew: f32, display_white: f32, display_black: f32, hue_preservation: f32) -> DtSigmoidParams {
+pub fn compute_params(
+    contrast: f32,
+    skew: f32,
+    display_white: f32,
+    display_black: f32,
+    hue_preservation: f32,
+) -> DtSigmoidParams {
     let white_target = 0.01 * display_white;
     let black_target = 0.01 * display_black;
 
@@ -50,8 +68,22 @@ pub fn compute_params(contrast: f32, skew: f32, display_white: f32, display_blac
     let ref_paper_exp = MIDDLE_GREY.powf(ref_film_power) * ((ref_magnitude / MIDDLE_GREY) - 1.0);
 
     let delta = 1e-6f32;
-    let ref_plus = loglogistic_sigmoid(MIDDLE_GREY + delta, ref_magnitude, ref_paper_exp, ref_film_fog, ref_film_power, ref_paper_power);
-    let ref_minus = loglogistic_sigmoid(MIDDLE_GREY - delta, ref_magnitude, ref_paper_exp, ref_film_fog, ref_film_power, ref_paper_power);
+    let ref_plus = loglogistic_sigmoid(
+        MIDDLE_GREY + delta,
+        ref_magnitude,
+        ref_paper_exp,
+        ref_film_fog,
+        ref_film_power,
+        ref_paper_power,
+    );
+    let ref_minus = loglogistic_sigmoid(
+        MIDDLE_GREY - delta,
+        ref_magnitude,
+        ref_paper_exp,
+        ref_film_fog,
+        ref_film_power,
+        ref_paper_power,
+    );
     let ref_slope = (ref_plus - ref_minus) / (2.0 * delta);
 
     // Step 2: Apply skew
@@ -62,12 +94,30 @@ pub fn compute_params(contrast: f32, skew: f32, display_white: f32, display_blac
     let temp_white_grey_relation = (white_target / MIDDLE_GREY).powf(1.0 / paper_power) - 1.0;
     let temp_paper_exp = MIDDLE_GREY.powf(temp_film_power) * temp_white_grey_relation;
 
-    let temp_plus = loglogistic_sigmoid(MIDDLE_GREY + delta, white_target, temp_paper_exp, 0.0, temp_film_power, paper_power);
-    let temp_minus = loglogistic_sigmoid(MIDDLE_GREY - delta, white_target, temp_paper_exp, 0.0, temp_film_power, paper_power);
+    let temp_plus = loglogistic_sigmoid(
+        MIDDLE_GREY + delta,
+        white_target,
+        temp_paper_exp,
+        0.0,
+        temp_film_power,
+        paper_power,
+    );
+    let temp_minus = loglogistic_sigmoid(
+        MIDDLE_GREY - delta,
+        white_target,
+        temp_paper_exp,
+        0.0,
+        temp_film_power,
+        paper_power,
+    );
     let temp_slope = (temp_plus - temp_minus) / (2.0 * delta);
 
     // Step 4: Film power scales reference slope to target
-    let film_power = if temp_slope.abs() > 1e-10 { ref_slope / temp_slope } else { contrast };
+    let film_power = if temp_slope.abs() > 1e-10 {
+        ref_slope / temp_slope
+    } else {
+        contrast
+    };
 
     // Step 5: Final parameter computation
     let white_grey_relation = (white_target / MIDDLE_GREY).powf(1.0 / paper_power) - 1.0;
@@ -114,15 +164,40 @@ pub fn apply_dt_sigmoid(data: &mut [f32], params: &DtSigmoidParams) {
         // Desaturate negative values
         let avg = ((r + g + b) / 3.0).max(0.0);
         let min_val = r.min(g).min(b);
-        let sat_factor = if min_val < 0.0 { -avg / (min_val - avg) } else { 1.0 };
+        let sat_factor = if min_val < 0.0 {
+            -avg / (min_val - avg)
+        } else {
+            1.0
+        };
         let r = avg + sat_factor * (r - avg);
         let g = avg + sat_factor * (g - avg);
         let b = avg + sat_factor * (b - avg);
 
         // Per-channel sigmoid
-        let sr = loglogistic_sigmoid(r, params.white_target, params.paper_exp, params.film_fog, params.film_power, params.paper_power);
-        let sg = loglogistic_sigmoid(g, params.white_target, params.paper_exp, params.film_fog, params.film_power, params.paper_power);
-        let sb = loglogistic_sigmoid(b, params.white_target, params.paper_exp, params.film_fog, params.film_power, params.paper_power);
+        let sr = loglogistic_sigmoid(
+            r,
+            params.white_target,
+            params.paper_exp,
+            params.film_fog,
+            params.film_power,
+            params.paper_power,
+        );
+        let sg = loglogistic_sigmoid(
+            g,
+            params.white_target,
+            params.paper_exp,
+            params.film_fog,
+            params.film_power,
+            params.paper_power,
+        );
+        let sb = loglogistic_sigmoid(
+            b,
+            params.white_target,
+            params.paper_exp,
+            params.film_fog,
+            params.film_power,
+            params.paper_power,
+        );
 
         if params.hue_preservation > 1e-6 {
             // Hue preservation: find channel order and interpolate middle channel
@@ -157,7 +232,8 @@ pub fn apply_dt_sigmoid(data: &mut [f32], params: &DtSigmoidParams) {
             if naive_hue_mid <= per_ch[mid_i] {
                 let hp = params.hue_preservation;
                 let corrected_mid = ((1.0 - hp) * per_ch[mid_i]
-                    + hp * (midscale * per_ch[max_i] + (1.0 - midscale) * (energy_target - per_ch[max_i])))
+                    + hp * (midscale * per_ch[max_i]
+                        + (1.0 - midscale) * (energy_target - per_ch[max_i])))
                     / (1.0 + hp * (1.0 - midscale));
                 out[min_i] = energy_target - per_ch[max_i] - corrected_mid;
                 out[mid_i] = corrected_mid;
@@ -165,7 +241,8 @@ pub fn apply_dt_sigmoid(data: &mut [f32], params: &DtSigmoidParams) {
             } else {
                 let hp = params.hue_preservation;
                 let corrected_mid = ((1.0 - hp) * per_ch[mid_i]
-                    + hp * (per_ch[min_i] * (1.0 - midscale) + midscale * (energy_target - per_ch[min_i])))
+                    + hp * (per_ch[min_i] * (1.0 - midscale)
+                        + midscale * (energy_target - per_ch[min_i])))
                     / (1.0 + hp * midscale);
                 out[min_i] = per_ch[min_i];
                 out[mid_i] = corrected_mid;
@@ -186,13 +263,32 @@ pub fn apply_dt_sigmoid(data: &mut [f32], params: &DtSigmoidParams) {
 /// Determine max/mid/min channel indices.
 fn channel_order(pix: &[f32; 3]) -> (usize, usize, usize) {
     if pix[0] >= pix[1] {
-        if pix[1] > pix[2] { (0, 1, 2) }       // r >= g > b
-        else if pix[2] > pix[0] { (2, 0, 1) }   // b > r >= g
-        else if pix[2] > pix[1] { (0, 2, 1) }   // r >= b > g
-        else { (0, 1, 2) }                        // r >= g >= b (handles r==g==b)
-    } else if pix[0] >= pix[2] { (1, 0, 2) }     // g > r >= b
-    else if pix[2] > pix[1] { (2, 1, 0) }         // b > g > r
-    else { (1, 2, 0) }                              // g >= b > r
+        if pix[1] > pix[2] {
+            (0, 1, 2)
+        }
+        // r >= g > b
+        else if pix[2] > pix[0] {
+            (2, 0, 1)
+        }
+        // b > r >= g
+        else if pix[2] > pix[1] {
+            (0, 2, 1)
+        }
+        // r >= b > g
+        else {
+            (0, 1, 2)
+        } // r >= g >= b (handles r==g==b)
+    } else if pix[0] >= pix[2] {
+        (1, 0, 2)
+    }
+    // g > r >= b
+    else if pix[2] > pix[1] {
+        (2, 1, 0)
+    }
+    // b > g > r
+    else {
+        (1, 2, 0)
+    } // g >= b > r
 }
 
 #[cfg(test)]
@@ -202,8 +298,16 @@ mod tests {
     #[test]
     fn default_params_are_reasonable() {
         let p = default_params();
-        assert!(p.white_target > 0.9 && p.white_target <= 1.0, "white: {}", p.white_target);
-        assert!(p.black_target > 0.0 && p.black_target < 0.01, "black: {}", p.black_target);
+        assert!(
+            p.white_target > 0.9 && p.white_target <= 1.0,
+            "white: {}",
+            p.white_target
+        );
+        assert!(
+            p.black_target > 0.0 && p.black_target < 0.01,
+            "black: {}",
+            p.black_target
+        );
         assert!(p.film_power > 0.0, "film_power: {}", p.film_power);
         assert!(p.paper_power > 0.0, "paper_power: {}", p.paper_power);
         assert!(p.film_fog >= 0.0, "film_fog: {}", p.film_fog);
@@ -214,15 +318,32 @@ mod tests {
     fn sigmoid_maps_middle_grey_correctly() {
         let p = default_params();
         // Middle grey (0.1845) should map to roughly 0.5 in output
-        let result = loglogistic_sigmoid(MIDDLE_GREY, p.white_target, p.paper_exp, p.film_fog, p.film_power, p.paper_power);
+        let result = loglogistic_sigmoid(
+            MIDDLE_GREY,
+            p.white_target,
+            p.paper_exp,
+            p.film_fog,
+            p.film_power,
+            p.paper_power,
+        );
         // darktable maps middle grey to roughly display middle grey
-        assert!(result > 0.1 && result < 0.9, "middle grey mapped to {result}");
+        assert!(
+            result > 0.1 && result < 0.9,
+            "middle grey mapped to {result}"
+        );
     }
 
     #[test]
     fn sigmoid_preserves_zero() {
         let p = default_params();
-        let result = loglogistic_sigmoid(0.0, p.white_target, p.paper_exp, p.film_fog, p.film_power, p.paper_power);
+        let result = loglogistic_sigmoid(
+            0.0,
+            p.white_target,
+            p.paper_exp,
+            p.film_fog,
+            p.film_power,
+            p.paper_power,
+        );
         // Should be near display black target
         assert!(result < 0.05, "zero mapped to {result}");
     }
@@ -233,7 +354,14 @@ mod tests {
         let mut prev = 0.0f32;
         for i in 0..100 {
             let x = i as f32 / 100.0;
-            let y = loglogistic_sigmoid(x, p.white_target, p.paper_exp, p.film_fog, p.film_power, p.paper_power);
+            let y = loglogistic_sigmoid(
+                x,
+                p.white_target,
+                p.paper_exp,
+                p.film_fog,
+                p.film_power,
+                p.paper_power,
+            );
             assert!(y >= prev, "not monotonic at x={x}: {y} < {prev}");
             prev = y;
         }
@@ -247,8 +375,15 @@ mod tests {
         apply_dt_sigmoid(&mut data, &p);
         for i in 0..3 {
             let base = i * 3;
-            let diff = (data[base] - data[base + 1]).abs() + (data[base + 1] - data[base + 2]).abs();
-            assert!(diff < 1e-4, "neutral shifted at pixel {i}: [{}, {}, {}]", data[base], data[base+1], data[base+2]);
+            let diff =
+                (data[base] - data[base + 1]).abs() + (data[base + 1] - data[base + 2]).abs();
+            assert!(
+                diff < 1e-4,
+                "neutral shifted at pixel {i}: [{}, {}, {}]",
+                data[base],
+                data[base + 1],
+                data[base + 2]
+            );
         }
     }
 
@@ -259,7 +394,12 @@ mod tests {
         let mut data = vec![0.4f32, 0.1, 0.05];
         apply_dt_sigmoid(&mut data, &p);
         // Red channel should still be largest
-        assert!(data[0] > data[1] && data[0] > data[2],
-            "hue not preserved: [{}, {}, {}]", data[0], data[1], data[2]);
+        assert!(
+            data[0] > data[1] && data[0] > data[2],
+            "hue not preserved: [{}, {}, {}]",
+            data[0],
+            data[1],
+            data[2]
+        );
     }
 }

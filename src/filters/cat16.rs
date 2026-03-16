@@ -127,9 +127,21 @@ pub fn cat16_adaptation_matrix(source_xy: (f32, f32), target: AdaptationTarget) 
 
     // Adaptation diagonal: target_LMS / source_LMS
     let gain = [
-        if source_lms[0].abs() > 1e-10 { target_lms[0] / source_lms[0] } else { 1.0 },
-        if source_lms[1].abs() > 1e-10 { target_lms[1] / source_lms[1] } else { 1.0 },
-        if source_lms[2].abs() > 1e-10 { target_lms[2] / source_lms[2] } else { 1.0 },
+        if source_lms[0].abs() > 1e-10 {
+            target_lms[0] / source_lms[0]
+        } else {
+            1.0
+        },
+        if source_lms[1].abs() > 1e-10 {
+            target_lms[1] / source_lms[1]
+        } else {
+            1.0
+        },
+        if source_lms[2].abs() > 1e-10 {
+            target_lms[2] / source_lms[2]
+        } else {
+            1.0
+        },
     ];
 
     // Compose: sRGB→XYZ→CAT16→scale→CAT16→XYZ→sRGB
@@ -138,9 +150,21 @@ pub fn cat16_adaptation_matrix(source_xy: (f32, f32), target: AdaptationTarget) 
 
     // Step 2: Apply diagonal
     let scaled = [
-        [srgb_to_lms[0][0] * gain[0], srgb_to_lms[0][1] * gain[0], srgb_to_lms[0][2] * gain[0]],
-        [srgb_to_lms[1][0] * gain[1], srgb_to_lms[1][1] * gain[1], srgb_to_lms[1][2] * gain[1]],
-        [srgb_to_lms[2][0] * gain[2], srgb_to_lms[2][1] * gain[2], srgb_to_lms[2][2] * gain[2]],
+        [
+            srgb_to_lms[0][0] * gain[0],
+            srgb_to_lms[0][1] * gain[0],
+            srgb_to_lms[0][2] * gain[0],
+        ],
+        [
+            srgb_to_lms[1][0] * gain[1],
+            srgb_to_lms[1][1] * gain[1],
+            srgb_to_lms[1][2] * gain[1],
+        ],
+        [
+            srgb_to_lms[2][0] * gain[2],
+            srgb_to_lms[2][1] * gain[2],
+            srgb_to_lms[2][2] * gain[2],
+        ],
     ];
 
     // Step 3: CAT16→XYZ→sRGB = XYZ_TO_SRGB × CAT16_TO_XYZ
@@ -269,9 +293,17 @@ mod tests {
         let tungsten_xy = (0.4476, 0.4074);
         let m = cat16_adaptation_matrix(tungsten_xy, AdaptationTarget::D65);
         // Red channel gain should decrease (warm → cool)
-        assert!(m[0][0] < 1.0, "red gain should decrease for tungsten→D65: {}", m[0][0]);
+        assert!(
+            m[0][0] < 1.0,
+            "red gain should decrease for tungsten→D65: {}",
+            m[0][0]
+        );
         // Blue channel gain should increase
-        assert!(m[2][2] > 1.0, "blue gain should increase for tungsten→D65: {}", m[2][2]);
+        assert!(
+            m[2][2] > 1.0,
+            "blue gain should increase for tungsten→D65: {}",
+            m[2][2]
+        );
     }
 
     #[test]

@@ -126,6 +126,19 @@ impl Pipeline {
         self.filters.iter().any(|f| f.is_neighborhood())
     }
 
+    /// Maximum neighborhood radius across all filters, in pixels.
+    ///
+    /// Returns 0 if no filters have spatial neighborhoods. For windowed
+    /// pipeline processing, the window overlap must be at least this value
+    /// on each side of the strip.
+    pub fn max_neighborhood_radius(&self, width: u32, height: u32) -> u32 {
+        self.filters
+            .iter()
+            .map(|f| f.neighborhood_radius(width, height))
+            .max()
+            .unwrap_or(0)
+    }
+
     /// Apply the full pipeline: scatter → filters → gather.
     ///
     /// `src` is interleaved linear RGB(A) f32 data.

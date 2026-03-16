@@ -40,8 +40,14 @@ const MAX_DIM: u32 = 768;
 const MOBILE_DNGS: &[(&str, &str)] = &[
     ("iPhone_3269", "/mnt/v/heic/IMG_3269.DNG"),
     ("iPhone_3270", "/mnt/v/heic/IMG_3270.DNG"),
-    ("iPhone_46CD", "/mnt/v/heic/46CD6167-C36B-4F98-B386-2300D8E840F0.DNG"),
-    ("iPhone_CBFA", "/mnt/v/heic/CBFA569A-5C28-468E-96B4-CFFBAEB951C7.DNG"),
+    (
+        "iPhone_46CD",
+        "/mnt/v/heic/46CD6167-C36B-4F98-B386-2300D8E840F0.DNG",
+    ),
+    (
+        "iPhone_CBFA",
+        "/mnt/v/heic/CBFA569A-5C28-468E-96B4-CFFBAEB951C7.DNG",
+    ),
     ("Samsung_Fold7", "/mnt/v/heic/android/20260220_093521.dng"),
 ];
 
@@ -91,7 +97,10 @@ fn main() {
         }
         let file_size = fs::metadata(&dng_path).map(|m| m.len()).unwrap_or(0);
         let t0 = Instant::now();
-        println!("\n=== {label} ({:.1} MB) ===", file_size as f64 / 1_048_576.0);
+        println!(
+            "\n=== {label} ({:.1} MB) ===",
+            file_size as f64 / 1_048_576.0
+        );
 
         let dng_bytes = fs::read(&dng_path).unwrap();
         let format = detect_format(&dng_bytes);
@@ -116,9 +125,7 @@ fn main() {
             }
             MobileFormat::AppleDng => {
                 println!("  Format: APPLEDNG (rawler decode, embedded preview reference)");
-                if let Some(r) = process_appledng(
-                    label, &dng_bytes, &exif, &m1, &zs, &t0,
-                ) {
+                if let Some(r) = process_appledng(label, &dng_bytes, &exif, &m1, &zs, &t0) {
                     results.push(r);
                 }
             }
@@ -159,9 +166,17 @@ fn process_appledng(
     let pw = decoded_preview.width();
     let ph = decoded_preview.height();
     use zenpixels_convert::PixelBufferConvertTypedExt;
-    let preview_rgb8 = decoded_preview.into_buffer().to_rgb8().copy_to_contiguous_bytes();
-    println!("  Preview: {}x{} ({} bytes JPEG) ({:.1}s)",
-        pw, ph, preview_jpeg.len(), t0.elapsed().as_secs_f32());
+    let preview_rgb8 = decoded_preview
+        .into_buffer()
+        .to_rgb8()
+        .copy_to_contiguous_bytes();
+    println!(
+        "  Preview: {}x{} ({} bytes JPEG) ({:.1}s)",
+        pw,
+        ph,
+        preview_jpeg.len(),
+        t0.elapsed().as_secs_f32()
+    );
 
     // Decode raw with zenraw (rawler backend)
     let config = zenraw::RawDecodeConfig::default();
@@ -171,13 +186,21 @@ fn process_appledng(
     let dh = raw_pixels.height();
     let raw_bytes = raw_pixels.copy_to_contiguous_bytes();
     let linear_f32: &[f32] = bytemuck::cast_slice(&raw_bytes);
-    println!("  Raw decode: {}x{} ({:.1}s)", dw, dh, t0.elapsed().as_secs_f32());
+    println!(
+        "  Raw decode: {}x{} ({:.1}s)",
+        dw,
+        dh,
+        t0.elapsed().as_secs_f32()
+    );
 
     // Analyze linear data range
     let (mean_v, mr, mg, mb, clipped_pct) = analyze_linear(linear_f32);
     println!("  Linear mean={mean_v:.4} clipped={clipped_pct:.2}%");
-    println!("  Channel means: R={mr:.4} G={mg:.4} B={mb:.4}  R/G={:.3} B/G={:.3}",
-        mr / mg, mb / mg);
+    println!(
+        "  Channel means: R={mr:.4} G={mg:.4} B={mb:.4}  R/G={:.3} B/G={:.3}",
+        mr / mg,
+        mb / mg
+    );
 
     // Extract illuminant
     let illuminant_xy = exif.as_ref().and_then(|e| {
@@ -186,11 +209,7 @@ fn process_appledng(
         } else {
             e.color_matrix_1.as_deref()
         };
-        cat16::illuminant_xy_from_dng(
-            e.as_shot_white_xy,
-            e.as_shot_neutral.as_deref(),
-            cm,
-        )
+        cat16::illuminant_xy_from_dng(e.as_shot_white_xy, e.as_shot_neutral.as_deref(), cm)
     });
     if let Some((x, y)) = illuminant_xy {
         println!("  Illuminant: ({x:.4}, {y:.4})");
@@ -203,10 +222,18 @@ fn process_appledng(
     let ch = sh.min(srh);
     let small_linear = crop_f32(&small_linear, sw, sh, cw, ch);
     let small_ref = crop_u8(&small_ref, srw, srh, cw, ch);
-    println!("  Optimization res: {}x{} ({:.1}s)", cw, ch, t0.elapsed().as_secs_f32());
+    println!(
+        "  Optimization res: {}x{} ({:.1}s)",
+        cw,
+        ch,
+        t0.elapsed().as_secs_f32()
+    );
 
     // Derive search range from BaselineExposure (Apple underexposes raw heavily)
-    let bl_ev = exif.as_ref().and_then(|e| e.baseline_exposure).unwrap_or(0.0);
+    let bl_ev = exif
+        .as_ref()
+        .and_then(|e| e.baseline_exposure)
+        .unwrap_or(0.0);
     let bl_mult = 2.0f64.powf(bl_ev) as f32;
     let search_lo = (bl_mult * 0.25).max(0.5);
     let search_hi = (bl_mult * 4.0).max(8.0).min(64.0);
@@ -214,7 +241,8 @@ fn process_appledng(
 
     // ── Try Apple ProfileToneCurve ──────────────────────────────────────
     let dng_profile = zenraw::apple::extract_dng_profile(dng_bytes);
-    let tone_curve_lut = dng_profile.as_ref()
+    let tone_curve_lut = dng_profile
+        .as_ref()
         .and_then(|p| p.tone_curve.as_deref())
         .and_then(ToneCurveLut::from_profile_tone_curve);
 
@@ -226,7 +254,10 @@ fn process_appledng(
     let mut method = "dt_sigmoid";
 
     if let Some(ref lut) = tone_curve_lut {
-        println!("  Profile: {:?}", dng_profile.as_ref().and_then(|p| p.name.as_deref()));
+        println!(
+            "  Profile: {:?}",
+            dng_profile.as_ref().and_then(|p| p.name.as_deref())
+        );
         lut.print_diagnostics();
 
         // ── Luminance-preserving Apple curve with optimized exposure + saturation ──
@@ -236,7 +267,8 @@ fn process_appledng(
                 let out = apply_apple_curve_luminance(&small_linear, [mult; 3], lut, 1.0);
                 zensim_score(&out, &small_ref, cw, ch, zs)
             },
-            search_lo, search_hi,
+            search_lo,
+            search_hi,
         );
         println!("  Apple lum-curve: uniform {lum_mult:.3}x → {lum_score:.1}");
 
@@ -257,7 +289,8 @@ fn process_appledng(
                         let out = apply_apple_curve_luminance(&small_linear, m, lut, lum_sat);
                         zensim_score(&out, &small_ref, cw, ch, zs)
                     },
-                    lo, hi,
+                    lo,
+                    hi,
                 );
                 if score > lum_best + 0.05 {
                     lum_rgb[c] = val;
@@ -270,15 +303,18 @@ fn process_appledng(
                     let out = apply_apple_curve_luminance(&small_linear, lum_rgb, lut, sat);
                     zensim_score(&out, &small_ref, cw, ch, zs)
                 },
-                0.3, 2.5,
+                0.3,
+                2.5,
             );
             if score > lum_best + 0.05 {
                 lum_sat = val;
                 lum_best = score;
             }
         }
-        println!("  Apple lum-curve: RGB [{:.3},{:.3},{:.3}] sat={lum_sat:.2} → {lum_best:.1}",
-            lum_rgb[0], lum_rgb[1], lum_rgb[2]);
+        println!(
+            "  Apple lum-curve: RGB [{:.3},{:.3},{:.3}] sat={lum_sat:.2} → {lum_best:.1}",
+            lum_rgb[0], lum_rgb[1], lum_rgb[2]
+        );
 
         if lum_best > parity_rgb {
             parity_uniform = lum_score;
@@ -296,13 +332,32 @@ fn process_appledng(
 
     // ── Try basic dt_sigmoid with RGB exposure ─────────────────────────
     let (sig_mult, sig_uniform) = optimize_dt_sigmoid_exposure(
-        &small_linear, cw, ch, &small_ref, cw, ch, zs, search_lo, search_hi,
+        &small_linear,
+        cw,
+        ch,
+        &small_ref,
+        cw,
+        ch,
+        zs,
+        search_lo,
+        search_hi,
     );
     let (sig_rgb, sig_rgb_score) = optimize_rgb_exposure_range(
-        &small_linear, cw, ch, &small_ref, cw, ch, zs, sig_mult, search_lo, search_hi,
+        &small_linear,
+        cw,
+        ch,
+        &small_ref,
+        cw,
+        ch,
+        zs,
+        sig_mult,
+        search_lo,
+        search_hi,
     );
-    println!("  dt_sigmoid basic: uniform {sig_mult:.3}x → {sig_uniform:.1}, RGB → {sig_rgb_score:.1} ({:.1}s)",
-        t0.elapsed().as_secs_f32());
+    println!(
+        "  dt_sigmoid basic: uniform {sig_mult:.3}x → {sig_uniform:.1}, RGB → {sig_rgb_score:.1} ({:.1}s)",
+        t0.elapsed().as_secs_f32()
+    );
 
     if sig_rgb_score > parity_rgb {
         parity_uniform = sig_uniform;
@@ -314,18 +369,44 @@ fn process_appledng(
 
     // ── Enhanced pipeline: dt_sigmoid + contrast/skew/saturation tuning ──
     let (enhanced_params, enhanced_score) = optimize_enhanced_pipeline(
-        &small_linear, cw, ch, &small_ref, zs, bl_mult, search_lo, search_hi,
+        &small_linear,
+        cw,
+        ch,
+        &small_ref,
+        zs,
+        bl_mult,
+        search_lo,
+        search_hi,
     );
-    println!("  Enhanced: c={:.2} sk={:.2} sat={:.2} RGB=[{:.2},{:.2},{:.2}] curves={} → {enhanced_score:.1} ({:.1}s)",
-        enhanced_params.contrast, enhanced_params.skew, enhanced_params.saturation,
-        enhanced_params.rgb_mult[0], enhanced_params.rgb_mult[1], enhanced_params.rgb_mult[2],
-        if enhanced_params.curves.is_identity() { "identity" } else { "custom" },
-        t0.elapsed().as_secs_f32());
+    println!(
+        "  Enhanced: c={:.2} sk={:.2} sat={:.2} RGB=[{:.2},{:.2},{:.2}] curves={} → {enhanced_score:.1} ({:.1}s)",
+        enhanced_params.contrast,
+        enhanced_params.skew,
+        enhanced_params.saturation,
+        enhanced_params.rgb_mult[0],
+        enhanced_params.rgb_mult[1],
+        enhanced_params.rgb_mult[2],
+        if enhanced_params.curves.is_identity() {
+            "identity"
+        } else {
+            "custom"
+        },
+        t0.elapsed().as_secs_f32()
+    );
     if !enhanced_params.curves.is_identity() {
         let p = &enhanced_params.curves.points;
-        println!("    R curve: [{:.2},{:.2},{:.2},{:.2}]", p[0], p[1], p[2], p[3]);
-        println!("    G curve: [{:.2},{:.2},{:.2},{:.2}]", p[4], p[5], p[6], p[7]);
-        println!("    B curve: [{:.2},{:.2},{:.2},{:.2}]", p[8], p[9], p[10], p[11]);
+        println!(
+            "    R curve: [{:.2},{:.2},{:.2},{:.2}]",
+            p[0], p[1], p[2], p[3]
+        );
+        println!(
+            "    G curve: [{:.2},{:.2},{:.2},{:.2}]",
+            p[4], p[5], p[6], p[7]
+        );
+        println!(
+            "    B curve: [{:.2},{:.2},{:.2},{:.2}]",
+            p[8], p[9], p[10], p[11]
+        );
     }
 
     if enhanced_score > parity_rgb {
@@ -336,22 +417,20 @@ fn process_appledng(
         method = "enhanced";
     }
 
-    println!("  BEST method: {method} → parity={parity_rgb:.1} ({:.1}s)",
-        t0.elapsed().as_secs_f32());
+    println!(
+        "  BEST method: {method} → parity={parity_rgb:.1} ({:.1}s)",
+        t0.elapsed().as_secs_f32()
+    );
 
     // Generate output with best method
     best_small = match method {
-        "enhanced" => {
-            apply_enhanced_pipeline(&small_linear, cw, ch, &enhanced_params)
-        }
+        "enhanced" => apply_enhanced_pipeline(&small_linear, cw, ch, &enhanced_params),
         "apple_lum" => {
             let lut = tone_curve_lut.as_ref().unwrap();
             // Re-extract saturation from earlier optimization (stored implicitly)
             apply_apple_curve_luminance(&small_linear, rgb_mult, lut, 1.0)
         }
-        _ => {
-            apply_dt_sigmoid_rgb(&small_linear, cw, ch, rgb_mult)
-        }
+        _ => apply_dt_sigmoid_rgb(&small_linear, cw, ch, rgb_mult),
     };
 
     // ── Histogram matching oracle (ceiling estimate) ──────────────────
@@ -416,11 +495,7 @@ fn process_standard_dng(
         } else {
             e.color_matrix_1.as_deref()
         };
-        cat16::illuminant_xy_from_dng(
-            e.as_shot_white_xy,
-            e.as_shot_neutral.as_deref(),
-            cm,
-        )
+        cat16::illuminant_xy_from_dng(e.as_shot_white_xy, e.as_shot_neutral.as_deref(), cm)
     });
     if let Some((x, y)) = illuminant_xy {
         println!("  Illuminant: ({x:.4}, {y:.4})");
@@ -433,12 +508,20 @@ fn process_standard_dng(
         return None;
     }
     let (dt_sig_out, dtw, dth) = dt_sigmoid.unwrap();
-    println!("  darktable sigmoid: {}x{} ({:.1}s)", dtw, dth, t0.elapsed().as_secs_f32());
+    println!(
+        "  darktable sigmoid: {}x{} ({:.1}s)",
+        dtw,
+        dth,
+        t0.elapsed().as_secs_f32()
+    );
 
     // Render with darktable (workflow=none for linear)
     let linear_output = darktable::decode_file(dng_path, dt_config);
     if linear_output.is_err() {
-        println!("  darktable linear render FAILED: {:?}", linear_output.err());
+        println!(
+            "  darktable linear render FAILED: {:?}",
+            linear_output.err()
+        );
         return None;
     }
     let output = linear_output.unwrap();
@@ -447,13 +530,21 @@ fn process_standard_dng(
     let dh = pixels.height();
     let raw_bytes = pixels.copy_to_contiguous_bytes();
     let linear_f32: &[f32] = bytemuck::cast_slice(&raw_bytes);
-    println!("  darktable linear: {}x{} ({:.1}s)", dw, dh, t0.elapsed().as_secs_f32());
+    println!(
+        "  darktable linear: {}x{} ({:.1}s)",
+        dw,
+        dh,
+        t0.elapsed().as_secs_f32()
+    );
 
     // Analyze linear data
     let (mean_v, mr, mg, mb, clipped_pct) = analyze_linear(linear_f32);
     println!("  Linear range: mean={mean_v:.4} clipped={clipped_pct:.2}%");
-    println!("  Channel means: R={mr:.4} G={mg:.4} B={mb:.4}  R/G={:.3} B/G={:.3}",
-        mr / mg, mb / mg);
+    println!(
+        "  Channel means: R={mr:.4} G={mg:.4} B={mb:.4}  R/G={:.3} B/G={:.3}",
+        mr / mg,
+        mb / mg
+    );
 
     // Downscale both for optimization
     let (small_linear, sw, sh) = downscale_linear_f32(linear_f32, dw, dh, MAX_DIM);
@@ -462,10 +553,18 @@ fn process_standard_dng(
     let ch = sh.min(srh);
     let small_linear = crop_f32(&small_linear, sw, sh, cw, ch);
     let small_ref = crop_u8(&small_ref, srw, srh, cw, ch);
-    println!("  Optimization res: {}x{} ({:.1}s)", cw, ch, t0.elapsed().as_secs_f32());
+    println!(
+        "  Optimization res: {}x{} ({:.1}s)",
+        cw,
+        ch,
+        t0.elapsed().as_secs_f32()
+    );
 
     // Derive search range from BaselineExposure
-    let bl_ev = exif.as_ref().and_then(|e| e.baseline_exposure).unwrap_or(0.0);
+    let bl_ev = exif
+        .as_ref()
+        .and_then(|e| e.baseline_exposure)
+        .unwrap_or(0.0);
     let bl_mult = 2.0f64.powf(bl_ev) as f32;
     let search_lo = (bl_mult * 0.25).max(0.5);
     let search_hi = (bl_mult * 4.0).max(8.0).min(64.0);
@@ -473,20 +572,47 @@ fn process_standard_dng(
 
     // Optimize uniform exposure
     let (optimal_mult, parity_uniform) = optimize_dt_sigmoid_exposure(
-        &small_linear, cw, ch, &small_ref, cw, ch, zs, search_lo, search_hi,
+        &small_linear,
+        cw,
+        ch,
+        &small_ref,
+        cw,
+        ch,
+        zs,
+        search_lo,
+        search_hi,
     );
-    println!("  Uniform mult: {optimal_mult:.3}x → parity={parity_uniform:.1} ({:.1}s)",
-        t0.elapsed().as_secs_f32());
+    println!(
+        "  Uniform mult: {optimal_mult:.3}x → parity={parity_uniform:.1} ({:.1}s)",
+        t0.elapsed().as_secs_f32()
+    );
 
     // Optimize per-channel RGB
     let (rgb_mult, parity_rgb) = optimize_rgb_exposure_range(
-        &small_linear, cw, ch, &small_ref, cw, ch, zs, optimal_mult, search_lo, search_hi,
+        &small_linear,
+        cw,
+        ch,
+        &small_ref,
+        cw,
+        ch,
+        zs,
+        optimal_mult,
+        search_lo,
+        search_hi,
     );
     let delta = parity_rgb - parity_uniform;
-    println!("  RGB mult: [{:.3}, {:.3}, {:.3}] → parity={parity_rgb:.1} (Δ={delta:+.1}) ({:.1}s)",
-        rgb_mult[0], rgb_mult[1], rgb_mult[2], t0.elapsed().as_secs_f32());
-    println!("  RGB ratios: R/G={:.3}  B/G={:.3}",
-        rgb_mult[0] / rgb_mult[1], rgb_mult[2] / rgb_mult[1]);
+    println!(
+        "  RGB mult: [{:.3}, {:.3}, {:.3}] → parity={parity_rgb:.1} (Δ={delta:+.1}) ({:.1}s)",
+        rgb_mult[0],
+        rgb_mult[1],
+        rgb_mult[2],
+        t0.elapsed().as_secs_f32()
+    );
+    println!(
+        "  RGB ratios: R/G={:.3}  B/G={:.3}",
+        rgb_mult[0] / rgb_mult[1],
+        rgb_mult[2] / rgb_mult[1]
+    );
 
     // Enhanced pipeline
     let mut parity_rgb = parity_rgb;
@@ -494,12 +620,27 @@ fn process_standard_dng(
     let mut optimal_mult = optimal_mult;
     let mut reference_source = "darktable";
     let (enhanced_params, enhanced_score) = optimize_enhanced_pipeline(
-        &small_linear, cw, ch, &small_ref, zs, bl_mult.max(1.0), search_lo, search_hi,
+        &small_linear,
+        cw,
+        ch,
+        &small_ref,
+        zs,
+        bl_mult.max(1.0),
+        search_lo,
+        search_hi,
     );
-    println!("  Enhanced: c={:.2} sk={:.2} sat={:.2} curves={} → {enhanced_score:.1} ({:.1}s)",
-        enhanced_params.contrast, enhanced_params.skew, enhanced_params.saturation,
-        if enhanced_params.curves.is_identity() { "identity" } else { "custom" },
-        t0.elapsed().as_secs_f32());
+    println!(
+        "  Enhanced: c={:.2} sk={:.2} sat={:.2} curves={} → {enhanced_score:.1} ({:.1}s)",
+        enhanced_params.contrast,
+        enhanced_params.skew,
+        enhanced_params.saturation,
+        if enhanced_params.curves.is_identity() {
+            "identity"
+        } else {
+            "custom"
+        },
+        t0.elapsed().as_secs_f32()
+    );
     if enhanced_score > parity_rgb {
         parity_rgb = enhanced_score;
         rgb_mult = enhanced_params.rgb_mult;
@@ -606,11 +747,22 @@ fn print_summary(results: &[MobileResult]) {
 
     for r in results {
         let delta = r.parity_rgb - r.parity_uniform;
-        let rgb_str = format!("{:.3},{:.3},{:.3}", r.rgb_mult[0], r.rgb_mult[1], r.rgb_mult[2]);
-        let bl = r.baseline_exposure.map_or("---".to_string(), |v| format!("{v:+.2}"));
+        let rgb_str = format!(
+            "{:.3},{:.3},{:.3}",
+            r.rgb_mult[0], r.rgb_mult[1], r.rgb_mult[2]
+        );
+        let bl = r
+            .baseline_exposure
+            .map_or("---".to_string(), |v| format!("{v:+.2}"));
         println!(
             "{:<20} {:>8.1} {:>8.1} {:>+8.1} {:>25} {:>8.3} {:>10} {:>10}",
-            r.name, r.parity_uniform, r.parity_rgb, delta, rgb_str, r.optimal_mult, bl,
+            r.name,
+            r.parity_uniform,
+            r.parity_rgb,
+            delta,
+            rgb_str,
+            r.optimal_mult,
+            bl,
             r.reference_source,
         );
     }
@@ -623,7 +775,12 @@ fn print_summary(results: &[MobileResult]) {
         let mean_mult: f32 = results.iter().map(|r| r.optimal_mult).sum::<f32>() / n as f32;
         println!(
             "{:<20} {:>8.1} {:>8.1} {:>+8.1} {:>25} {:>8.3}",
-            "MEAN", mean_u, mean_rgb, mean_rgb - mean_u, "", mean_mult,
+            "MEAN",
+            mean_u,
+            mean_rgb,
+            mean_rgb - mean_u,
+            "",
+            mean_mult,
         );
     }
 }
@@ -687,7 +844,9 @@ fn downscale_rgb8(data: &[u8], w: u32, h: u32, max_dim: u32) -> (Vec<u8>, u32, u
 }
 
 fn crop_f32(data: &[f32], w: u32, _h: u32, tw: u32, th: u32) -> Vec<f32> {
-    if tw == w { return data[..(tw as usize * th as usize * 3)].to_vec(); }
+    if tw == w {
+        return data[..(tw as usize * th as usize * 3)].to_vec();
+    }
     let tw = tw.min(w);
     let mut out = vec![0.0f32; (tw as usize) * (th as usize) * 3];
     for y in 0..th as usize {
@@ -700,7 +859,9 @@ fn crop_f32(data: &[f32], w: u32, _h: u32, tw: u32, th: u32) -> Vec<f32> {
 }
 
 fn crop_u8(data: &[u8], w: u32, _h: u32, tw: u32, th: u32) -> Vec<u8> {
-    if tw == w { return data[..(tw as usize * th as usize * 3)].to_vec(); }
+    if tw == w {
+        return data[..(tw as usize * th as usize * 3)].to_vec();
+    }
     let tw = tw.min(w);
     let mut out = vec![0u8; (tw as usize) * (th as usize) * 3];
     for y in 0..th as usize {
@@ -725,12 +886,17 @@ fn darktable_render_png(dng_path: &Path, workflow: &str) -> Option<(Vec<u8>, u32
     let status = Command::new("darktable-cli")
         .arg(dng_path)
         .arg(&out_path)
-        .arg("--icc-type").arg("SRGB")
-        .arg("--apply-custom-presets").arg("false")
+        .arg("--icc-type")
+        .arg("SRGB")
+        .arg("--apply-custom-presets")
+        .arg("false")
         .arg("--core")
-        .arg("--library").arg(":memory:")
-        .arg("--configdir").arg(tmp_dir.join("dtconf"))
-        .arg("--conf").arg(format!("plugins/darkroom/workflow={workflow}"))
+        .arg("--library")
+        .arg(":memory:")
+        .arg("--configdir")
+        .arg(tmp_dir.join("dtconf"))
+        .arg("--conf")
+        .arg(format!("plugins/darkroom/workflow={workflow}"))
         .stderr(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .status()
@@ -772,7 +938,9 @@ fn apply_dt_sigmoid_uniform(linear_f32: &[f32], _w: u32, _h: u32, mult: f32) -> 
     let params = dt_sigmoid::default_params();
     let mut rgb = linear_f32.to_vec();
     if (mult - 1.0).abs() > 1e-6 {
-        for v in rgb.iter_mut() { *v *= mult; }
+        for v in rgb.iter_mut() {
+            *v *= mult;
+        }
     }
     dt_sigmoid::apply_dt_sigmoid(&mut rgb, &params);
     linear_to_srgb_u8(&rgb)
@@ -803,11 +971,11 @@ impl ToneCurveLut {
     /// Build from raw ProfileToneCurve data (514 floats = 257 x,y pairs).
     fn from_profile_tone_curve(tc: &[f32]) -> Option<Self> {
         let n_points = tc.len() / 2;
-        if n_points < 2 { return None; }
+        if n_points < 2 {
+            return None;
+        }
 
-        let points: Vec<(f32, f32)> = (0..n_points)
-            .map(|i| (tc[i * 2], tc[i * 2 + 1]))
-            .collect();
+        let points: Vec<(f32, f32)> = (0..n_points).map(|i| (tc[i * 2], tc[i * 2 + 1])).collect();
 
         let lut_size = 4096usize;
         let mut lut = vec![0.0f32; lut_size + 1];
@@ -838,7 +1006,9 @@ impl ToneCurveLut {
         let half = self.eval(0.5);
         let quarter = self.eval(0.25);
         let max = self.eval(1.0);
-        println!("    curve(0.18)={mid:.4} curve(0.25)={quarter:.4} curve(0.50)={half:.4} curve(1.0)={max:.4}");
+        println!(
+            "    curve(0.18)={mid:.4} curve(0.25)={quarter:.4} curve(0.50)={half:.4} curve(1.0)={max:.4}"
+        );
         // If curve(0.18) > 0.35, the curve likely includes gamma-like encoding
         if mid > 0.35 {
             println!("    → Curve appears to include gamma encoding (skip sRGB)");
@@ -849,19 +1019,32 @@ impl ToneCurveLut {
 }
 
 fn interpolate_curve(points: &[(f32, f32)], x: f32) -> f32 {
-    if x <= points[0].0 { return points[0].1; }
-    if x >= points[points.len() - 1].0 { return points[points.len() - 1].1; }
+    if x <= points[0].0 {
+        return points[0].1;
+    }
+    if x >= points[points.len() - 1].0 {
+        return points[points.len() - 1].1;
+    }
     let idx = points.partition_point(|p| p.0 < x);
-    if idx == 0 { return points[0].1; }
+    if idx == 0 {
+        return points[0].1;
+    }
     let (x0, y0) = points[idx - 1];
     let (x1, y1) = points[idx];
-    let t = if (x1 - x0).abs() < 1e-10 { 0.0 } else { (x - x0) / (x1 - x0) };
+    let t = if (x1 - x0).abs() < 1e-10 {
+        0.0
+    } else {
+        (x - x0) / (x1 - x0)
+    };
     y0 + t * (y1 - y0)
 }
 
 /// Apply Apple ProfileToneCurve with per-channel exposure, output sRGB gamma.
 fn apply_apple_curve_rgb(
-    linear_f32: &[f32], rgb_mult: [f32; 3], lut: &ToneCurveLut, apply_srgb_gamma: bool,
+    linear_f32: &[f32],
+    rgb_mult: [f32; 3],
+    lut: &ToneCurveLut,
+    apply_srgb_gamma: bool,
 ) -> Vec<u8> {
     let n = linear_f32.len();
     let mut output = vec![0u8; n];
@@ -874,7 +1057,11 @@ fn apply_apple_curve_rgb(
             let final_v = if apply_srgb_gamma {
                 // Curve output is linear → apply sRGB transfer
                 let m = mapped.clamp(0.0, 1.0);
-                if m <= 0.003_130_8 { m * 12.92 } else { 1.055 * m.powf(1.0 / 2.4) - 0.055 }
+                if m <= 0.003_130_8 {
+                    m * 12.92
+                } else {
+                    1.055 * m.powf(1.0 / 2.4) - 0.055
+                }
             } else {
                 // Curve already includes gamma-like encoding
                 mapped.clamp(0.0, 1.0)
@@ -886,7 +1073,10 @@ fn apply_apple_curve_rgb(
 }
 
 fn apply_apple_curve_uniform(
-    linear_f32: &[f32], mult: f32, lut: &ToneCurveLut, apply_srgb_gamma: bool,
+    linear_f32: &[f32],
+    mult: f32,
+    lut: &ToneCurveLut,
+    apply_srgb_gamma: bool,
 ) -> Vec<u8> {
     apply_apple_curve_rgb(linear_f32, [mult, mult, mult], lut, apply_srgb_gamma)
 }
@@ -896,7 +1086,9 @@ fn apply_apple_curve_uniform(
 /// Instead of applying the curve per-channel (which amplifies color imbalance),
 /// compute luminance, apply curve to it, and scale all channels by the same ratio.
 fn apply_apple_curve_luminance(
-    linear_f32: &[f32], rgb_mult: [f32; 3], lut: &ToneCurveLut,
+    linear_f32: &[f32],
+    rgb_mult: [f32; 3],
+    lut: &ToneCurveLut,
     saturation: f32,
 ) -> Vec<u8> {
     let npix = linear_f32.len() / 3;
@@ -934,7 +1126,11 @@ fn apply_apple_curve_luminance(
         // sRGB OETF
         for (c, v) in [(base, out_r), (base + 1, out_g), (base + 2, out_b)] {
             let v = v.clamp(0.0, 1.0);
-            let srgb = if v <= 0.003_130_8 { v * 12.92 } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+            let srgb = if v <= 0.003_130_8 {
+                v * 12.92
+            } else {
+                1.055 * v.powf(1.0 / 2.4) - 0.055
+            };
             output[c] = (srgb * 255.0 + 0.5) as u8;
         }
     }
@@ -996,23 +1192,37 @@ fn histogram_match(source: &[u8], target: &[u8]) -> Vec<u8> {
 }
 
 fn optimize_apple_curve_exposure(
-    linear_f32: &[f32], w: u32, h: u32,
-    reference: &[u8], zs: &Zensim, lut: &ToneCurveLut,
-    lo: f32, hi: f32, apply_srgb_gamma: bool,
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+    reference: &[u8],
+    zs: &Zensim,
+    lut: &ToneCurveLut,
+    lo: f32,
+    hi: f32,
+    apply_srgb_gamma: bool,
 ) -> (f32, f64) {
     golden_search(
         |mult| {
             let out = apply_apple_curve_uniform(linear_f32, mult, lut, apply_srgb_gamma);
             zensim_score(&out, reference, w, h, zs)
         },
-        lo, hi,
+        lo,
+        hi,
     )
 }
 
 fn optimize_apple_rgb_exposure(
-    linear_f32: &[f32], w: u32, h: u32,
-    reference: &[u8], zs: &Zensim, lut: &ToneCurveLut,
-    uniform_mult: f32, range_lo: f32, range_hi: f32, apply_srgb_gamma: bool,
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+    reference: &[u8],
+    zs: &Zensim,
+    lut: &ToneCurveLut,
+    uniform_mult: f32,
+    range_lo: f32,
+    range_hi: f32,
+    apply_srgb_gamma: bool,
 ) -> ([f32; 3], f64) {
     let mut rgb = [uniform_mult; 3];
     let mut best_score = 0.0f64;
@@ -1027,8 +1237,13 @@ fn optimize_apple_rgb_exposure(
             let lo = (rgb[ch] * 0.5).max(range_lo);
             let hi = (rgb[ch] * 2.0).min(range_hi);
             let (best_val, score) = golden_search(
-                |v| { let mut m = rgb; m[ch] = v; eval(m) },
-                lo, hi,
+                |v| {
+                    let mut m = rgb;
+                    m[ch] = v;
+                    eval(m)
+                },
+                lo,
+                hi,
             );
             rgb[ch] = best_val;
             best_score = score;
@@ -1053,7 +1268,9 @@ impl ChannelCurves {
     fn identity() -> Self {
         Self {
             // y = x at each control point: 0, 0.333, 0.667, 1.0
-            points: [0.0, 0.333, 0.667, 1.0, 0.0, 0.333, 0.667, 1.0, 0.0, 0.333, 0.667, 1.0],
+            points: [
+                0.0, 0.333, 0.667, 1.0, 0.0, 0.333, 0.667, 1.0, 0.0, 0.333, 0.667, 1.0,
+            ],
         }
     }
 
@@ -1071,7 +1288,9 @@ impl ChannelCurves {
 
     fn is_identity(&self) -> bool {
         let id = Self::identity();
-        self.points.iter().zip(id.points.iter())
+        self.points
+            .iter()
+            .zip(id.points.iter())
             .all(|(a, b)| (a - b).abs() < 0.005)
     }
 }
@@ -1306,8 +1525,8 @@ fn nelder_mead(
         let best = simplex[0].0;
         for i in 1..=n {
             for d in 0..n {
-                simplex[i].0[d] = (best[d] + sigma * (simplex[i].0[d] - best[d]))
-                    .clamp(ranges[d].0, ranges[d].1);
+                simplex[i].0[d] =
+                    (best[d] + sigma * (simplex[i].0[d] - best[d])).clamp(ranges[d].0, ranges[d].1);
             }
             simplex[i].1 = f(&simplex[i].0);
             evals += 1;
@@ -1322,9 +1541,14 @@ fn nelder_mead(
 /// phase 2 coordinate descent for sigmoid params,
 /// phase 3 Nelder-Mead for full 18-param optimization including per-channel curves.
 fn optimize_enhanced_pipeline(
-    linear_f32: &[f32], w: u32, h: u32,
-    reference: &[u8], zs: &Zensim,
-    initial_mult: f32, range_lo: f32, range_hi: f32,
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+    reference: &[u8],
+    zs: &Zensim,
+    initial_mult: f32,
+    range_lo: f32,
+    range_hi: f32,
 ) -> (PipelineParams, f64) {
     let eval = |a: &[f32; N_PARAMS]| -> f64 {
         let p = PipelineParams::from_array(a);
@@ -1339,25 +1563,43 @@ fn optimize_enhanced_pipeline(
             let out = apply_enhanced_pipeline(linear_f32, w, h, &p);
             zensim_score(&out, reference, w, h, zs)
         },
-        range_lo, range_hi,
+        range_lo,
+        range_hi,
     );
     let mut params = PipelineParams::from_uniform(best_mult);
 
     // Phase 2: Coordinate descent for exposure + sigmoid params (fast, 6 dims)
     let core_ranges: [(f32, f32); 6] = [
-        (range_lo, range_hi), (range_lo, range_hi), (range_lo, range_hi),
-        (0.5, 4.0), (-0.8, 0.8), (0.3, 2.5),
+        (range_lo, range_hi),
+        (range_lo, range_hi),
+        (range_lo, range_hi),
+        (0.5, 4.0),
+        (-0.8, 0.8),
+        (0.3, 2.5),
     ];
     let mut best_score = eval(&params.to_array());
     for _ in 0..4 {
         let mut improved = false;
         for dim in 0..6 {
             let mut arr = params.to_array();
-            let lo = if dim < 3 { (arr[dim] * 0.5).max(core_ranges[dim].0) } else { core_ranges[dim].0 };
-            let hi = if dim < 3 { (arr[dim] * 2.0).min(core_ranges[dim].1) } else { core_ranges[dim].1 };
+            let lo = if dim < 3 {
+                (arr[dim] * 0.5).max(core_ranges[dim].0)
+            } else {
+                core_ranges[dim].0
+            };
+            let hi = if dim < 3 {
+                (arr[dim] * 2.0).min(core_ranges[dim].1)
+            } else {
+                core_ranges[dim].1
+            };
             let (val, score) = golden_search(
-                |v| { let mut t = arr; t[dim] = v; eval(&t) },
-                lo, hi,
+                |v| {
+                    let mut t = arr;
+                    t[dim] = v;
+                    eval(&t)
+                },
+                lo,
+                hi,
             );
             if score > best_score + 0.05 {
                 arr[dim] = val;
@@ -1366,21 +1608,25 @@ fn optimize_enhanced_pipeline(
                 improved = true;
             }
         }
-        if !improved { break; }
+        if !improved {
+            break;
+        }
     }
 
     // Phase 3: Nelder-Mead on all 18 params including per-channel curves
     let mut full_ranges = [(0.0f32, 1.0f32); N_PARAMS];
-    for i in 0..3 { full_ranges[i] = (range_lo, range_hi); }
-    full_ranges[3] = (0.5, 4.0);   // contrast
-    full_ranges[4] = (-0.8, 0.8);  // skew
-    full_ranges[5] = (0.3, 2.5);   // saturation
+    for i in 0..3 {
+        full_ranges[i] = (range_lo, range_hi);
+    }
+    full_ranges[3] = (0.5, 4.0); // contrast
+    full_ranges[4] = (-0.8, 0.8); // skew
+    full_ranges[5] = (0.3, 2.5); // saturation
     // Curve points: R0,R1,R2,R3, G0,G1,G2,G3, B0,B1,B2,B3
     for ch in 0..3 {
-        full_ranges[6 + ch * 4] = (0.0, 0.15);     // x=0 (shadows)
-        full_ranges[6 + ch * 4 + 1] = (0.1, 0.6);  // x=0.33
-        full_ranges[6 + ch * 4 + 2] = (0.4, 0.9);  // x=0.67
-        full_ranges[6 + ch * 4 + 3] = (0.8, 1.0);  // x=1.0 (highlights)
+        full_ranges[6 + ch * 4] = (0.0, 0.15); // x=0 (shadows)
+        full_ranges[6 + ch * 4 + 1] = (0.1, 0.6); // x=0.33
+        full_ranges[6 + ch * 4 + 2] = (0.4, 0.9); // x=0.67
+        full_ranges[6 + ch * 4 + 3] = (0.8, 1.0); // x=1.0 (highlights)
     }
 
     let initial = params.to_array();
@@ -1406,38 +1652,58 @@ fn golden_search(f: impl Fn(f32) -> f64, lo: f32, hi: f32) -> (f32, f64) {
     let mut fd = f(d);
     for _ in 0..25 {
         if fc > fd {
-            b = d; d = c; fd = fc;
+            b = d;
+            d = c;
+            fd = fc;
             c = b - phi * (b - a);
             fc = f(c);
         } else {
-            a = c; c = d; fc = fd;
+            a = c;
+            c = d;
+            fc = fd;
             d = a + phi * (b - a);
             fd = f(d);
         }
-        if (b - a).abs() < 0.005 { break; }
+        if (b - a).abs() < 0.005 {
+            break;
+        }
     }
     let best = (a + b) / 2.0;
     (best, f(best))
 }
 
 fn optimize_dt_sigmoid_exposure(
-    linear_f32: &[f32], w: u32, h: u32,
-    reference: &[u8], _rw: u32, _rh: u32,
-    zs: &Zensim, lo: f32, hi: f32,
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+    reference: &[u8],
+    _rw: u32,
+    _rh: u32,
+    zs: &Zensim,
+    lo: f32,
+    hi: f32,
 ) -> (f32, f64) {
     golden_search(
         |mult| {
             let out = apply_dt_sigmoid_uniform(linear_f32, w, h, mult);
             zensim_score(&out, reference, w, h, zs)
         },
-        lo, hi,
+        lo,
+        hi,
     )
 }
 
 fn optimize_rgb_exposure_range(
-    linear_f32: &[f32], w: u32, h: u32,
-    reference: &[u8], _rw: u32, _rh: u32,
-    zs: &Zensim, uniform_mult: f32, range_lo: f32, range_hi: f32,
+    linear_f32: &[f32],
+    w: u32,
+    h: u32,
+    reference: &[u8],
+    _rw: u32,
+    _rh: u32,
+    zs: &Zensim,
+    uniform_mult: f32,
+    range_lo: f32,
+    range_hi: f32,
 ) -> ([f32; 3], f64) {
     let mut rgb = [uniform_mult; 3];
     let mut best_score = 0.0f64;
@@ -1453,8 +1719,13 @@ fn optimize_rgb_exposure_range(
             let lo = (rgb[ch] * 0.5).max(range_lo);
             let hi = (rgb[ch] * 2.0).min(range_hi);
             let (best_val, score) = golden_search(
-                |v| { let mut m = rgb; m[ch] = v; eval(m) },
-                lo, hi,
+                |v| {
+                    let mut m = rgb;
+                    m[ch] = v;
+                    eval(m)
+                },
+                lo,
+                hi,
             );
             rgb[ch] = best_val;
             best_score = score;
@@ -1466,8 +1737,12 @@ fn optimize_rgb_exposure_range(
 // ── Resize & comparison helpers ─────────────────────────────────────────
 
 fn resize_pair_rgb8(
-    a: &[u8], aw: u32, ah: u32,
-    b: &[u8], bw: u32, bh: u32,
+    a: &[u8],
+    aw: u32,
+    ah: u32,
+    b: &[u8],
+    bw: u32,
+    bh: u32,
 ) -> (Vec<u8>, Vec<u8>, u32, u32) {
     let (ra, raw, rah) = downscale_rgb8(a, aw, ah, MAX_DIM);
     let (rb, rbw, rbh) = downscale_rgb8(b, bw, bh, MAX_DIM);
@@ -1481,8 +1756,14 @@ fn resize_pair_rgb8(
 fn zensim_score(a: &[u8], b: &[u8], w: u32, h: u32, zs: &Zensim) -> f64 {
     let expected = w as usize * h as usize * 3;
     if a.len() != expected || b.len() != expected {
-        eprintln!("    zensim: buffer mismatch: a={} b={} expected={} ({}x{})",
-            a.len(), b.len(), expected, w, h);
+        eprintln!(
+            "    zensim: buffer mismatch: a={} b={} expected={} ({}x{})",
+            a.len(),
+            b.len(),
+            expected,
+            w,
+            h
+        );
         return 0.0;
     }
     let a_rgb: &[[u8; 3]] = bytemuck::cast_slice(a);
@@ -1491,7 +1772,10 @@ fn zensim_score(a: &[u8], b: &[u8], w: u32, h: u32, zs: &Zensim) -> f64 {
     let sb = RgbSlice::new(b_rgb, w as usize, h as usize);
     match zs.compute(&sa, &sb) {
         Ok(r) => r.score(),
-        Err(e) => { eprintln!("    zensim error: {e}"); 0.0 }
+        Err(e) => {
+            eprintln!("    zensim error: {e}");
+            0.0
+        }
     }
 }
 
@@ -1502,7 +1786,9 @@ fn save_rgb8_jpeg(data: &[u8], w: u32, h: u32, path: &str) {
         .with_quality(90.0)
         .encode_rgb8(img.as_ref())
     {
-        Ok(encoded) => { let _ = fs::write(path, encoded.data()); }
+        Ok(encoded) => {
+            let _ = fs::write(path, encoded.data());
+        }
         Err(e) => eprintln!("    save error: {e}"),
     }
 }
@@ -1510,7 +1796,9 @@ fn save_rgb8_jpeg(data: &[u8], w: u32, h: u32, path: &str) {
 /// Print per-channel error statistics between two sRGB images.
 fn print_diff_stats(label: &str, a: &[u8], b: &[u8]) {
     let npix = a.len() / 3;
-    if npix == 0 { return; }
+    if npix == 0 {
+        return;
+    }
     let mut sum_r = 0i64;
     let mut sum_g = 0i64;
     let mut sum_b = 0i64;
@@ -1530,15 +1818,22 @@ fn print_diff_stats(label: &str, a: &[u8], b: &[u8]) {
         sum_abs_r += dr.unsigned_abs();
         sum_abs_g += dg.unsigned_abs();
         sum_abs_b += db.unsigned_abs();
-        max_err = max_err.max(dr.unsigned_abs() as u32)
+        max_err = max_err
+            .max(dr.unsigned_abs() as u32)
             .max(dg.unsigned_abs() as u32)
             .max(db.unsigned_abs() as u32);
     }
 
     let n = npix as f64;
-    println!("  {label} error: bias=[{:+.1},{:+.1},{:+.1}] MAE=[{:.1},{:.1},{:.1}] max={max_err}",
-        sum_r as f64 / n, sum_g as f64 / n, sum_b as f64 / n,
-        sum_abs_r as f64 / n, sum_abs_g as f64 / n, sum_abs_b as f64 / n);
+    println!(
+        "  {label} error: bias=[{:+.1},{:+.1},{:+.1}] MAE=[{:.1},{:.1},{:.1}] max={max_err}",
+        sum_r as f64 / n,
+        sum_g as f64 / n,
+        sum_b as f64 / n,
+        sum_abs_r as f64 / n,
+        sum_abs_g as f64 / n,
+        sum_abs_b as f64 / n
+    );
 }
 
 fn diff_heatmap(a: &[u8], b: &[u8], w: u32, h: u32) -> Vec<u8> {
@@ -1552,10 +1847,14 @@ fn diff_heatmap(a: &[u8], b: &[u8], w: u32, h: u32) -> Vec<u8> {
         let d = dr.max(dg).max(db).min(255) as u8;
         let v = (d as u32 * 4).min(255) as u8;
         if v < 128 {
-            out[idx] = 0; out[idx + 1] = v; out[idx + 2] = v * 2;
+            out[idx] = 0;
+            out[idx + 1] = v;
+            out[idx + 2] = v * 2;
         } else {
             let t = v - 128;
-            out[idx] = 128 + t; out[idx + 1] = 128 - t; out[idx + 2] = t;
+            out[idx] = 128 + t;
+            out[idx + 1] = 128 - t;
+            out[idx + 2] = t;
         }
     }
     out
@@ -1580,7 +1879,11 @@ fn side_by_side(a: &[u8], b: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
 }
 
 fn regional_compare_srgb(
-    a: &[u8], b: &[u8], w: u32, h: u32, m1: &GamutMatrix,
+    a: &[u8],
+    b: &[u8],
+    w: u32,
+    h: u32,
+    m1: &GamutMatrix,
 ) -> RegionalComparison {
     let mut planes_a = OklabPlanes::new(w, h);
     scatter_srgb_u8_to_oklab(a, &mut planes_a, 3, m1);
@@ -1593,12 +1896,24 @@ fn regional_compare_srgb(
 
 fn print_regional(r: &RegionalComparison) {
     let labels = RegionalComparison::zone_labels();
-    let lum: Vec<String> = labels.luminance.iter().zip(r.lum_zone_dist.iter())
-        .map(|(l, v)| format!("{l}={v:.3}")).collect();
-    let hue: Vec<String> = labels.hue.iter().zip(r.hue_sector_dist.iter())
-        .map(|(l, v)| format!("{l}={v:.3}")).collect();
-    let chr: Vec<String> = labels.chroma.iter().zip(r.chroma_zone_dist.iter())
-        .map(|(l, v)| format!("{l}={v:.3}")).collect();
+    let lum: Vec<String> = labels
+        .luminance
+        .iter()
+        .zip(r.lum_zone_dist.iter())
+        .map(|(l, v)| format!("{l}={v:.3}"))
+        .collect();
+    let hue: Vec<String> = labels
+        .hue
+        .iter()
+        .zip(r.hue_sector_dist.iter())
+        .map(|(l, v)| format!("{l}={v:.3}"))
+        .collect();
+    let chr: Vec<String> = labels
+        .chroma
+        .iter()
+        .zip(r.chroma_zone_dist.iter())
+        .map(|(l, v)| format!("{l}={v:.3}"))
+        .collect();
     println!("  Regional L: {}", lum.join("  "));
     println!("  Regional H: {}", hue.join("  "));
     println!("  Regional C: {}", chr.join("  "));

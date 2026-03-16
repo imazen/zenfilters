@@ -9,17 +9,17 @@ mod black_point;
 mod blur;
 mod brilliance;
 mod bw_mixer;
+mod camera_calibration;
 #[allow(clippy::excessive_precision)]
 pub mod cat16;
-mod camera_calibration;
 mod chromatic_aberration;
 mod clarity;
 mod color_grading;
 mod color_matrix;
 mod contrast;
-pub mod dt_sigmoid;
 mod dehaze;
 mod devignette;
+pub mod dt_sigmoid;
 mod exposure;
 mod fused_adjust;
 mod gamut_expand;
@@ -55,7 +55,7 @@ pub use auto_tune::{
     CLUSTER_COUNT, ClusterModel, ImageFeatures, LINEAR_MODEL_INPUTS, LINEAR_MODEL_OUTPUTS,
     LinearModel, TunedParams, rule_based_tune,
 };
-pub use basecurve::{BasecurveToneMap, BasecurvePreset, find_basecurve, NEUTRAL_CURVE};
+pub use basecurve::{BasecurvePreset, BasecurveToneMap, NEUTRAL_CURVE, find_basecurve};
 pub use bilateral::Bilateral;
 pub use black_point::BlackPoint;
 pub use blur::Blur;

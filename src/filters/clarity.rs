@@ -52,6 +52,11 @@ impl Filter for Clarity {
         true
     }
 
+    fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
+        // Coarse blur uses sigma * 4.0 — dominates the radius.
+        (self.sigma * 4.0 * 3.0).ceil() as u32
+    }
+
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.amount.abs() < 1e-6 {
             return;
