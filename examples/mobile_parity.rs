@@ -302,8 +302,9 @@ fn process_appledng(
     let (enhanced_params, enhanced_score) = optimize_enhanced_pipeline(
         &small_linear, cw, ch, &small_ref, zs, bl_mult, search_lo, search_hi,
     );
-    println!("  Enhanced: contrast={:.2} skew={:.2} sat={:.2} RGB=[{:.2},{:.2},{:.2}] → {enhanced_score:.1} ({:.1}s)",
+    println!("  Enhanced: c={:.2} sk={:.2} sat={:.2} hue={:.2} wht={:.0} RGB=[{:.2},{:.2},{:.2}] → {enhanced_score:.1} ({:.1}s)",
         enhanced_params.contrast, enhanced_params.skew, enhanced_params.saturation,
+        enhanced_params.hue_preservation, enhanced_params.display_white,
         enhanced_params.rgb_mult[0], enhanced_params.rgb_mult[1], enhanced_params.rgb_mult[2],
         t0.elapsed().as_secs_f32());
 
@@ -332,6 +333,9 @@ fn process_appledng(
             apply_dt_sigmoid_rgb(&small_linear, cw, ch, rgb_mult)
         }
     };
+
+    // Per-channel error analysis
+    print_diff_stats("vs preview", &best_small, &small_ref);
 
     // Regional comparison
     let regional = regional_compare_srgb(&best_small, &small_ref, cw, ch, m1);
@@ -465,8 +469,9 @@ fn process_standard_dng(
     let (enhanced_params, enhanced_score) = optimize_enhanced_pipeline(
         &small_linear, cw, ch, &small_ref, zs, bl_mult.max(1.0), search_lo, search_hi,
     );
-    println!("  Enhanced: contrast={:.2} skew={:.2} sat={:.2} → {enhanced_score:.1} ({:.1}s)",
+    println!("  Enhanced: c={:.2} sk={:.2} sat={:.2} hue={:.2} wht={:.0} → {enhanced_score:.1} ({:.1}s)",
         enhanced_params.contrast, enhanced_params.skew, enhanced_params.saturation,
+        enhanced_params.hue_preservation, enhanced_params.display_white,
         t0.elapsed().as_secs_f32());
     if enhanced_score > parity_rgb {
         parity_rgb = enhanced_score;
@@ -481,6 +486,7 @@ fn process_standard_dng(
     } else {
         apply_dt_sigmoid_rgb(&small_linear, cw, ch, rgb_mult)
     };
+    print_diff_stats("vs darktable", &best_small, &small_ref);
     let regional = regional_compare_srgb(&best_small, &small_ref, cw, ch, m1);
     print_regional(&regional);
 
@@ -908,6 +914,10 @@ struct PipelineParams {
     skew: f32,
     /// Post-sigmoid saturation multiplier (1.0 = no change).
     saturation: f32,
+    /// dt_sigmoid hue preservation (0-1, default 1.0).
+    hue_preservation: f32,
+    /// Display white target (0-100, default 100).
+    display_white: f32,
 }
 
 impl PipelineParams {
@@ -917,29 +927,34 @@ impl PipelineParams {
             contrast: 1.5,
             skew: 0.0,
             saturation: 1.0,
+            hue_preservation: 1.0,
+            display_white: 100.0,
         }
     }
 
-    fn to_array(&self) -> [f32; 6] {
+    fn to_array(&self) -> [f32; 8] {
         [
             self.rgb_mult[0], self.rgb_mult[1], self.rgb_mult[2],
             self.contrast, self.skew, self.saturation,
+            self.hue_preservation, self.display_white,
         ]
     }
 
-    fn from_array(a: &[f32; 6]) -> Self {
+    fn from_array(a: &[f32; 8]) -> Self {
         Self {
             rgb_mult: [a[0], a[1], a[2]],
             contrast: a[3].clamp(0.5, 5.0),
             skew: a[4].clamp(-1.0, 1.0),
             saturation: a[5].clamp(0.0, 3.0),
+            hue_preservation: a[6].clamp(0.0, 1.0),
+            display_white: a[7].clamp(50.0, 100.0),
         }
     }
 }
 
 /// Apply enhanced pipeline: exposure → dt_sigmoid(contrast, skew) → saturation → sRGB.
 fn apply_enhanced_pipeline(linear_f32: &[f32], _w: u32, _h: u32, p: &PipelineParams) -> Vec<u8> {
-    let params = dt_sigmoid::compute_params(p.contrast, p.skew, 100.0, 0.0152, 1.0);
+    let params = dt_sigmoid::compute_params(p.contrast, p.skew, p.display_white, 0.0152, p.hue_preservation);
 
     let mut rgb = linear_f32.to_vec();
     let n = rgb.len() / 3;
@@ -993,21 +1008,23 @@ fn optimize_enhanced_pipeline(
     );
     params.rgb_mult = [best_mult; 3];
 
-    // Phase 2: Coordinate descent on all 6 parameters (3 rounds)
-    let ranges: [(f32, f32); 6] = [
+    // Phase 2: Coordinate descent on all 8 parameters (4 rounds)
+    let ranges: [(f32, f32); 8] = [
         (range_lo, range_hi),                // R
         (range_lo, range_hi),                // G
         (range_lo, range_hi),                // B
         (0.5, 4.0),                          // contrast
         (-0.8, 0.8),                         // skew
         (0.3, 2.5),                          // saturation
+        (0.0, 1.0),                          // hue_preservation
+        (60.0, 100.0),                       // display_white
     ];
 
     let mut best_score = eval(&params);
 
-    for round in 0..4 {
+    for round in 0..5 {
         let mut improved = false;
-        for dim in 0..6 {
+        for dim in 0..8 {
             let mut arr = params.to_array();
             let lo = if dim < 3 {
                 (arr[dim] * 0.5).max(ranges[dim].0)
@@ -1022,9 +1039,9 @@ fn optimize_enhanced_pipeline(
 
             let (best_val, score) = golden_search(
                 |v| {
-                    let mut a = arr;
-                    a[dim] = v;
-                    eval(&PipelineParams::from_array(&a))
+                    let mut test = arr;
+                    test[dim] = v;
+                    eval(&PipelineParams::from_array(&test))
                 },
                 lo, hi,
             );
@@ -1155,6 +1172,40 @@ fn save_rgb8_jpeg(data: &[u8], w: u32, h: u32, path: &str) {
         Ok(encoded) => { let _ = fs::write(path, encoded.data()); }
         Err(e) => eprintln!("    save error: {e}"),
     }
+}
+
+/// Print per-channel error statistics between two sRGB images.
+fn print_diff_stats(label: &str, a: &[u8], b: &[u8]) {
+    let npix = a.len() / 3;
+    if npix == 0 { return; }
+    let mut sum_r = 0i64;
+    let mut sum_g = 0i64;
+    let mut sum_b = 0i64;
+    let mut sum_abs_r = 0u64;
+    let mut sum_abs_g = 0u64;
+    let mut sum_abs_b = 0u64;
+    let mut max_err = 0u32;
+
+    for i in 0..npix {
+        let idx = i * 3;
+        let dr = a[idx] as i64 - b[idx] as i64;
+        let dg = a[idx + 1] as i64 - b[idx + 1] as i64;
+        let db = a[idx + 2] as i64 - b[idx + 2] as i64;
+        sum_r += dr;
+        sum_g += dg;
+        sum_b += db;
+        sum_abs_r += dr.unsigned_abs();
+        sum_abs_g += dg.unsigned_abs();
+        sum_abs_b += db.unsigned_abs();
+        max_err = max_err.max(dr.unsigned_abs() as u32)
+            .max(dg.unsigned_abs() as u32)
+            .max(db.unsigned_abs() as u32);
+    }
+
+    let n = npix as f64;
+    println!("  {label} error: bias=[{:+.1},{:+.1},{:+.1}] MAE=[{:.1},{:.1},{:.1}] max={max_err}",
+        sum_r as f64 / n, sum_g as f64 / n, sum_b as f64 / n,
+        sum_abs_r as f64 / n, sum_abs_g as f64 / n, sum_abs_b as f64 / n);
 }
 
 fn diff_heatmap(a: &[u8], b: &[u8], w: u32, h: u32) -> Vec<u8> {
