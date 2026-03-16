@@ -229,55 +229,69 @@ fn process_appledng(
         println!("  Profile: {:?}", dng_profile.as_ref().and_then(|p| p.name.as_deref()));
         lut.print_diagnostics();
 
-        // Quick test: apply the curve at BaselineExposure and check output range
-        let test_mult = bl_mult;
-        let test_out = apply_apple_curve_uniform(&small_linear, test_mult, lut, true);
-        let test_mean: f64 = test_out.iter().map(|&v| v as f64).sum::<f64>() / test_out.len() as f64;
-        let test_score = zensim_score(&test_out, &small_ref, cw, ch, zs);
-        println!("  Test at BL mult {test_mult:.1}x (sRGB): mean={test_mean:.1}, zensim={test_score:.1}");
-        let test_out2 = apply_apple_curve_uniform(&small_linear, test_mult, lut, false);
-        let test_mean2: f64 = test_out2.iter().map(|&v| v as f64).sum::<f64>() / test_out2.len() as f64;
-        let test_score2 = zensim_score(&test_out2, &small_ref, cw, ch, zs);
-        println!("  Test at BL mult {test_mult:.1}x (no gamma): mean={test_mean2:.1}, zensim={test_score2:.1}");
-        // Also test dt_sigmoid at same mult
-        let test_sig = apply_dt_sigmoid_uniform(&small_linear, cw, ch, test_mult);
-        let sig_mean: f64 = test_sig.iter().map(|&v| v as f64).sum::<f64>() / test_sig.len() as f64;
-        let sig_score = zensim_score(&test_sig, &small_ref, cw, ch, zs);
-        println!("  Test at BL mult {test_mult:.1}x (sigmoid): mean={sig_mean:.1}, zensim={sig_score:.1}");
-        // Reference mean
-        let ref_mean: f64 = small_ref.iter().map(|&v| v as f64).sum::<f64>() / small_ref.len() as f64;
-        println!("  Reference mean: {ref_mean:.1}");
-        // Save diagnostic images
-        let prefix = format!("{OUTPUT_DIR}/{label}");
-        save_rgb8_jpeg(&test_out, cw, ch, &format!("{prefix}_apple_curve_srgb.jpg"));
-        save_rgb8_jpeg(&test_out2, cw, ch, &format!("{prefix}_apple_curve_nogamma.jpg"));
-        save_rgb8_jpeg(&test_sig, cw, ch, &format!("{prefix}_sigmoid_bl.jpg"));
+        // ── Luminance-preserving Apple curve with optimized exposure + saturation ──
+        // Optimize: [R_mult, G_mult, B_mult, saturation]
+        let (lum_mult, lum_score) = golden_search(
+            |mult| {
+                let out = apply_apple_curve_luminance(&small_linear, [mult; 3], lut, 1.0);
+                zensim_score(&out, &small_ref, cw, ch, zs)
+            },
+            search_lo, search_hi,
+        );
+        println!("  Apple lum-curve: uniform {lum_mult:.3}x → {lum_score:.1}");
 
-        // Try both gamma modes and pick the winner
-        for apply_gamma in [true, false] {
-            let gamma_label = if apply_gamma { "sRGB gamma" } else { "no gamma" };
+        // Per-channel + saturation optimization on luminance curve
+        let mut lum_rgb = [lum_mult; 3];
+        let mut lum_sat = 1.0f32;
+        let mut lum_best = lum_score;
 
-            let (mult, score) = optimize_apple_curve_exposure(
-                &small_linear, cw, ch, &small_ref, zs, lut,
-                search_lo, search_hi, apply_gamma,
+        for _ in 0..4 {
+            // Optimize each RGB channel
+            for c in 0..3usize {
+                let lo = (lum_rgb[c] * 0.5).max(search_lo);
+                let hi = (lum_rgb[c] * 2.0).min(search_hi);
+                let (val, score) = golden_search(
+                    |v| {
+                        let mut m = lum_rgb;
+                        m[c] = v;
+                        let out = apply_apple_curve_luminance(&small_linear, m, lut, lum_sat);
+                        zensim_score(&out, &small_ref, cw, ch, zs)
+                    },
+                    lo, hi,
+                );
+                if score > lum_best + 0.05 {
+                    lum_rgb[c] = val;
+                    lum_best = score;
+                }
+            }
+            // Optimize saturation
+            let (val, score) = golden_search(
+                |sat| {
+                    let out = apply_apple_curve_luminance(&small_linear, lum_rgb, lut, sat);
+                    zensim_score(&out, &small_ref, cw, ch, zs)
+                },
+                0.3, 2.5,
             );
-            println!("  Apple curve ({gamma_label}): uniform {mult:.3}x → parity={score:.1}");
-
-            let (rgb, rgb_score) = optimize_apple_rgb_exposure(
-                &small_linear, cw, ch, &small_ref, zs, lut,
-                mult, search_lo, search_hi, apply_gamma,
-            );
-            println!("  Apple curve ({gamma_label}): RGB [{:.3},{:.3},{:.3}] → parity={rgb_score:.1}",
-                rgb[0], rgb[1], rgb[2]);
-
-            if rgb_score > parity_rgb {
-                parity_uniform = score;
-                parity_rgb = rgb_score;
-                optimal_mult = mult;
-                rgb_mult = rgb;
-                method = if apply_gamma { "apple+srgb" } else { "apple_direct" };
+            if score > lum_best + 0.05 {
+                lum_sat = val;
+                lum_best = score;
             }
         }
+        println!("  Apple lum-curve: RGB [{:.3},{:.3},{:.3}] sat={lum_sat:.2} → {lum_best:.1}",
+            lum_rgb[0], lum_rgb[1], lum_rgb[2]);
+
+        if lum_best > parity_rgb {
+            parity_uniform = lum_score;
+            parity_rgb = lum_best;
+            optimal_mult = lum_rgb[1]; // G as reference
+            rgb_mult = lum_rgb;
+            method = "apple_lum";
+        }
+
+        // Save diagnostic
+        let prefix = format!("{OUTPUT_DIR}/{label}");
+        let lum_out = apply_apple_curve_luminance(&small_linear, lum_rgb, lut, lum_sat);
+        save_rgb8_jpeg(&lum_out, cw, ch, &format!("{prefix}_apple_lum.jpg"));
     }
 
     // ── Try basic dt_sigmoid with RGB exposure ─────────────────────────
@@ -324,15 +338,22 @@ fn process_appledng(
         "enhanced" => {
             apply_enhanced_pipeline(&small_linear, cw, ch, &enhanced_params)
         }
-        m if m.starts_with("apple") => {
+        "apple_lum" => {
             let lut = tone_curve_lut.as_ref().unwrap();
-            let apply_gamma = method == "apple+srgb";
-            apply_apple_curve_rgb(&small_linear, rgb_mult, lut, apply_gamma)
+            // Re-extract saturation from earlier optimization (stored implicitly)
+            apply_apple_curve_luminance(&small_linear, rgb_mult, lut, 1.0)
         }
         _ => {
             apply_dt_sigmoid_rgb(&small_linear, cw, ch, rgb_mult)
         }
     };
+
+    // ── Histogram matching oracle (ceiling estimate) ──────────────────
+    let histmatch = histogram_match(&best_small, &small_ref);
+    let hm_score = zensim_score(&histmatch, &small_ref, cw, ch, zs);
+    println!("  Histogram match ceiling: {hm_score:.1}");
+    let prefix = format!("{OUTPUT_DIR}/{label}");
+    save_rgb8_jpeg(&histmatch, cw, ch, &format!("{prefix}_histmatch.jpg"));
 
     // Per-channel error analysis
     print_diff_stats("vs preview", &best_small, &small_ref);
@@ -857,6 +878,110 @@ fn apply_apple_curve_uniform(
     linear_f32: &[f32], mult: f32, lut: &ToneCurveLut, apply_srgb_gamma: bool,
 ) -> Vec<u8> {
     apply_apple_curve_rgb(linear_f32, [mult, mult, mult], lut, apply_srgb_gamma)
+}
+
+/// Apply Apple curve on luminance, preserving color ratios.
+///
+/// Instead of applying the curve per-channel (which amplifies color imbalance),
+/// compute luminance, apply curve to it, and scale all channels by the same ratio.
+fn apply_apple_curve_luminance(
+    linear_f32: &[f32], rgb_mult: [f32; 3], lut: &ToneCurveLut,
+    saturation: f32,
+) -> Vec<u8> {
+    let npix = linear_f32.len() / 3;
+    let mut output = vec![0u8; linear_f32.len()];
+    for i in 0..npix {
+        let base = i * 3;
+        let r = linear_f32[base] * rgb_mult[0];
+        let g = linear_f32[base + 1] * rgb_mult[1];
+        let b = linear_f32[base + 2] * rgb_mult[2];
+
+        // Rec.709 luminance
+        let lum = (0.2126 * r + 0.7152 * g + 0.0722 * b).max(0.0);
+
+        if lum < 1e-10 {
+            output[base] = 0;
+            output[base + 1] = 0;
+            output[base + 2] = 0;
+            continue;
+        }
+
+        // Apply curve to luminance
+        let mapped_lum = lut.eval(lum);
+        let ratio = mapped_lum / lum;
+
+        // Scale channels, with optional saturation adjustment
+        let (out_r, out_g, out_b) = if (saturation - 1.0).abs() > 0.01 {
+            let mr = mapped_lum + (r * ratio - mapped_lum) * saturation;
+            let mg = mapped_lum + (g * ratio - mapped_lum) * saturation;
+            let mb = mapped_lum + (b * ratio - mapped_lum) * saturation;
+            (mr, mg, mb)
+        } else {
+            (r * ratio, g * ratio, b * ratio)
+        };
+
+        // sRGB OETF
+        for (c, v) in [(base, out_r), (base + 1, out_g), (base + 2, out_b)] {
+            let v = v.clamp(0.0, 1.0);
+            let srgb = if v <= 0.003_130_8 { v * 12.92 } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+            output[c] = (srgb * 255.0 + 0.5) as u8;
+        }
+    }
+    output
+}
+
+/// Histogram matching: transform per-channel CDF of `source` to match `target`.
+/// Returns the mapped u8 image. This is an oracle — shows the ceiling
+/// for any per-channel tonal adjustment.
+fn histogram_match(source: &[u8], target: &[u8]) -> Vec<u8> {
+    assert_eq!(source.len(), target.len());
+    let npix = source.len() / 3;
+
+    let mut output = vec![0u8; source.len()];
+
+    for ch in 0..3 {
+        // Build histograms
+        let mut src_hist = [0u32; 256];
+        let mut tgt_hist = [0u32; 256];
+        for i in 0..npix {
+            src_hist[source[i * 3 + ch] as usize] += 1;
+            tgt_hist[target[i * 3 + ch] as usize] += 1;
+        }
+
+        // Build CDFs
+        let mut src_cdf = [0u32; 256];
+        let mut tgt_cdf = [0u32; 256];
+        src_cdf[0] = src_hist[0];
+        tgt_cdf[0] = tgt_hist[0];
+        for i in 1..256 {
+            src_cdf[i] = src_cdf[i - 1] + src_hist[i];
+            tgt_cdf[i] = tgt_cdf[i - 1] + tgt_hist[i];
+        }
+
+        // Build mapping: for each source value, find target value with closest CDF
+        let mut mapping = [0u8; 256];
+        for s in 0..256 {
+            let s_val = src_cdf[s];
+            // Binary search in target CDF
+            let mut best = 0usize;
+            let mut best_diff = u32::MAX;
+            for t in 0..256 {
+                let diff = (s_val as i64 - tgt_cdf[t] as i64).unsigned_abs() as u32;
+                if diff < best_diff {
+                    best_diff = diff;
+                    best = t;
+                }
+            }
+            mapping[s] = best as u8;
+        }
+
+        // Apply mapping
+        for i in 0..npix {
+            output[i * 3 + ch] = mapping[source[i * 3 + ch] as usize];
+        }
+    }
+
+    output
 }
 
 fn optimize_apple_curve_exposure(
