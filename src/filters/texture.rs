@@ -52,6 +52,9 @@ impl Filter for Texture {
         (self.sigma * 2.0 * 3.0).ceil() as u32
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::Texture
+    }
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.amount.abs() < 1e-6 {
             return;

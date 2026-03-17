@@ -71,6 +71,7 @@ mod access;
 mod blur;
 mod context;
 mod filter;
+pub mod filter_compat;
 pub mod filters;
 mod fused_params;
 mod gamut_lut;

@@ -660,6 +660,9 @@ impl Filter for BasecurveToneMap {
         }
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::BasecurveToneMap
+    }
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         let n = planes.pixel_count();
 

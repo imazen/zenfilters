@@ -44,6 +44,9 @@ impl Filter for WhitesBlacks {
         ChannelAccess::L_ONLY
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::WhitesBlacks
+    }
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.is_identity() {
             return;

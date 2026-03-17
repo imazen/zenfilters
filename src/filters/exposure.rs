@@ -22,6 +22,9 @@ impl Filter for Exposure {
         ChannelAccess::L_AND_CHROMA
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::Exposure
+    }
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         // Linear light factor = 2^stops.
         // Oklab factor = (2^stops)^(1/3) = 2^(stops/3) because Oklab

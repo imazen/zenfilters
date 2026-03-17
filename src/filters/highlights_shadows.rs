@@ -97,6 +97,9 @@ impl Filter for HighlightsShadows {
         ChannelAccess::L_ONLY
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::HighlightsShadows
+    }
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.highlights.abs() < 1e-6 && self.shadows.abs() < 1e-6 {
             return;

@@ -47,6 +47,9 @@ impl Filter for Contrast {
         ChannelAccess::L_ONLY
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::Contrast
+    }
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.amount.abs() < 1e-6 {
             return;

@@ -42,6 +42,9 @@ impl Filter for Saturation {
         ChannelAccess::CHROMA_ONLY
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::Saturation
+    }
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if (self.factor - 1.0).abs() < 1e-6 {
             return;

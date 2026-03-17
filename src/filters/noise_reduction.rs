@@ -304,6 +304,9 @@ impl Filter for NoiseReduction {
         2 * max_step
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::NoiseReduction
+    }
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.is_identity() {
             return;

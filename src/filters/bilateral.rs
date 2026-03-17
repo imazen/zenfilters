@@ -58,6 +58,9 @@ impl Filter for Bilateral {
         (self.spatial_sigma * 3.0).ceil() as u32
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::Bilateral
+    }
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.strength.abs() < 1e-6 {
             return;

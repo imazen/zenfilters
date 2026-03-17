@@ -110,6 +110,9 @@ impl Filter for ToneEqualizer {
         (sigma * 3.0).ceil() as u32
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::ToneEqualizer
+    }
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.is_identity() {
             return;

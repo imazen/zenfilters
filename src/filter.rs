@@ -39,6 +39,14 @@ pub trait Filter: Send + Sync {
         0
     }
 
+    /// Compatibility tag for conflict detection.
+    ///
+    /// Used by [`filter_compat::validate_pipeline`] to check for mutually
+    /// exclusive filters, ordering violations, and range conflicts.
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::Other
+    }
+
     /// Apply the filter in-place to the given planes.
     ///
     /// `ctx` provides reusable scratch buffers — neighborhood filters should

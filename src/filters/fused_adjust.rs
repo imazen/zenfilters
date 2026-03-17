@@ -81,6 +81,9 @@ impl Filter for FusedAdjust {
         ChannelAccess::L_AND_CHROMA
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::FusedAdjust
+    }
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.is_identity() {
             return;

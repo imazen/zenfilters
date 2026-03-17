@@ -69,6 +69,9 @@ impl Filter for GamutExpand {
         ChannelAccess::CHROMA_ONLY
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::GamutExpand
+    }
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.strength < 1e-6 {
             return;

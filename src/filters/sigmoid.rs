@@ -61,6 +61,9 @@ impl Filter for Sigmoid {
         }
     }
 
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::Sigmoid
+    }
     fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if (self.contrast - 1.0).abs() < 1e-6 && (self.skew - 0.5).abs() < 1e-6 {
             return;
