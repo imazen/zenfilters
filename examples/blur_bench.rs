@@ -95,6 +95,20 @@ fn bench_blur_group(
                 });
             });
         }
+
+        // Stackblur (O(1)/pixel, pyramid kernel, single pass per direction)
+        {
+            let src = Arc::clone(&src);
+            let sb_radius = sigma_to_stackblur_radius(sigma);
+            group.bench("stackblur", move |b| {
+                let mut ctx = FilterContext::new();
+                let mut dst = vec![0.0f32; n];
+                stackblur_plane(&src, &mut dst, w, h, sb_radius, &mut ctx);
+                b.iter(|| {
+                    stackblur_plane(&src, &mut dst, w, h, sb_radius, &mut ctx);
+                });
+            });
+        }
     });
 }
 

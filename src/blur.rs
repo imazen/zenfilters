@@ -431,6 +431,185 @@ pub fn kernel_sigma(kernel: &GaussianKernel) -> f32 {
     kernel.radius as f32 / 3.0
 }
 
+// ─── Stackblur (O(1) per pixel, pyramid kernel) ────────────────────
+
+/// Stackblur on a single f32 plane.
+///
+/// Mario Klingemann's stackblur uses a pyramid-shaped kernel (triangle weights)
+/// maintained via running sums. O(1) per pixel regardless of radius.
+/// Single pass per direction — fewer memory passes than 3-pass box blur.
+///
+/// Kernel weights for radius r: `[1, 2, 3, ..., r, r+1, r, ..., 3, 2, 1]`
+/// Divisor: `(r+1)²`
+///
+/// Accuracy is between single box blur and 3-pass extended box blur.
+/// The pyramid kernel has no zeros in its frequency response (unlike box blur).
+#[allow(dead_code)]
+pub fn stackblur_plane(
+    src: &[f32],
+    dst: &mut [f32],
+    width: u32,
+    height: u32,
+    radius: u32,
+    ctx: &mut FilterContext,
+) {
+    if radius == 0 {
+        dst.copy_from_slice(src);
+        return;
+    }
+
+    let w = width as usize;
+    let h = height as usize;
+    let r = radius as usize;
+    let n = w * h;
+
+    // Intermediate buffer for horizontal pass output
+    let mut h_buf = ctx.take_f32(n);
+
+    // Stack (circular buffer) for the sliding window
+    let stack_size = 2 * r + 1;
+    let mut stack = ctx.take_f32(stack_size);
+    let inv_div = 1.0 / ((r as f32 + 1.0) * (r as f32 + 1.0));
+
+    // --- Horizontal pass ---
+    for y in 0..h {
+        let row = &src[y * w..][..w];
+        let out = &mut h_buf[y * w..][..w];
+        stackblur_row(row, out, w, r, &mut stack, inv_div);
+    }
+
+    // --- Vertical pass: transpose → horizontal stackblur → transpose ---
+    let mut transposed = ctx.take_f32(n);
+    let mut transposed_out = ctx.take_f32(n);
+    transpose_plane(&h_buf, &mut transposed, w, h);
+
+    // Reuse stack — might need bigger if h > w, but stack_size = 2*r+1 is fixed
+    for x in 0..w {
+        let row = &transposed[x * h..][..h];
+        let out = &mut transposed_out[x * h..][..h];
+        stackblur_row(row, out, h, r, &mut stack, inv_div);
+    }
+
+    transpose_plane(&transposed_out, dst, h, w);
+
+    ctx.return_f32(transposed_out);
+    ctx.return_f32(transposed);
+    ctx.return_f32(stack);
+    ctx.return_f32(h_buf);
+}
+
+/// Single-row stackblur with pyramid kernel.
+///
+/// `stack` must have length >= `2 * radius + 1`.
+///
+/// The algorithm maintains a circular buffer of pixel values. As the window
+/// slides right by one pixel:
+///   1. sum -= sum_out          (remove leaving pixels' accumulated weight)
+///   2. Remove oldest from sum_out, insert new pixel into sum_in
+///   3. sum += sum_in           (add entering pixels' accumulated weight)
+///   4. Transfer the midpoint pixel from sum_in to sum_out
+///
+/// This produces a pyramid kernel [1, 2, ..., r, r+1, r, ..., 2, 1] with
+/// divisor (r+1)² — each step increments the weight of entering pixels by 1
+/// and decrements the weight of leaving pixels by 1.
+fn stackblur_row(
+    input: &[f32],
+    output: &mut [f32],
+    len: usize,
+    radius: usize,
+    stack: &mut [f32],
+    inv_div: f32,
+) {
+    let r = radius;
+    let stack_size = 2 * r + 1;
+
+    let mut sum = 0.0f32;
+    let mut sum_in = 0.0f32;
+    let mut sum_out = 0.0f32;
+
+    // Initialize: fill the stack with edge-replicated values for position x=0.
+    // Stack layout: positions [-r, -r+1, ..., 0, ..., r-1, r] relative to center.
+    // stack[i] holds the pixel value at offset (i - r) from center.
+    let first = input[0];
+    for i in 0..=r {
+        // Left side + center: offset = i - r (negative or zero), clamped to edge
+        stack[i] = first;
+    }
+    for i in (r + 1)..stack_size {
+        // Right side: offset = i - r (positive)
+        let offset = i - r;
+        stack[i] = if offset < len { input[offset] } else { input[len - 1] };
+    }
+
+    // Compute initial weighted sum.
+    // Weight of stack[i] = r + 1 - |i - r| = r + 1 - abs_distance_from_center
+    for i in 0..stack_size {
+        let dist = if i <= r { r - i } else { i - r };
+        let weight = (r + 1 - dist) as f32;
+        sum += stack[i] * weight;
+    }
+
+    // sum_out = sum of values in the "out" half (positions 0..r, will be subtracted)
+    for i in 0..=r {
+        sum_out += stack[i];
+    }
+    // sum_in = sum of values in the "in" half (positions r+1..stack_size, will be added)
+    for i in (r + 1)..stack_size {
+        sum_in += stack[i];
+    }
+
+    // sp points to the slot that will be overwritten next (the oldest "out" slot)
+    let mut sp = 0usize;
+
+    for x in 0..len {
+        output[x] = sum * inv_div;
+
+        // 1. Remove outgoing contribution
+        sum -= sum_out;
+
+        // 2. Remove the oldest value from sum_out
+        sum_out -= stack[sp];
+
+        // 3. Insert new pixel at the vacated slot
+        let new_x = x + r + 1;
+        let new_px = if new_x < len { input[new_x] } else { input[len - 1] };
+        stack[sp] = new_px;
+        sum_in += new_px;
+
+        // 4. Add incoming contribution
+        sum += sum_in;
+
+        // 5. Advance stack pointer (wrapping)
+        sp += 1;
+        if sp >= stack_size {
+            sp = 0;
+        }
+
+        // 6. The pixel at (sp + r) is the new center — transfer from in to out.
+        // After sp advances, sp points to the leftmost (oldest out).
+        // The center is r positions ahead in the circular buffer.
+        let center_idx = if sp + r >= stack_size {
+            sp + r - stack_size
+        } else {
+            sp + r
+        };
+        let center_val = stack[center_idx];
+        sum_out += center_val;
+        sum_in -= center_val;
+    }
+}
+
+/// Convert sigma to stackblur radius.
+///
+/// Stackblur's pyramid kernel has variance `r*(r+2)/6` for radius r.
+/// For equivalence to Gaussian with variance σ², solve: r*(r+2)/6 = σ²
+/// → r ≈ sqrt(6*σ² + 1) - 1
+#[allow(dead_code)]
+pub fn sigma_to_stackblur_radius(sigma: f32) -> u32 {
+    let r = (6.0 * sigma * sigma + 1.0).sqrt() - 1.0;
+    r.round().max(1.0) as u32
+}
+
 // ─── Deriche IIR Gaussian blur (O(1) per pixel, high accuracy) ──────
 
 /// Coefficients for Young & van Vliet 3rd-order recursive Gaussian filter.
@@ -893,6 +1072,106 @@ mod tests {
                 "large-sigma constant plane: got {v}"
             );
         }
+    }
+
+    // ─── Deriche IIR tests ──────────────────────────────────────────
+
+    // ─── Stackblur tests ─────────────────────────────────────────
+
+    #[test]
+    fn stackblur_constant_plane() {
+        let w = 128u32;
+        let h = 96u32;
+        let src = vec![0.42f32; (w * h) as usize];
+        let mut dst = vec![0.0f32; (w * h) as usize];
+        stackblur_plane(&src, &mut dst, w, h, 10, &mut FilterContext::new());
+        for (i, &v) in dst.iter().enumerate() {
+            assert!(
+                (v - 0.42).abs() < 1e-3,
+                "stackblur constant plane pixel {i}: expected 0.42, got {v}"
+            );
+        }
+    }
+
+    #[test]
+    fn stackblur_preserves_mean() {
+        let w = 128u32;
+        let h = 96u32;
+        let n = (w * h) as usize;
+        let mut src = vec![0.0f32; n];
+        for (i, v) in src.iter_mut().enumerate() {
+            *v = ((i as u32).wrapping_mul(2654435761) as f32 / u32::MAX as f32) * 0.8 + 0.1;
+        }
+        let src_mean: f32 = src.iter().sum::<f32>() / n as f32;
+
+        let mut dst = vec![0.0f32; n];
+        stackblur_plane(&src, &mut dst, w, h, 15, &mut FilterContext::new());
+        let dst_mean: f32 = dst.iter().sum::<f32>() / n as f32;
+
+        assert!(
+            (src_mean - dst_mean).abs() < 0.02,
+            "stackblur mean not preserved: src={src_mean}, dst={dst_mean}"
+        );
+    }
+
+    #[test]
+    fn stackblur_vs_fir_accuracy() {
+        let w = 128u32;
+        let h = 128u32;
+        let n = (w * h) as usize;
+
+        let mut src = vec![0.0f32; n];
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                src[y * w as usize + x] =
+                    0.1 + 0.8 * (x as f32 / w as f32) * (y as f32 / h as f32);
+            }
+        }
+
+        let sigma = 5.0;
+        let kernel = GaussianKernel::new(sigma);
+        let sb_radius = sigma_to_stackblur_radius(sigma);
+
+        let mut dst_fir = vec![0.0f32; n];
+        gaussian_blur_plane_scalar(&src, &mut dst_fir, w, h, &kernel, &mut FilterContext::new());
+
+        let mut dst_sb = vec![0.0f32; n];
+        stackblur_plane(&src, &mut dst_sb, w, h, sb_radius, &mut FilterContext::new());
+
+        let margin = (2.0 * sigma).ceil() as usize;
+        let mut max_err = 0.0f32;
+        let mut sum_sq_err = 0.0f64;
+        let mut count = 0;
+        for y in margin..h as usize - margin {
+            for x in margin..w as usize - margin {
+                let i = y * w as usize + x;
+                let err = (dst_fir[i] - dst_sb[i]).abs();
+                max_err = max_err.max(err);
+                sum_sq_err += (err as f64) * (err as f64);
+                count += 1;
+            }
+        }
+        let rmse = (sum_sq_err / count as f64).sqrt();
+        eprintln!("stackblur vs FIR sigma={sigma} radius={sb_radius}: max_err={max_err:.6}, rmse={rmse:.6}");
+        assert!(
+            max_err < 0.06,
+            "stackblur vs FIR max error too large: {max_err}"
+        );
+        assert!(rmse < 0.02, "stackblur vs FIR RMSE too large: {rmse}");
+    }
+
+    #[test]
+    #[test]
+    fn sigma_to_stackblur_radius_sanity() {
+        // Variance of pyramid kernel = r*(r+2)/6
+        // For σ²: r = sqrt(6σ²+1) - 1
+        // σ=4 → r≈9, σ=16 → r≈39, σ=30 → r≈73
+        let r4 = sigma_to_stackblur_radius(4.0);
+        let r16 = sigma_to_stackblur_radius(16.0);
+        let r30 = sigma_to_stackblur_radius(30.0);
+        assert!(r4 >= 8 && r4 <= 11, "sigma=4 radius={r4}");
+        assert!(r16 >= 38 && r16 <= 41, "sigma=16 radius={r16}");
+        assert!(r30 >= 72 && r30 <= 75, "sigma=30 radius={r30}");
     }
 
     // ─── Deriche IIR tests ──────────────────────────────────────────
