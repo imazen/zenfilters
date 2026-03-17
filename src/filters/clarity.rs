@@ -2,6 +2,7 @@ use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Clarity: multi-scale local contrast enhancement on L channel.
@@ -97,6 +98,72 @@ impl Filter for Clarity {
         ctx.return_f32(blurred_coarse);
         let old_l = core::mem::replace(&mut planes.l, dst);
         ctx.return_f32(old_l);
+    }
+}
+
+static CLARITY_SCHEMA: FilterSchema = FilterSchema {
+    name: "clarity",
+    label: "Clarity",
+    description: "Multi-scale local contrast enhancement on L channel",
+    group: FilterGroup::Detail,
+    params: &[
+        ParamDesc {
+            name: "sigma",
+            label: "Scale",
+            description: "Fine-scale blur sigma (coarse blur is 4x this)",
+            kind: ParamKind::Float {
+                min: 1.0,
+                max: 16.0,
+                default: 4.0,
+                identity: 4.0,
+                step: 0.5,
+            },
+            unit: "px",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "amount",
+            label: "Amount",
+            description: "Enhancement amount (positive = enhance, negative = soften)",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for Clarity {
+    fn schema() -> &'static FilterSchema {
+        &CLARITY_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "sigma" => Some(ParamValue::Float(self.sigma)),
+            "amount" => Some(ParamValue::Float(self.amount)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "sigma" => self.sigma = v,
+            "amount" => self.amount = v,
+            _ => return false,
+        }
+        true
     }
 }
 

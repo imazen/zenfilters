@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -117,6 +118,106 @@ impl Filter for HighlightsShadows {
                 self.highlight_threshold,
             );
         }
+    }
+}
+
+static HIGHLIGHTS_SHADOWS_SCHEMA: FilterSchema = FilterSchema {
+    name: "highlights_shadows",
+    label: "Highlights / Shadows",
+    description: "Targeted highlight recovery and shadow lift",
+    group: FilterGroup::ToneRange,
+    params: &[
+        ParamDesc {
+            name: "highlights",
+            label: "Highlights",
+            description: "Highlight recovery (positive = compress, negative = boost)",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "shadows",
+            label: "Shadows",
+            description: "Shadow recovery (positive = lift, negative = deepen)",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "shadow_threshold",
+            label: "Shadow Threshold",
+            description: "L value below which pixels are in the shadow zone",
+            kind: ParamKind::Float {
+                min: 0.05,
+                max: 0.5,
+                default: 0.3,
+                identity: 0.3,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "highlight_threshold",
+            label: "Highlight Threshold",
+            description: "L value above which pixels are in the highlight zone",
+            kind: ParamKind::Float {
+                min: 0.5,
+                max: 0.95,
+                default: 0.7,
+                identity: 0.7,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for HighlightsShadows {
+    fn schema() -> &'static FilterSchema {
+        &HIGHLIGHTS_SHADOWS_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "highlights" => Some(ParamValue::Float(self.highlights)),
+            "shadows" => Some(ParamValue::Float(self.shadows)),
+            "shadow_threshold" => Some(ParamValue::Float(self.shadow_threshold)),
+            "highlight_threshold" => Some(ParamValue::Float(self.highlight_threshold)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "highlights" => self.highlights = v,
+            "shadows" => self.shadows = v,
+            "shadow_threshold" => self.shadow_threshold = v,
+            "highlight_threshold" => self.highlight_threshold = v,
+            _ => return false,
+        }
+        true
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -92,6 +93,89 @@ impl Filter for Sigmoid {
         } else {
             simd::sigmoid_tone_map_plane(&mut planes.l, self.contrast, bias_a);
         }
+    }
+}
+
+static SIGMOID_SCHEMA: FilterSchema = FilterSchema {
+    name: "sigmoid",
+    label: "Sigmoid",
+    description: "S-curve tone mapping with skew and chroma compression",
+    group: FilterGroup::Tone,
+    params: &[
+        ParamDesc {
+            name: "contrast",
+            label: "Contrast",
+            description: "S-curve steepness (1 = identity, >1 = more contrast)",
+            kind: ParamKind::Float {
+                min: 0.5,
+                max: 3.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "skew",
+            label: "Skew",
+            description: "Midpoint bias (0.5 = symmetric, <0.5 = darken, >0.5 = brighten)",
+            kind: ParamKind::Float {
+                min: 0.1,
+                max: 0.9,
+                default: 0.5,
+                identity: 0.5,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "chroma_compression",
+            label: "Chroma Compression",
+            description: "How much chroma adapts to luminance changes (0 = L-only, 1 = full)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for Sigmoid {
+    fn schema() -> &'static FilterSchema {
+        &SIGMOID_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "contrast" => Some(ParamValue::Float(self.contrast)),
+            "skew" => Some(ParamValue::Float(self.skew)),
+            "chroma_compression" => Some(ParamValue::Float(self.chroma_compression)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "contrast" => self.contrast = v,
+            "skew" => self.skew = v,
+            "chroma_compression" => self.chroma_compression = v,
+            _ => return false,
+        }
+        true
     }
 }
 

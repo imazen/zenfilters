@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Whites and Blacks adjustment — targeted luminance control for the extreme
@@ -77,6 +78,72 @@ impl Filter for WhitesBlacks {
 
             *v = (*v).max(0.0);
         }
+    }
+}
+
+static WHITES_BLACKS_SCHEMA: FilterSchema = FilterSchema {
+    name: "whites_blacks",
+    label: "Whites / Blacks",
+    description: "Targeted luminance control for histogram extremes",
+    group: FilterGroup::ToneRange,
+    params: &[
+        ParamDesc {
+            name: "whites",
+            label: "Whites",
+            description: "Whites adjustment (positive = brighten highlights)",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "blacks",
+            label: "Blacks",
+            description: "Blacks adjustment (positive = lift shadows)",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for WhitesBlacks {
+    fn schema() -> &'static FilterSchema {
+        &WHITES_BLACKS_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "whites" => Some(ParamValue::Float(self.whites)),
+            "blacks" => Some(ParamValue::Float(self.blacks)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "whites" => self.whites = v,
+            "blacks" => self.blacks = v,
+            _ => return false,
+        }
+        true
     }
 }
 

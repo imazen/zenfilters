@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Film grain simulation.
@@ -76,6 +77,101 @@ impl Filter for Grain {
                 planes.l[idx] = (l + grain).max(0.0);
             }
         }
+    }
+}
+
+static GRAIN_SCHEMA: FilterSchema = FilterSchema {
+    name: "grain",
+    label: "Grain",
+    description: "Film grain simulation with luminance-adaptive response",
+    group: FilterGroup::Effects,
+    params: &[
+        ParamDesc {
+            name: "amount",
+            label: "Amount",
+            description: "Grain intensity (0 = none, 1 = heavy)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "size",
+            label: "Size",
+            description: "Grain spatial frequency (1 = fine, 2+ = coarser)",
+            kind: ParamKind::Float {
+                min: 1.0,
+                max: 5.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.5,
+            },
+            unit: "px",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "seed",
+            label: "Seed",
+            description: "Random seed for grain pattern",
+            kind: ParamKind::Int {
+                min: 0,
+                max: 65535,
+                default: 0,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::NotSlider,
+        },
+    ],
+};
+
+impl Describe for Grain {
+    fn schema() -> &'static FilterSchema {
+        &GRAIN_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "amount" => Some(ParamValue::Float(self.amount)),
+            "size" => Some(ParamValue::Float(self.size)),
+            "seed" => Some(ParamValue::Int(self.seed as i32)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        match name {
+            "amount" => {
+                let v = match value.as_f32() {
+                    Some(v) => v,
+                    None => return false,
+                };
+                self.amount = v;
+            }
+            "size" => {
+                let v = match value.as_f32() {
+                    Some(v) => v,
+                    None => return false,
+                };
+                self.size = v;
+            }
+            "seed" => {
+                let v = match value.as_i32() {
+                    Some(v) => v,
+                    None => return false,
+                };
+                self.seed = v as u32;
+            }
+            _ => return false,
+        }
+        true
     }
 }
 

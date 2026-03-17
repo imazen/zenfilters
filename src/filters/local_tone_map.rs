@@ -2,6 +2,7 @@ use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Local tone mapping: compresses dynamic range while preserving local contrast.
@@ -128,6 +129,89 @@ impl Filter for LocalToneMap {
         ctx.return_f32(base);
         let old_l = core::mem::replace(&mut planes.l, dst);
         ctx.return_f32(old_l);
+    }
+}
+
+static LOCAL_TONE_MAP_SCHEMA: FilterSchema = FilterSchema {
+    name: "local_tone_map",
+    label: "Local Tone Map",
+    description: "Compress dynamic range while preserving local contrast",
+    group: FilterGroup::ToneRange,
+    params: &[
+        ParamDesc {
+            name: "compression",
+            label: "Compression",
+            description: "Dynamic range compression strength",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::SquareFromSlider,
+        },
+        ParamDesc {
+            name: "detail_boost",
+            label: "Detail Boost",
+            description: "Local detail enhancement factor",
+            kind: ParamKind::Float {
+                min: 0.5,
+                max: 3.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.1,
+            },
+            unit: "×",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "sigma",
+            label: "Scale",
+            description: "Base layer extraction sigma",
+            kind: ParamKind::Float {
+                min: 5.0,
+                max: 100.0,
+                default: 30.0,
+                identity: 30.0,
+                step: 5.0,
+            },
+            unit: "px",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for LocalToneMap {
+    fn schema() -> &'static FilterSchema {
+        &LOCAL_TONE_MAP_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "compression" => Some(ParamValue::Float(self.compression)),
+            "detail_boost" => Some(ParamValue::Float(self.detail_boost)),
+            "sigma" => Some(ParamValue::Float(self.sigma)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "compression" => self.compression = v,
+            "detail_boost" => self.detail_boost = v,
+            "sigma" => self.sigma = v,
+            _ => return false,
+        }
+        true
     }
 }
 

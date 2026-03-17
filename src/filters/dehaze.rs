@@ -2,6 +2,7 @@ use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Dehaze: spatially-adaptive haze removal on Oklab planes.
@@ -110,6 +111,53 @@ impl Filter for Dehaze {
         }
 
         ctx.return_f32(atmosphere);
+    }
+}
+
+static DEHAZE_SCHEMA: FilterSchema = FilterSchema {
+    name: "dehaze",
+    label: "Dehaze",
+    description: "Spatially-adaptive haze removal using dark channel prior",
+    group: FilterGroup::Effects,
+    params: &[ParamDesc {
+        name: "strength",
+        label: "Strength",
+        description: "Dehaze correction strength",
+        kind: ParamKind::Float {
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            identity: 0.0,
+            step: 0.05,
+        },
+        unit: "",
+        section: "Main",
+        slider: SliderMapping::SquareFromSlider,
+    }],
+};
+
+impl Describe for Dehaze {
+    fn schema() -> &'static FilterSchema {
+        &DEHAZE_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "strength" => Some(ParamValue::Float(self.strength)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "strength" => self.strength = v,
+            _ => return false,
+        }
+        true
     }
 }
 

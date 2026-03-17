@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Split-toning / three-way color grading.
@@ -42,6 +43,157 @@ impl Default for ColorGrading {
             highlight_b: 0.0,
             balance: 0.0,
         }
+    }
+}
+
+static COLOR_GRADING_SCHEMA: FilterSchema = FilterSchema {
+    name: "color_grading",
+    label: "Color Grading",
+    description: "Three-way split-toning for shadows, midtones, and highlights",
+    group: FilterGroup::Color,
+    params: &[
+        ParamDesc {
+            name: "shadow_a",
+            label: "Shadow Green-Magenta",
+            description: "Shadow tint on the a axis (green-magenta)",
+            kind: ParamKind::Float {
+                min: -0.1,
+                max: 0.1,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.005,
+            },
+            unit: "",
+            section: "Shadows",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "shadow_b",
+            label: "Shadow Warm-Cool",
+            description: "Shadow tint on the b axis (blue-yellow)",
+            kind: ParamKind::Float {
+                min: -0.1,
+                max: 0.1,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.005,
+            },
+            unit: "",
+            section: "Shadows",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "midtone_a",
+            label: "Midtone Green-Magenta",
+            description: "Midtone tint on the a axis",
+            kind: ParamKind::Float {
+                min: -0.1,
+                max: 0.1,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.005,
+            },
+            unit: "",
+            section: "Midtones",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "midtone_b",
+            label: "Midtone Warm-Cool",
+            description: "Midtone tint on the b axis",
+            kind: ParamKind::Float {
+                min: -0.1,
+                max: 0.1,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.005,
+            },
+            unit: "",
+            section: "Midtones",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "highlight_a",
+            label: "Highlight Green-Magenta",
+            description: "Highlight tint on the a axis",
+            kind: ParamKind::Float {
+                min: -0.1,
+                max: 0.1,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.005,
+            },
+            unit: "",
+            section: "Highlights",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "highlight_b",
+            label: "Highlight Warm-Cool",
+            description: "Highlight tint on the b axis",
+            kind: ParamKind::Float {
+                min: -0.1,
+                max: 0.1,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.005,
+            },
+            unit: "",
+            section: "Highlights",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "balance",
+            label: "Balance",
+            description: "Shift shadow/highlight boundary (negative = more shadow influence)",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for ColorGrading {
+    fn schema() -> &'static FilterSchema {
+        &COLOR_GRADING_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "shadow_a" => Some(ParamValue::Float(self.shadow_a)),
+            "shadow_b" => Some(ParamValue::Float(self.shadow_b)),
+            "midtone_a" => Some(ParamValue::Float(self.midtone_a)),
+            "midtone_b" => Some(ParamValue::Float(self.midtone_b)),
+            "highlight_a" => Some(ParamValue::Float(self.highlight_a)),
+            "highlight_b" => Some(ParamValue::Float(self.highlight_b)),
+            "balance" => Some(ParamValue::Float(self.balance)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "shadow_a" => self.shadow_a = v,
+            "shadow_b" => self.shadow_b = v,
+            "midtone_a" => self.midtone_a = v,
+            "midtone_b" => self.midtone_b = v,
+            "highlight_a" => self.highlight_a = v,
+            "highlight_b" => self.highlight_b = v,
+            "balance" => self.balance = v,
+            _ => return false,
+        }
+        true
     }
 }
 

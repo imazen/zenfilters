@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Camera calibration — shifts the hue and saturation of the three color primaries.
@@ -46,6 +47,157 @@ impl Default for CameraCalibration {
             blue_saturation: 1.0,
             shadow_tint: 0.0,
         }
+    }
+}
+
+static CAMERA_CALIBRATION_SCHEMA: FilterSchema = FilterSchema {
+    name: "camera_calibration",
+    label: "Camera Calibration",
+    description: "Primary color hue and saturation calibration with shadow tint",
+    group: FilterGroup::Color,
+    params: &[
+        ParamDesc {
+            name: "red_hue",
+            label: "Red Hue",
+            description: "Red primary hue shift",
+            kind: ParamKind::Float {
+                min: -60.0,
+                max: 60.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 1.0,
+            },
+            unit: "\u{b0}",
+            section: "Red Primary",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "red_saturation",
+            label: "Red Saturation",
+            description: "Red primary saturation scale",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 3.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.05,
+            },
+            unit: "×",
+            section: "Red Primary",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "green_hue",
+            label: "Green Hue",
+            description: "Green primary hue shift",
+            kind: ParamKind::Float {
+                min: -60.0,
+                max: 60.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 1.0,
+            },
+            unit: "\u{b0}",
+            section: "Green Primary",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "green_saturation",
+            label: "Green Saturation",
+            description: "Green primary saturation scale",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 3.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.05,
+            },
+            unit: "×",
+            section: "Green Primary",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "blue_hue",
+            label: "Blue Hue",
+            description: "Blue primary hue shift",
+            kind: ParamKind::Float {
+                min: -60.0,
+                max: 60.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 1.0,
+            },
+            unit: "\u{b0}",
+            section: "Blue Primary",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "blue_saturation",
+            label: "Blue Saturation",
+            description: "Blue primary saturation scale",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 3.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.05,
+            },
+            unit: "×",
+            section: "Blue Primary",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "shadow_tint",
+            label: "Shadow Tint",
+            description: "Shadow green-magenta balance (negative = green, positive = magenta)",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Shadows",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for CameraCalibration {
+    fn schema() -> &'static FilterSchema {
+        &CAMERA_CALIBRATION_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "red_hue" => Some(ParamValue::Float(self.red_hue)),
+            "red_saturation" => Some(ParamValue::Float(self.red_saturation)),
+            "green_hue" => Some(ParamValue::Float(self.green_hue)),
+            "green_saturation" => Some(ParamValue::Float(self.green_saturation)),
+            "blue_hue" => Some(ParamValue::Float(self.blue_hue)),
+            "blue_saturation" => Some(ParamValue::Float(self.blue_saturation)),
+            "shadow_tint" => Some(ParamValue::Float(self.shadow_tint)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "red_hue" => self.red_hue = v,
+            "red_saturation" => self.red_saturation = v,
+            "green_hue" => self.green_hue = v,
+            "green_saturation" => self.green_saturation = v,
+            "blue_hue" => self.blue_hue = v,
+            "blue_saturation" => self.blue_saturation = v,
+            "shadow_tint" => self.shadow_tint = v,
+            _ => return false,
+        }
+        true
     }
 }
 

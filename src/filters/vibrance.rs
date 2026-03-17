@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -41,6 +42,72 @@ impl Filter for Vibrance {
             return;
         }
         simd::vibrance(&mut planes.a, &mut planes.b, self.amount, self.protection);
+    }
+}
+
+static VIBRANCE_SCHEMA: FilterSchema = FilterSchema {
+    name: "vibrance",
+    label: "Vibrance",
+    description: "Smart saturation that protects already-saturated colors",
+    group: FilterGroup::Color,
+    params: &[
+        ParamDesc {
+            name: "amount",
+            label: "Amount",
+            description: "Vibrance boost (0 = off, 1 = full)",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "protection",
+            label: "Protection",
+            description: "Protection exponent for already-saturated colors",
+            kind: ParamKind::Float {
+                min: 0.5,
+                max: 4.0,
+                default: 2.0,
+                identity: 2.0,
+                step: 0.1,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for Vibrance {
+    fn schema() -> &'static FilterSchema {
+        &VIBRANCE_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "amount" => Some(ParamValue::Float(self.amount)),
+            "protection" => Some(ParamValue::Float(self.protection)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "amount" => self.amount = v,
+            "protection" => self.protection = v,
+            _ => return false,
+        }
+        true
     }
 }
 

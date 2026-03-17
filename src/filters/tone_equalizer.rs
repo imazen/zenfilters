@@ -2,6 +2,7 @@ use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::filters::guided_filter::guided_filter_plane;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Zone-based luminance adjustment with edge-aware masking.
@@ -44,6 +45,106 @@ impl Default for ToneEqualizer {
             smoothing: 0.0, // 0 = auto-size based on image dimensions
             edge_preservation: 0.01,
         }
+    }
+}
+
+static TONE_ZONE_LABELS: &[&str] = &[
+    "-8 EV", "-7 EV", "-6 EV", "-5 EV", "-4 EV", "-3 EV", "-2 EV", "-1 EV", "0 EV",
+];
+
+static TONE_EQUALIZER_SCHEMA: FilterSchema = FilterSchema {
+    name: "tone_equalizer",
+    label: "Tone Equalizer",
+    description: "Zone-based luminance adjustment with edge-aware masking",
+    group: FilterGroup::ToneRange,
+    params: &[
+        ParamDesc {
+            name: "zones",
+            label: "Zones",
+            description: "Exposure compensation per zone in stops (9 zones, dark to bright)",
+            kind: ParamKind::FloatArray {
+                len: 9,
+                min: -4.0,
+                max: 4.0,
+                default: 0.0,
+                labels: TONE_ZONE_LABELS,
+            },
+            unit: "EV",
+            section: "Zones",
+            slider: SliderMapping::NotSlider,
+        },
+        ParamDesc {
+            name: "smoothing",
+            label: "Smoothing",
+            description: "Guided filter sigma (0 = auto-size from image)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 100.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 1.0,
+            },
+            unit: "px",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "edge_preservation",
+            label: "Edge Preservation",
+            description: "Guided filter eps (smaller = sharper edges in mask)",
+            kind: ParamKind::Float {
+                min: 0.001,
+                max: 0.1,
+                default: 0.01,
+                identity: 0.01,
+                step: 0.005,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for ToneEqualizer {
+    fn schema() -> &'static FilterSchema {
+        &TONE_EQUALIZER_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "zones" => Some(ParamValue::FloatArray(self.zones.to_vec())),
+            "smoothing" => Some(ParamValue::Float(self.smoothing)),
+            "edge_preservation" => Some(ParamValue::Float(self.edge_preservation)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        match name {
+            "zones" => {
+                if let ParamValue::FloatArray(ref arr) = value {
+                    if arr.len() == 9 {
+                        self.zones.copy_from_slice(arr);
+                        return true;
+                    }
+                }
+                return false;
+            }
+            "smoothing" | "edge_preservation" => {
+                let v = match value.as_f32() {
+                    Some(v) => v,
+                    None => return false,
+                };
+                match name {
+                    "smoothing" => self.smoothing = v,
+                    "edge_preservation" => self.edge_preservation = v,
+                    _ => unreachable!(),
+                }
+            }
+            _ => return false,
+        }
+        true
     }
 }
 

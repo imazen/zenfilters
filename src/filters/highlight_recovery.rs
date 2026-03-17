@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Automatic highlight recovery: soft-clips blown highlights.
@@ -78,6 +79,53 @@ impl Filter for HighlightRecovery {
                 *v = knee + range * x / (x + s);
             }
         }
+    }
+}
+
+static HIGHLIGHT_RECOVERY_SCHEMA: FilterSchema = FilterSchema {
+    name: "highlight_recovery",
+    label: "Highlight Recovery",
+    description: "Automatic soft-clip recovery for blown highlights",
+    group: FilterGroup::ToneRange,
+    params: &[ParamDesc {
+        name: "strength",
+        label: "Strength",
+        description: "Recovery strength (0 = off, 1 = full)",
+        kind: ParamKind::Float {
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            identity: 0.0,
+            step: 0.05,
+        },
+        unit: "",
+        section: "Main",
+        slider: SliderMapping::Linear,
+    }],
+};
+
+impl Describe for HighlightRecovery {
+    fn schema() -> &'static FilterSchema {
+        &HIGHLIGHT_RECOVERY_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "strength" => Some(ParamValue::Float(self.strength)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "strength" => self.strength = v,
+            _ => return false,
+        }
+        true
     }
 }
 

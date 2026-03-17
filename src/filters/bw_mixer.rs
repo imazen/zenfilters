@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// B&W channel mixer — converts to grayscale with per-color luminance control.
@@ -26,6 +27,55 @@ pub struct BwMixer {
 impl Default for BwMixer {
     fn default() -> Self {
         Self { weights: [1.0; 8] }
+    }
+}
+
+static BW_COLOR_LABELS: &[&str] = &[
+    "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta",
+];
+
+static BW_MIXER_SCHEMA: FilterSchema = FilterSchema {
+    name: "bw_mixer",
+    label: "B&W Mixer",
+    description: "Grayscale conversion with per-color luminance control",
+    group: FilterGroup::Color,
+    params: &[ParamDesc {
+        name: "weights",
+        label: "Channel Weights",
+        description: "Per-color luminance weights (1 = neutral)",
+        kind: ParamKind::FloatArray {
+            len: 8,
+            min: 0.0,
+            max: 2.0,
+            default: 1.0,
+            labels: BW_COLOR_LABELS,
+        },
+        unit: "×",
+        section: "Main",
+        slider: SliderMapping::NotSlider,
+    }],
+};
+
+impl Describe for BwMixer {
+    fn schema() -> &'static FilterSchema {
+        &BW_MIXER_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "weights" => Some(ParamValue::FloatArray(self.weights.to_vec())),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        if let ParamValue::FloatArray(ref arr) = value {
+            if name == "weights" && arr.len() == 8 {
+                self.weights.copy_from_slice(arr);
+                return true;
+            }
+        }
+        false
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Post-crop vignette: darken or lighten image edges.
@@ -94,6 +95,106 @@ impl Filter for Vignette {
                 planes.b[idx] *= factor;
             }
         }
+    }
+}
+
+static VIGNETTE_SCHEMA: FilterSchema = FilterSchema {
+    name: "vignette",
+    label: "Vignette",
+    description: "Post-crop vignette with adjustable shape and falloff",
+    group: FilterGroup::Effects,
+    params: &[
+        ParamDesc {
+            name: "strength",
+            label: "Strength",
+            description: "Vignette strength (positive = darken edges, negative = brighten)",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "midpoint",
+            label: "Midpoint",
+            description: "Distance from center where effect starts (0 = center, 1 = corners)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.5,
+                identity: 0.5,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "feather",
+            label: "Feather",
+            description: "Transition softness (0 = hard, 1 = very soft)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.5,
+                identity: 0.5,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "roundness",
+            label: "Roundness",
+            description: "Shape (1 = circular, 0 = rectangular)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for Vignette {
+    fn schema() -> &'static FilterSchema {
+        &VIGNETTE_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "strength" => Some(ParamValue::Float(self.strength)),
+            "midpoint" => Some(ParamValue::Float(self.midpoint)),
+            "feather" => Some(ParamValue::Float(self.feather)),
+            "roundness" => Some(ParamValue::Float(self.roundness)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "strength" => self.strength = v,
+            "midpoint" => self.midpoint = v,
+            "feather" => self.feather = v,
+            "roundness" => self.roundness = v,
+            _ => return false,
+        }
+        true
     }
 }
 

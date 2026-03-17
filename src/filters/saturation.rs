@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -51,6 +52,53 @@ impl Filter for Saturation {
         }
         simd::scale_plane(&mut planes.a, self.factor);
         simd::scale_plane(&mut planes.b, self.factor);
+    }
+}
+
+static SATURATION_SCHEMA: FilterSchema = FilterSchema {
+    name: "saturation",
+    label: "Saturation",
+    description: "Uniform chroma scaling on Oklab a/b channels",
+    group: FilterGroup::Color,
+    params: &[ParamDesc {
+        name: "factor",
+        label: "Saturation",
+        description: "Saturation multiplier (0 = grayscale, 1 = unchanged, 2 = double)",
+        kind: ParamKind::Float {
+            min: 0.0,
+            max: 2.0,
+            default: 1.0,
+            identity: 1.0,
+            step: 0.05,
+        },
+        unit: "×",
+        section: "Main",
+        slider: SliderMapping::FactorCentered,
+    }],
+};
+
+impl Describe for Saturation {
+    fn schema() -> &'static FilterSchema {
+        &SATURATION_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "factor" => Some(ParamValue::Float(self.factor)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "factor" => self.factor = v,
+            _ => return false,
+        }
+        true
     }
 }
 

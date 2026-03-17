@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// HSL selective color adjustment.
@@ -29,6 +30,96 @@ impl Default for HslAdjust {
             hue: [0.0; 8],
             saturation: [1.0; 8],
             luminance: [0.0; 8],
+        }
+    }
+}
+
+static HSL_COLOR_LABELS: &[&str] = &[
+    "Red", "Orange", "Yellow", "Green", "Cyan", "Blue", "Purple", "Magenta",
+];
+
+static HSL_ADJUST_SCHEMA: FilterSchema = FilterSchema {
+    name: "hsl_adjust",
+    label: "HSL Adjust",
+    description: "Per-color hue, saturation, and luminance adjustment",
+    group: FilterGroup::Color,
+    params: &[
+        ParamDesc {
+            name: "hue",
+            label: "Hue Shift",
+            description: "Hue shift per color range in degrees",
+            kind: ParamKind::FloatArray {
+                len: 8,
+                min: -180.0,
+                max: 180.0,
+                default: 0.0,
+                labels: HSL_COLOR_LABELS,
+            },
+            unit: "\u{b0}",
+            section: "Hue",
+            slider: SliderMapping::NotSlider,
+        },
+        ParamDesc {
+            name: "saturation",
+            label: "Saturation",
+            description: "Saturation scale per color range (1 = no change)",
+            kind: ParamKind::FloatArray {
+                len: 8,
+                min: 0.0,
+                max: 3.0,
+                default: 1.0,
+                labels: HSL_COLOR_LABELS,
+            },
+            unit: "×",
+            section: "Saturation",
+            slider: SliderMapping::NotSlider,
+        },
+        ParamDesc {
+            name: "luminance",
+            label: "Luminance",
+            description: "Luminance offset per color range",
+            kind: ParamKind::FloatArray {
+                len: 8,
+                min: -0.5,
+                max: 0.5,
+                default: 0.0,
+                labels: HSL_COLOR_LABELS,
+            },
+            unit: "",
+            section: "Luminance",
+            slider: SliderMapping::NotSlider,
+        },
+    ],
+};
+
+impl Describe for HslAdjust {
+    fn schema() -> &'static FilterSchema {
+        &HSL_ADJUST_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "hue" => Some(ParamValue::FloatArray(self.hue.to_vec())),
+            "saturation" => Some(ParamValue::FloatArray(self.saturation.to_vec())),
+            "luminance" => Some(ParamValue::FloatArray(self.luminance.to_vec())),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        if let ParamValue::FloatArray(ref arr) = value {
+            if arr.len() != 8 {
+                return false;
+            }
+            match name {
+                "hue" => self.hue.copy_from_slice(arr),
+                "saturation" => self.saturation.copy_from_slice(arr),
+                "luminance" => self.luminance.copy_from_slice(arr),
+                _ => return false,
+            }
+            true
+        } else {
+            false
         }
     }
 }

@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -98,6 +99,123 @@ impl Filter for Levels {
                 *v = self.out_black + t_gamma * out_range;
             }
         }
+    }
+}
+
+static LEVELS_SCHEMA: FilterSchema = FilterSchema {
+    name: "levels",
+    label: "Levels",
+    description: "Input/output range remapping with gamma correction",
+    group: FilterGroup::Tone,
+    params: &[
+        ParamDesc {
+            name: "in_black",
+            label: "Input Black",
+            description: "Input black point (clip shadows)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.01,
+            },
+            unit: "",
+            section: "Input",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "in_white",
+            label: "Input White",
+            description: "Input white point (clip highlights)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.01,
+            },
+            unit: "",
+            section: "Input",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "gamma",
+            label: "Gamma",
+            description: "Midtone adjustment (1 = linear, >1 = brighten, <1 = darken)",
+            kind: ParamKind::Float {
+                min: 0.1,
+                max: 10.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Midtone",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "out_black",
+            label: "Output Black",
+            description: "Minimum output luminance",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.01,
+            },
+            unit: "",
+            section: "Output",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "out_white",
+            label: "Output White",
+            description: "Maximum output luminance",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.01,
+            },
+            unit: "",
+            section: "Output",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for Levels {
+    fn schema() -> &'static FilterSchema {
+        &LEVELS_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "in_black" => Some(ParamValue::Float(self.in_black)),
+            "in_white" => Some(ParamValue::Float(self.in_white)),
+            "gamma" => Some(ParamValue::Float(self.gamma)),
+            "out_black" => Some(ParamValue::Float(self.out_black)),
+            "out_white" => Some(ParamValue::Float(self.out_white)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "in_black" => self.in_black = v,
+            "in_white" => self.in_white = v,
+            "gamma" => self.gamma = v,
+            "out_black" => self.out_black = v,
+            "out_white" => self.out_white = v,
+            _ => return false,
+        }
+        true
     }
 }
 

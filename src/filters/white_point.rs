@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -78,6 +79,72 @@ impl Filter for WhitePoint {
                 *val = soft_clip(scaled, wp, headroom);
             }
         }
+    }
+}
+
+static WHITE_POINT_SCHEMA: FilterSchema = FilterSchema {
+    name: "white_point",
+    label: "White Point",
+    description: "Scale L range so that level maps to 1.0, with optional soft-clip headroom",
+    group: FilterGroup::ToneRange,
+    params: &[
+        ParamDesc {
+            name: "level",
+            label: "Level",
+            description: "White point level (1.0 = no change, <1 = brighten highlights)",
+            kind: ParamKind::Float {
+                min: 0.5,
+                max: 2.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "headroom",
+            label: "Headroom",
+            description: "Soft-clip rolloff fraction above white point",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 0.5,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.01,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for WhitePoint {
+    fn schema() -> &'static FilterSchema {
+        &WHITE_POINT_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "level" => Some(ParamValue::Float(self.level)),
+            "headroom" => Some(ParamValue::Float(self.headroom)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "level" => self.level = v,
+            "headroom" => self.headroom = v,
+            _ => return false,
+        }
+        true
     }
 }
 

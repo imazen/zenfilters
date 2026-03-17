@@ -76,6 +76,7 @@ pub mod filters;
 mod fused_params;
 mod gamut_lut;
 mod gamut_map;
+pub mod param_schema;
 mod pipeline;
 mod planes;
 pub mod regional;

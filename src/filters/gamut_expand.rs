@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Gamut expansion: hue-selective chroma boost simulating wider color gamuts.
@@ -29,6 +30,53 @@ pub struct GamutExpand {
 impl Default for GamutExpand {
     fn default() -> Self {
         Self { strength: 0.0 }
+    }
+}
+
+static GAMUT_EXPAND_SCHEMA: FilterSchema = FilterSchema {
+    name: "gamut_expand",
+    label: "Gamut Expand",
+    description: "Hue-selective chroma boost simulating wider color gamuts (P3)",
+    group: FilterGroup::Color,
+    params: &[ParamDesc {
+        name: "strength",
+        label: "Strength",
+        description: "Expansion strength (0 = sRGB, 1 = full P3-like)",
+        kind: ParamKind::Float {
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            identity: 0.0,
+            step: 0.05,
+        },
+        unit: "",
+        section: "Main",
+        slider: SliderMapping::Linear,
+    }],
+};
+
+impl Describe for GamutExpand {
+    fn schema() -> &'static FilterSchema {
+        &GAMUT_EXPAND_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "strength" => Some(ParamValue::Float(self.strength)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "strength" => self.strength = v,
+            _ => return false,
+        }
+        true
     }
 }
 

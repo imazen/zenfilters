@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Wavelet-based noise reduction for luminance and chroma.
@@ -72,6 +73,149 @@ impl NoiseReduction {
 
     fn is_identity(&self) -> bool {
         self.luminance.abs() < 1e-6 && self.chroma.abs() < 1e-6
+    }
+}
+
+static NOISE_REDUCTION_SCHEMA: FilterSchema = FilterSchema {
+    name: "noise_reduction",
+    label: "Noise Reduction",
+    description: "Wavelet-based luminance and chroma noise reduction",
+    group: FilterGroup::Detail,
+    params: &[
+        ParamDesc {
+            name: "luminance",
+            label: "Luminance",
+            description: "Luminance noise reduction strength",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::SquareFromSlider,
+        },
+        ParamDesc {
+            name: "chroma",
+            label: "Color",
+            description: "Chroma noise reduction strength",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::SquareFromSlider,
+        },
+        ParamDesc {
+            name: "detail",
+            label: "Detail",
+            description: "Luminance detail preservation (higher = keep more detail)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.5,
+                identity: 0.5,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "luminance_contrast",
+            label: "Contrast",
+            description: "Luminance contrast preservation in denoised areas",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.5,
+                identity: 0.5,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "chroma_detail",
+            label: "Color Detail",
+            description: "Chroma detail preservation (higher = keep more color detail)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.5,
+                identity: 0.5,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "scales",
+            label: "Scales",
+            description: "Number of wavelet scales (more = smoother)",
+            kind: ParamKind::Int {
+                min: 1,
+                max: 6,
+                default: 4,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for NoiseReduction {
+    fn schema() -> &'static FilterSchema {
+        &NOISE_REDUCTION_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "luminance" => Some(ParamValue::Float(self.luminance)),
+            "chroma" => Some(ParamValue::Float(self.chroma)),
+            "detail" => Some(ParamValue::Float(self.detail)),
+            "luminance_contrast" => Some(ParamValue::Float(self.luminance_contrast)),
+            "chroma_detail" => Some(ParamValue::Float(self.chroma_detail)),
+            "scales" => Some(ParamValue::Int(self.scales as i32)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        match name {
+            "luminance" | "chroma" | "detail" | "luminance_contrast" | "chroma_detail" => {
+                let v = match value.as_f32() {
+                    Some(v) => v,
+                    None => return false,
+                };
+                match name {
+                    "luminance" => self.luminance = v,
+                    "chroma" => self.chroma = v,
+                    "detail" => self.detail = v,
+                    "luminance_contrast" => self.luminance_contrast = v,
+                    "chroma_detail" => self.chroma_detail = v,
+                    _ => unreachable!(),
+                }
+            }
+            "scales" => {
+                let v = match value.as_i32() {
+                    Some(v) => v,
+                    None => return false,
+                };
+                self.scales = v as u32;
+            }
+            _ => return false,
+        }
+        true
     }
 }
 

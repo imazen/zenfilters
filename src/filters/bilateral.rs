@@ -2,6 +2,7 @@ use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::filters::guided_filter::guided_filter_plane;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Edge-preserving smoothing on all Oklab channels.
@@ -124,6 +125,89 @@ impl Filter for Bilateral {
         }
 
         ctx.return_f32(filtered);
+    }
+}
+
+static BILATERAL_SCHEMA: FilterSchema = FilterSchema {
+    name: "bilateral",
+    label: "Bilateral Filter",
+    description: "Edge-preserving smoothing via guided filter",
+    group: FilterGroup::Detail,
+    params: &[
+        ParamDesc {
+            name: "spatial_sigma",
+            label: "Spatial Sigma",
+            description: "Smoothing window size",
+            kind: ParamKind::Float {
+                min: 0.5,
+                max: 20.0,
+                default: 2.0,
+                identity: 2.0,
+                step: 0.5,
+            },
+            unit: "px",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "range_sigma",
+            label: "Range Sigma",
+            description: "Edge preservation (smaller = sharper edges)",
+            kind: ParamKind::Float {
+                min: 0.001,
+                max: 0.5,
+                default: 0.1,
+                identity: 0.1,
+                step: 0.01,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "strength",
+            label: "Strength",
+            description: "Blend strength (0 = off, 1 = full smoothing)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for Bilateral {
+    fn schema() -> &'static FilterSchema {
+        &BILATERAL_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "spatial_sigma" => Some(ParamValue::Float(self.spatial_sigma)),
+            "range_sigma" => Some(ParamValue::Float(self.range_sigma)),
+            "strength" => Some(ParamValue::Float(self.strength)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "spatial_sigma" => self.spatial_sigma = v,
+            "range_sigma" => self.range_sigma = v,
+            "strength" => self.strength = v,
+            _ => return false,
+        }
+        true
     }
 }
 

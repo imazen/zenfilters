@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -28,6 +29,53 @@ impl Filter for HueRotate {
         let cos_r = rad.cos();
         let sin_r = rad.sin();
         simd::hue_rotate(&mut planes.a, &mut planes.b, cos_r, sin_r);
+    }
+}
+
+static HUE_ROTATE_SCHEMA: FilterSchema = FilterSchema {
+    name: "hue_rotate",
+    label: "Hue Rotate",
+    description: "Rotate all colors around the hue circle",
+    group: FilterGroup::Color,
+    params: &[ParamDesc {
+        name: "degrees",
+        label: "Degrees",
+        description: "Rotation angle in degrees",
+        kind: ParamKind::Float {
+            min: -180.0,
+            max: 180.0,
+            default: 0.0,
+            identity: 0.0,
+            step: 5.0,
+        },
+        unit: "\u{b0}",
+        section: "Main",
+        slider: SliderMapping::Linear,
+    }],
+};
+
+impl Describe for HueRotate {
+    fn schema() -> &'static FilterSchema {
+        &HUE_ROTATE_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "degrees" => Some(ParamValue::Float(self.degrees)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "degrees" => self.degrees = v,
+            _ => return false,
+        }
+        true
     }
 }
 

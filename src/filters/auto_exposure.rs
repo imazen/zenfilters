@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -90,6 +91,89 @@ impl Filter for AutoExposure {
         simd::scale_plane(&mut planes.l, factor);
         simd::scale_plane(&mut planes.a, factor);
         simd::scale_plane(&mut planes.b, factor);
+    }
+}
+
+static AUTO_EXPOSURE_SCHEMA: FilterSchema = FilterSchema {
+    name: "auto_exposure",
+    label: "Auto Exposure",
+    description: "Normalize image brightness to target middle grey",
+    group: FilterGroup::Auto,
+    params: &[
+        ParamDesc {
+            name: "strength",
+            label: "Strength",
+            description: "Correction strength (0 = off, 1 = full)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "target",
+            label: "Target",
+            description: "Target middle grey in Oklab L",
+            kind: ParamKind::Float {
+                min: 0.2,
+                max: 0.8,
+                default: 0.5,
+                identity: 0.5,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "max_correction",
+            label: "Max Correction",
+            description: "Maximum correction in stops (prevents extreme adjustments)",
+            kind: ParamKind::Float {
+                min: 0.5,
+                max: 5.0,
+                default: 2.0,
+                identity: 2.0,
+                step: 0.5,
+            },
+            unit: "EV",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for AutoExposure {
+    fn schema() -> &'static FilterSchema {
+        &AUTO_EXPOSURE_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "strength" => Some(ParamValue::Float(self.strength)),
+            "target" => Some(ParamValue::Float(self.target)),
+            "max_correction" => Some(ParamValue::Float(self.max_correction)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "strength" => self.strength = v,
+            "target" => self.target = v,
+            "max_correction" => self.max_correction = v,
+            _ => return false,
+        }
+        true
     }
 }
 

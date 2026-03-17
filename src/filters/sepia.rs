@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -23,6 +24,53 @@ pub struct Sepia {
 impl Default for Sepia {
     fn default() -> Self {
         Self { amount: 1.0 }
+    }
+}
+
+static SEPIA_SCHEMA: FilterSchema = FilterSchema {
+    name: "sepia",
+    label: "Sepia",
+    description: "Sepia tone effect in perceptual Oklab space",
+    group: FilterGroup::Color,
+    params: &[ParamDesc {
+        name: "amount",
+        label: "Amount",
+        description: "Sepia strength (0 = grayscale, 1 = full sepia)",
+        kind: ParamKind::Float {
+            min: 0.0,
+            max: 1.0,
+            default: 1.0,
+            identity: 1.0,
+            step: 0.05,
+        },
+        unit: "",
+        section: "Main",
+        slider: SliderMapping::Linear,
+    }],
+};
+
+impl Describe for Sepia {
+    fn schema() -> &'static FilterSchema {
+        &SEPIA_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "amount" => Some(ParamValue::Float(self.amount)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "amount" => self.amount = v,
+            _ => return false,
+        }
+        true
     }
 }
 

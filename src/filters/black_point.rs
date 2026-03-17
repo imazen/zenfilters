@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -28,6 +29,53 @@ impl Filter for BlackPoint {
         let range = (1.0 - bp).max(0.01);
         let inv_range = 1.0 / range;
         simd::black_point_plane(&mut planes.l, bp, inv_range);
+    }
+}
+
+static BLACK_POINT_SCHEMA: FilterSchema = FilterSchema {
+    name: "black_point",
+    label: "Black Point",
+    description: "Remap shadow floor to crush or lift darkest values",
+    group: FilterGroup::ToneRange,
+    params: &[ParamDesc {
+        name: "level",
+        label: "Level",
+        description: "Black point level (0 = no change, 0.1 = crush bottom 10%)",
+        kind: ParamKind::Float {
+            min: 0.0,
+            max: 0.5,
+            default: 0.0,
+            identity: 0.0,
+            step: 0.01,
+        },
+        unit: "",
+        section: "Main",
+        slider: SliderMapping::Linear,
+    }],
+};
+
+impl Describe for BlackPoint {
+    fn schema() -> &'static FilterSchema {
+        &BLACK_POINT_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "level" => Some(ParamValue::Float(self.level)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "level" => self.level = v,
+            _ => return false,
+        }
+        true
     }
 }
 

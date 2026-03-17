@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Automatic shadow lift: recovers detail in crushed dark areas.
@@ -83,6 +84,53 @@ impl Filter for ShadowLift {
                 *v = toe * t.powf(gamma);
             }
         }
+    }
+}
+
+static SHADOW_LIFT_SCHEMA: FilterSchema = FilterSchema {
+    name: "shadow_lift",
+    label: "Shadow Lift",
+    description: "Automatic toe-curve recovery for crushed shadows",
+    group: FilterGroup::ToneRange,
+    params: &[ParamDesc {
+        name: "strength",
+        label: "Strength",
+        description: "Lift strength (0 = off, 1 = full)",
+        kind: ParamKind::Float {
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            identity: 0.0,
+            step: 0.05,
+        },
+        unit: "",
+        section: "Main",
+        slider: SliderMapping::Linear,
+    }],
+};
+
+impl Describe for ShadowLift {
+    fn schema() -> &'static FilterSchema {
+        &SHADOW_LIFT_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "strength" => Some(ParamValue::Float(self.strength)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "strength" => self.strength = v,
+            _ => return false,
+        }
+        true
     }
 }
 

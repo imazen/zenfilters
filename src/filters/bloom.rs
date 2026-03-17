@@ -2,6 +2,7 @@ use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Bloom: simulates light scattering from bright areas.
@@ -101,6 +102,89 @@ impl Filter for Bloom {
         }
 
         ctx.return_f32(blurred);
+    }
+}
+
+static BLOOM_SCHEMA: FilterSchema = FilterSchema {
+    name: "bloom",
+    label: "Bloom",
+    description: "Soft glow from bright areas via screen blending",
+    group: FilterGroup::Effects,
+    params: &[
+        ParamDesc {
+            name: "threshold",
+            label: "Threshold",
+            description: "Luminance threshold for bloom contribution",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.7,
+                identity: 0.7,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "sigma",
+            label: "Radius",
+            description: "Bloom spread (larger = softer, wider glow)",
+            kind: ParamKind::Float {
+                min: 2.0,
+                max: 100.0,
+                default: 20.0,
+                identity: 20.0,
+                step: 1.0,
+            },
+            unit: "px",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "amount",
+            label: "Amount",
+            description: "Bloom intensity (0 = off, 1 = full)",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for Bloom {
+    fn schema() -> &'static FilterSchema {
+        &BLOOM_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "threshold" => Some(ParamValue::Float(self.threshold)),
+            "sigma" => Some(ParamValue::Float(self.sigma)),
+            "amount" => Some(ParamValue::Float(self.amount)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "threshold" => self.threshold = v,
+            "sigma" => self.sigma = v,
+            "amount" => self.amount = v,
+            _ => return false,
+        }
+        true
     }
 }
 

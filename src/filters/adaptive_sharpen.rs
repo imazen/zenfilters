@@ -2,6 +2,7 @@ use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Adaptive sharpening: noise-gated unsharp mask on L channel.
@@ -76,6 +77,123 @@ impl AdaptiveSharpen {
             detail: detail.clamp(0.0, 1.0),
             masking: masking.clamp(0.0, 1.0),
         }
+    }
+}
+
+static ADAPTIVE_SHARPEN_SCHEMA: FilterSchema = FilterSchema {
+    name: "adaptive_sharpen",
+    label: "Adaptive Sharpen",
+    description: "Noise-gated sharpening with detail and masking controls",
+    group: FilterGroup::Detail,
+    params: &[
+        ParamDesc {
+            name: "amount",
+            label: "Amount",
+            description: "Sharpening strength",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 2.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "×",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "sigma",
+            label: "Radius",
+            description: "Detail extraction scale (smaller = finer detail)",
+            kind: ParamKind::Float {
+                min: 0.5,
+                max: 3.0,
+                default: 1.0,
+                identity: 1.0,
+                step: 0.1,
+            },
+            unit: "px",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "detail",
+            label: "Detail",
+            description: "Edge-only (0) to full detail (1) sharpening",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.5,
+                identity: 0.5,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "masking",
+            label: "Masking",
+            description: "Restrict sharpening to stronger edges",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Masking",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "noise_floor",
+            label: "Noise Sensitivity",
+            description: "Threshold below which detail is treated as noise",
+            kind: ParamKind::Float {
+                min: 0.001,
+                max: 0.02,
+                default: 0.005,
+                identity: 0.005,
+                step: 0.001,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::SquareFromSlider,
+        },
+    ],
+};
+
+impl Describe for AdaptiveSharpen {
+    fn schema() -> &'static FilterSchema {
+        &ADAPTIVE_SHARPEN_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "amount" => Some(ParamValue::Float(self.amount)),
+            "sigma" => Some(ParamValue::Float(self.sigma)),
+            "detail" => Some(ParamValue::Float(self.detail)),
+            "masking" => Some(ParamValue::Float(self.masking)),
+            "noise_floor" => Some(ParamValue::Float(self.noise_floor)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "amount" => self.amount = v,
+            "sigma" => self.sigma = v,
+            "detail" => self.detail = v,
+            "masking" => self.masking = v,
+            "noise_floor" => self.noise_floor = v,
+            _ => return false,
+        }
+        true
     }
 }
 

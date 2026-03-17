@@ -1,6 +1,7 @@
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 
 /// Lateral chromatic aberration correction.
@@ -35,6 +36,72 @@ impl Default for ChromaticAberration {
 impl ChromaticAberration {
     fn is_identity(&self) -> bool {
         self.shift_a.abs() < 1e-7 && self.shift_b.abs() < 1e-7
+    }
+}
+
+static CHROMATIC_ABERRATION_SCHEMA: FilterSchema = FilterSchema {
+    name: "chromatic_aberration",
+    label: "Chromatic Aberration",
+    description: "Lateral chromatic aberration correction via radial chroma shift",
+    group: FilterGroup::Effects,
+    params: &[
+        ParamDesc {
+            name: "shift_a",
+            label: "Green-Red Shift",
+            description: "Radial shift for the a (green-red) channel",
+            kind: ParamKind::Float {
+                min: -0.02,
+                max: 0.02,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.001,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "shift_b",
+            label: "Blue-Yellow Shift",
+            description: "Radial shift for the b (blue-yellow) channel",
+            kind: ParamKind::Float {
+                min: -0.02,
+                max: 0.02,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.001,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for ChromaticAberration {
+    fn schema() -> &'static FilterSchema {
+        &CHROMATIC_ABERRATION_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "shift_a" => Some(ParamValue::Float(self.shift_a)),
+            "shift_b" => Some(ParamValue::Float(self.shift_b)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "shift_a" => self.shift_a = v,
+            "shift_b" => self.shift_b = v,
+            _ => return false,
+        }
+        true
     }
 }
 

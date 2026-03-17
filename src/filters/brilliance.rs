@@ -2,6 +2,7 @@ use crate::access::ChannelAccess;
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
 use crate::context::FilterContext;
 use crate::filter::Filter;
+use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
 
@@ -75,6 +76,106 @@ impl Filter for Brilliance {
         ctx.return_f32(avg_l);
         let old_l = core::mem::replace(&mut planes.l, dst);
         ctx.return_f32(old_l);
+    }
+}
+
+static BRILLIANCE_SCHEMA: FilterSchema = FilterSchema {
+    name: "brilliance",
+    label: "Brilliance",
+    description: "Adaptive local contrast based on local average luminance",
+    group: FilterGroup::Detail,
+    params: &[
+        ParamDesc {
+            name: "sigma",
+            label: "Scale",
+            description: "Blur sigma for computing local average",
+            kind: ParamKind::Float {
+                min: 2.0,
+                max: 50.0,
+                default: 10.0,
+                identity: 10.0,
+                step: 1.0,
+            },
+            unit: "px",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "amount",
+            label: "Amount",
+            description: "Overall effect strength",
+            kind: ParamKind::Float {
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                identity: 0.0,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Main",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "shadow_strength",
+            label: "Shadow Strength",
+            description: "Shadow lift strength",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.6,
+                identity: 0.6,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+        ParamDesc {
+            name: "highlight_strength",
+            label: "Highlight Strength",
+            description: "Highlight compression strength",
+            kind: ParamKind::Float {
+                min: 0.0,
+                max: 1.0,
+                default: 0.4,
+                identity: 0.4,
+                step: 0.05,
+            },
+            unit: "",
+            section: "Advanced",
+            slider: SliderMapping::Linear,
+        },
+    ],
+};
+
+impl Describe for Brilliance {
+    fn schema() -> &'static FilterSchema {
+        &BRILLIANCE_SCHEMA
+    }
+
+    fn get_param(&self, name: &str) -> Option<ParamValue> {
+        match name {
+            "sigma" => Some(ParamValue::Float(self.sigma)),
+            "amount" => Some(ParamValue::Float(self.amount)),
+            "shadow_strength" => Some(ParamValue::Float(self.shadow_strength)),
+            "highlight_strength" => Some(ParamValue::Float(self.highlight_strength)),
+            _ => None,
+        }
+    }
+
+    fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
+        let v = match value.as_f32() {
+            Some(v) => v,
+            None => return false,
+        };
+        match name {
+            "sigma" => self.sigma = v,
+            "amount" => self.amount = v,
+            "shadow_strength" => self.shadow_strength = v,
+            "highlight_strength" => self.highlight_strength = v,
+            _ => return false,
+        }
+        true
     }
 }
 
