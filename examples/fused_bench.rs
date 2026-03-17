@@ -7,7 +7,8 @@
 
 use std::sync::Arc;
 use zenbench::{Suite, Throughput};
-use zenfilters::{FilterContext, Pipeline, PipelineConfig};
+use zenfilters::filters::FusedAdjust;
+use zenfilters::{FilterContext, FusedAdjustParams, Pipeline, PipelineConfig};
 use zenpixels::ColorPrimaries;
 use zenpixels_convert::oklab;
 
@@ -28,6 +29,20 @@ fn bench_fused_group(suite: &mut Suite, w: u32, h: u32, label: &str) {
     let src = Arc::new(make_rgb_data(w as usize, h as usize));
     let m1 = oklab::rgb_to_lms_matrix(ColorPrimaries::Bt709).unwrap();
     let m1_inv = oklab::lms_to_rgb_matrix(ColorPrimaries::Bt709).unwrap();
+
+    // Build a realistic FusedAdjust and derive params
+    let mut adj = FusedAdjust::new();
+    adj.exposure = 0.2;
+    adj.contrast = 0.15;
+    adj.highlights = -0.1;
+    adj.shadows = 0.15;
+    adj.saturation = 1.1;
+    adj.temperature = 0.025;
+    adj.tint = -0.012;
+    adj.vibrance = 0.3;
+    adj.black_point = 0.01;
+    adj.white_point = 0.99;
+    let params = FusedAdjustParams::from_adjust(&adj);
 
     suite.compare(&format!("perpixel_{label}"), |group| {
         group.throughput(Throughput::Elements(n as u64));
@@ -58,32 +73,12 @@ fn bench_fused_group(suite: &mut Suite, w: u32, h: u32, label: &str) {
         // Fused interleaved: RGB→Oklab→adjust→RGB in one streaming SIMD pass
         {
             let src = Arc::clone(&src);
+            let params = params.clone();
             group.bench("fused_interleaved", move |b| {
                 let mut dst = vec![0.0f32; n * 3];
                 b.iter(|| {
                     zenfilters::fused_interleaved_adjust(
-                        &src,
-                        &mut dst,
-                        3,
-                        &m1,
-                        &m1_inv,
-                        1.0,
-                        1.0,
-                        0.01,       // bp
-                        1.0 / 0.99, // inv_range
-                        1.15,       // wp_exp (exposure + white point)
-                        1.08,       // contrast_exp
-                        0.97,       // contrast_scale
-                        0.15,       // shadows
-                        -0.1,       // highlights
-                        1.0,        // dehaze_contrast
-                        1.0,        // dehaze_chroma
-                        1.07,       // exposure_chroma
-                        0.002,      // temp_offset
-                        -0.001,     // tint_offset
-                        1.1,        // sat
-                        0.3,        // vib_amount
-                        2.0,        // vib_protection
+                        &src, &mut dst, 3, &m1, &m1_inv, 1.0, 1.0, &params,
                     );
                 });
             });

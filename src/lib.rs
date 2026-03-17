@@ -56,6 +56,7 @@ mod blur;
 mod context;
 mod filter;
 pub mod filters;
+mod fused_params;
 mod gamut_lut;
 mod gamut_map;
 mod pipeline;
@@ -86,6 +87,7 @@ pub use context::FilterContext;
 #[cfg(feature = "buffer")]
 pub use convenience::{ConvenienceError, PipelineBufferExt, apply_to_buffer};
 pub use filter::Filter;
+pub use fused_params::FusedAdjustParams;
 pub use gamut_map::GamutMapping;
 pub use pipeline::{Pipeline, PipelineConfig, PipelineError};
 pub use planes::OklabPlanes;
@@ -95,7 +97,6 @@ pub use scatter_gather::{
 
 /// Fused interleaved per-pixel adjust: RGB→Oklab→adjust→RGB in one SIMD pass.
 #[cfg(feature = "experimental")]
-#[allow(clippy::too_many_arguments)]
 pub fn fused_interleaved_adjust(
     src: &[f32],
     dst: &mut [f32],
@@ -104,21 +105,7 @@ pub fn fused_interleaved_adjust(
     m1_inv: &zenpixels_convert::gamut::GamutMatrix,
     inv_white: f32,
     reference_white: f32,
-    bp: f32,
-    inv_range: f32,
-    wp_exp: f32,
-    contrast_exp: f32,
-    contrast_scale: f32,
-    shadows: f32,
-    highlights: f32,
-    dehaze_contrast: f32,
-    dehaze_chroma: f32,
-    exposure_chroma: f32,
-    temp_offset: f32,
-    tint_offset: f32,
-    sat: f32,
-    vib_amount: f32,
-    vib_protection: f32,
+    params: &FusedAdjustParams,
 ) {
     simd::fused_interleaved_adjust(
         src,
@@ -128,20 +115,6 @@ pub fn fused_interleaved_adjust(
         m1_inv,
         inv_white,
         reference_white,
-        bp,
-        inv_range,
-        wp_exp,
-        contrast_exp,
-        contrast_scale,
-        shadows,
-        highlights,
-        dehaze_contrast,
-        dehaze_chroma,
-        exposure_chroma,
-        temp_offset,
-        tint_offset,
-        sat,
-        vib_amount,
-        vib_protection,
+        params,
     );
 }

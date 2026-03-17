@@ -169,54 +169,38 @@ pub(crate) fn vibrance(a: &mut [f32], b: &mut [f32], amount: f32, protection: f3
 }
 
 /// Dispatch: fused per-pixel adjustment (L pass + AB pass).
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn fused_adjust(
     l: &mut [f32],
     a: &mut [f32],
     b: &mut [f32],
-    bp: f32,
-    inv_range: f32,
-    wp_exp: f32,
-    contrast_exp: f32,
-    contrast_scale: f32,
-    shadows: f32,
-    highlights: f32,
-    dehaze_contrast: f32,
-    dehaze_chroma: f32,
-    exposure_chroma: f32,
-    temp_offset: f32,
-    tint_offset: f32,
-    sat: f32,
-    vib_amount: f32,
-    vib_protection: f32,
+    p: &crate::fused_params::FusedAdjustParams,
 ) {
     archmage::incant!(
         fused_adjust_impl(
             l,
             a,
             b,
-            bp,
-            inv_range,
-            wp_exp,
-            contrast_exp,
-            contrast_scale,
-            shadows,
-            highlights,
-            dehaze_contrast,
-            dehaze_chroma,
-            exposure_chroma,
-            temp_offset,
-            tint_offset,
-            sat,
-            vib_amount,
-            vib_protection
+            p.bp,
+            p.inv_range,
+            p.wp_exp,
+            p.contrast_exp,
+            p.contrast_scale,
+            p.shadows,
+            p.highlights,
+            p.dehaze_contrast,
+            p.dehaze_chroma,
+            p.exposure_chroma,
+            p.temp_offset,
+            p.tint_offset,
+            p.sat,
+            p.vib_amount,
+            p.vib_protection
         ),
         [v3]
     );
 }
 
 /// Dispatch: fused interleaved per-pixel adjustment (RGB→Oklab→adjust→RGB in one pass).
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn fused_interleaved_adjust(
     src: &[f32],
     dst: &mut [f32],
@@ -225,21 +209,7 @@ pub(crate) fn fused_interleaved_adjust(
     m1_inv: &GamutMatrix,
     inv_white: f32,
     reference_white: f32,
-    bp: f32,
-    inv_range: f32,
-    wp_exp: f32,
-    contrast_exp: f32,
-    contrast_scale: f32,
-    shadows: f32,
-    highlights: f32,
-    dehaze_contrast: f32,
-    dehaze_chroma: f32,
-    exposure_chroma: f32,
-    temp_offset: f32,
-    tint_offset: f32,
-    sat: f32,
-    vib_amount: f32,
-    vib_protection: f32,
+    p: &crate::fused_params::FusedAdjustParams,
 ) {
     archmage::incant!(
         fused_interleaved_adjust_impl(
@@ -250,21 +220,21 @@ pub(crate) fn fused_interleaved_adjust(
             m1_inv,
             inv_white,
             reference_white,
-            bp,
-            inv_range,
-            wp_exp,
-            contrast_exp,
-            contrast_scale,
-            shadows,
-            highlights,
-            dehaze_contrast,
-            dehaze_chroma,
-            exposure_chroma,
-            temp_offset,
-            tint_offset,
-            sat,
-            vib_amount,
-            vib_protection
+            p.bp,
+            p.inv_range,
+            p.wp_exp,
+            p.contrast_exp,
+            p.contrast_scale,
+            p.shadows,
+            p.highlights,
+            p.dehaze_contrast,
+            p.dehaze_chroma,
+            p.exposure_chroma,
+            p.temp_offset,
+            p.tint_offset,
+            p.sat,
+            p.vib_amount,
+            p.vib_protection
         ),
         [v3]
     );

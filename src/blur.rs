@@ -813,7 +813,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn sigma_to_stackblur_radius_sanity() {
         // Variance of pyramid kernel = r*(r+2)/6
         // For σ²: r = sqrt(6σ²+1) - 1

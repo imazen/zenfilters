@@ -86,42 +86,8 @@ impl Filter for FusedAdjust {
             return;
         }
 
-        // Pre-compute constants for SIMD dispatch
-        let bp = self.black_point;
-        let range = (1.0 - bp).max(0.01);
-        let inv_range = 1.0 / range;
-        let wp_inv = 1.0 / self.white_point.max(0.01);
-        // Exposure in Oklab: linear light 2^stops maps to 2^(stops/3) in
-        // cube-root domain. Applied to L (with white point) and a,b separately.
-        let exposure_factor = 2.0f32.powf(self.exposure / 3.0);
-        let wp_exp = wp_inv * exposure_factor;
-        let contrast_exp = (1.0 + self.contrast).max(0.01);
-        let contrast_scale = crate::filters::contrast::CONTRAST_PIVOT.powf(-self.contrast);
-        let dehaze_contrast = 1.0 + self.dehaze * 0.3;
-        let dehaze_chroma = 1.0 + self.dehaze * 0.2;
-        let temp_offset = self.temperature * 0.08;
-        let tint_offset = self.tint * 0.08;
-
-        simd::fused_adjust(
-            &mut planes.l,
-            &mut planes.a,
-            &mut planes.b,
-            bp,
-            inv_range,
-            wp_exp,
-            contrast_exp,
-            contrast_scale,
-            self.shadows,
-            self.highlights,
-            dehaze_contrast,
-            dehaze_chroma,
-            exposure_factor,
-            temp_offset,
-            tint_offset,
-            self.saturation,
-            self.vibrance,
-            self.vibrance_protection,
-        );
+        let params = crate::FusedAdjustParams::from_adjust(self);
+        simd::fused_adjust(&mut planes.l, &mut planes.a, &mut planes.b, &params);
     }
 }
 
