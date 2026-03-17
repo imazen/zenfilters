@@ -215,9 +215,21 @@ fn bench_oklab_pipeline(c: &mut Criterion) {
 
         // Typical filter stack — fresh context
         let mut full_pipe = Pipeline::new(PipelineConfig::default()).unwrap();
-        full_pipe.push(Box::new(zenfilters::filters::Exposure { stops: 0.3 }));
-        full_pipe.push(Box::new(zenfilters::filters::Contrast { amount: 0.2 }));
-        full_pipe.push(Box::new(zenfilters::filters::Saturation { factor: 1.1 }));
+        full_pipe.push(Box::new({
+            let mut e = zenfilters::filters::Exposure::default();
+            e.stops = 0.3;
+            e
+        }));
+        full_pipe.push(Box::new({
+            let mut c = zenfilters::filters::Contrast::default();
+            c.amount = 0.2;
+            c
+        }));
+        full_pipe.push(Box::new({
+            let mut s = zenfilters::filters::Saturation::default();
+            s.factor = 1.1;
+            s
+        }));
         group.bench_with_input(
             BenchmarkId::new("exposure_contrast_sat", format!("{w}x{h}")),
             &(w, h),
@@ -243,9 +255,11 @@ fn bench_oklab_pipeline(c: &mut Criterion) {
 
         // Neighborhood filters (clarity) — fresh vs reused context
         let mut clarity_pipe = Pipeline::new(PipelineConfig::default()).unwrap();
-        clarity_pipe.push(Box::new(zenfilters::filters::Clarity {
-            sigma: 10.0,
-            amount: 0.3,
+        clarity_pipe.push(Box::new({
+            let mut c = zenfilters::filters::Clarity::default();
+            c.sigma = 10.0;
+            c.amount = 0.3;
+            c
         }));
         group.bench_with_input(
             BenchmarkId::new("clarity_fresh_ctx", format!("{w}x{h}")),

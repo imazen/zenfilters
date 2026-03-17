@@ -178,7 +178,7 @@ fn unsharp_fuse_simd(
 
 #[arcane]
 pub(super) fn gaussian_blur_plane_impl_v3(
-    token: X64V3Token,
+    _token: X64V3Token,
     src: &[f32],
     dst: &mut [f32],
     width: u32,
@@ -186,7 +186,17 @@ pub(super) fn gaussian_blur_plane_impl_v3(
     kernel: &GaussianKernel,
     ctx: &mut FilterContext,
 ) {
-    gaussian_blur_plane_simd(token, src, dst, width, height, kernel, ctx);
+    use crate::blur::{
+        ExtendedBoxBlur, extended_box_blur_plane, kernel_sigma, should_use_box_blur,
+    };
+
+    let sigma = kernel_sigma(kernel);
+    if should_use_box_blur(sigma) {
+        let blur = ExtendedBoxBlur::from_sigma(sigma);
+        extended_box_blur_plane(src, dst, width, height, &blur, ctx);
+        return;
+    }
+    gaussian_blur_plane_simd(_token, src, dst, width, height, kernel, ctx);
 }
 
 #[rite]
