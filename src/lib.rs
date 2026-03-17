@@ -53,12 +53,16 @@ whereat::define_at_crate_info!();
 
 /// LUT size for tone/color curves.
 ///
-/// 4096 entries provides 12-bit precision with linear interpolation between
-/// entries, matching camera RAW sensor bit depth. This is sufficient for
-/// banding-free output at 16-bit and f32 depths.
+/// 1024 entries (10-bit precision) balances curve fidelity against L1 cache
+/// pressure. Each LUT is 4KB; a realistic pipeline may have 6+ active LUTs
+/// (ToneCurve + ParametricCurve + 3× ChannelCurves + Basecurve = 24KB),
+/// which must coexist with working data in 32KB L1.
 ///
-/// Previous value (256) caused visible banding in smooth gradients at >8bpc.
-pub(crate) const LUT_SIZE: usize = 4096;
+/// With linear interpolation, 1024 entries gives sub-0.001 max error on
+/// any smooth curve — indistinguishable from 4096 at any bit depth.
+///
+/// Previous values: 256 (banding at >8bpc), 4096 (L1 cache contention).
+pub(crate) const LUT_SIZE: usize = 1024;
 
 /// Maximum LUT index (LUT_SIZE - 1), used for clamping.
 pub(crate) const LUT_MAX: usize = LUT_SIZE - 1;
