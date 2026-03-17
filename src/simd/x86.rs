@@ -1119,6 +1119,301 @@ fn fused_adjust_ab_rite(
 }
 
 // ============================================================================
+// Fused interleaved per-pixel: RGB→Oklab→adjust→RGB in one streaming pass
+// ============================================================================
+
+/// Fused per-pixel adjustment on interleaved linear RGB f32 data.
+///
+/// Performs RGB→Oklab conversion, all per-pixel L and AB adjustments, and
+/// Oklab→RGB conversion in a single streaming pass — no planar buffers,
+/// no scatter/gather. All data stays in SIMD registers between conversions.
+///
+/// This is faster than scatter→adjust→gather for per-pixel-only pipelines
+/// because it touches memory only twice (read src, write dst) instead of
+/// ~6 times (scatter 3 planes + adjust L + adjust AB + gather 3 planes).
+#[allow(clippy::too_many_arguments)]
+#[arcane]
+pub(super) fn fused_interleaved_adjust_impl_v3(
+    token: X64V3Token,
+    src: &[f32],
+    dst: &mut [f32],
+    channels: u32,
+    m1: &GamutMatrix,
+    m1_inv: &GamutMatrix,
+    inv_white: f32,
+    reference_white: f32,
+    // L adjustments
+    bp: f32,
+    inv_range: f32,
+    wp_exp: f32,
+    contrast_exp: f32,
+    contrast_scale: f32,
+    shadows: f32,
+    highlights: f32,
+    dehaze_contrast: f32,
+    // AB adjustments
+    dehaze_chroma: f32,
+    exposure_chroma: f32,
+    temp_offset: f32,
+    tint_offset: f32,
+    sat: f32,
+    vib_amount: f32,
+    vib_protection: f32,
+) {
+    fused_interleaved_adjust_rite(
+        token,
+        src,
+        dst,
+        channels,
+        m1,
+        m1_inv,
+        inv_white,
+        reference_white,
+        bp,
+        inv_range,
+        wp_exp,
+        contrast_exp,
+        contrast_scale,
+        shadows,
+        highlights,
+        dehaze_contrast,
+        dehaze_chroma,
+        exposure_chroma,
+        temp_offset,
+        tint_offset,
+        sat,
+        vib_amount,
+        vib_protection,
+    );
+}
+
+#[rite]
+#[allow(clippy::too_many_arguments)]
+fn fused_interleaved_adjust_rite(
+    token: X64V3Token,
+    src: &[f32],
+    dst: &mut [f32],
+    channels: u32,
+    m1: &GamutMatrix,
+    m1_inv: &GamutMatrix,
+    inv_white: f32,
+    reference_white: f32,
+    bp: f32,
+    inv_range: f32,
+    wp_exp: f32,
+    contrast_exp: f32,
+    contrast_scale: f32,
+    shadows: f32,
+    highlights: f32,
+    dehaze_contrast: f32,
+    dehaze_chroma: f32,
+    exposure_chroma: f32,
+    temp_offset: f32,
+    tint_offset: f32,
+    sat: f32,
+    vib_amount: f32,
+    vib_protection: f32,
+) {
+    let ch = channels as usize;
+    let n = dst.len() / ch;
+
+    // Forward M1: RGB → LMS
+    let m1_00 = f32x8::splat(token, m1[0][0]);
+    let m1_01 = f32x8::splat(token, m1[0][1]);
+    let m1_02 = f32x8::splat(token, m1[0][2]);
+    let m1_10 = f32x8::splat(token, m1[1][0]);
+    let m1_11 = f32x8::splat(token, m1[1][1]);
+    let m1_12 = f32x8::splat(token, m1[1][2]);
+    let m1_20 = f32x8::splat(token, m1[2][0]);
+    let m1_21 = f32x8::splat(token, m1[2][1]);
+    let m1_22 = f32x8::splat(token, m1[2][2]);
+
+    // Forward M2: LMS^(1/3) → Oklab
+    let m2_00 = f32x8::splat(token, OKLAB_FROM_LMS_CBRT[0][0]);
+    let m2_01 = f32x8::splat(token, OKLAB_FROM_LMS_CBRT[0][1]);
+    let m2_02 = f32x8::splat(token, OKLAB_FROM_LMS_CBRT[0][2]);
+    let m2_10 = f32x8::splat(token, OKLAB_FROM_LMS_CBRT[1][0]);
+    let m2_11 = f32x8::splat(token, OKLAB_FROM_LMS_CBRT[1][1]);
+    let m2_12 = f32x8::splat(token, OKLAB_FROM_LMS_CBRT[1][2]);
+    let m2_20 = f32x8::splat(token, OKLAB_FROM_LMS_CBRT[2][0]);
+    let m2_21 = f32x8::splat(token, OKLAB_FROM_LMS_CBRT[2][1]);
+    let m2_22 = f32x8::splat(token, OKLAB_FROM_LMS_CBRT[2][2]);
+
+    // Inverse M2: Oklab → LMS^(1/3)
+    let im2_00 = f32x8::splat(token, LMS_CBRT_FROM_OKLAB[0][0]);
+    let im2_01 = f32x8::splat(token, LMS_CBRT_FROM_OKLAB[0][1]);
+    let im2_02 = f32x8::splat(token, LMS_CBRT_FROM_OKLAB[0][2]);
+    let im2_10 = f32x8::splat(token, LMS_CBRT_FROM_OKLAB[1][0]);
+    let im2_11 = f32x8::splat(token, LMS_CBRT_FROM_OKLAB[1][1]);
+    let im2_12 = f32x8::splat(token, LMS_CBRT_FROM_OKLAB[1][2]);
+    let im2_20 = f32x8::splat(token, LMS_CBRT_FROM_OKLAB[2][0]);
+    let im2_21 = f32x8::splat(token, LMS_CBRT_FROM_OKLAB[2][1]);
+    let im2_22 = f32x8::splat(token, LMS_CBRT_FROM_OKLAB[2][2]);
+
+    // Inverse M1: LMS → RGB
+    let im1_00 = f32x8::splat(token, m1_inv[0][0]);
+    let im1_01 = f32x8::splat(token, m1_inv[0][1]);
+    let im1_02 = f32x8::splat(token, m1_inv[0][2]);
+    let im1_10 = f32x8::splat(token, m1_inv[1][0]);
+    let im1_11 = f32x8::splat(token, m1_inv[1][1]);
+    let im1_12 = f32x8::splat(token, m1_inv[1][2]);
+    let im1_20 = f32x8::splat(token, m1_inv[2][0]);
+    let im1_21 = f32x8::splat(token, m1_inv[2][1]);
+    let im1_22 = f32x8::splat(token, m1_inv[2][2]);
+
+    let inv_white_v = f32x8::splat(token, inv_white);
+    let white_v = f32x8::splat(token, reference_white);
+    let zero_v = f32x8::zero(token);
+
+    // L adjustment constants
+    let bp_v = f32x8::splat(token, bp);
+    let inv_range_v = f32x8::splat(token, inv_range);
+    let wp_exp_v = f32x8::splat(token, wp_exp);
+    let cs_v = f32x8::splat(token, contrast_scale);
+    let shadows_half = f32x8::splat(token, shadows * 0.5);
+    let highlights_half = f32x8::splat(token, highlights * 0.5);
+    let one_v = f32x8::splat(token, 1.0);
+    let two_v = f32x8::splat(token, 2.0);
+    let half_v = f32x8::splat(token, 0.5);
+    let dc_v = f32x8::splat(token, dehaze_contrast);
+    let dc_offset = f32x8::splat(token, 0.5 * (1.0 - dehaze_contrast));
+
+    // AB adjustment constants
+    let exp_chroma_v = f32x8::splat(token, exposure_chroma);
+    let dc_chroma_v = f32x8::splat(token, dehaze_chroma);
+    let temp_v = f32x8::splat(token, temp_offset);
+    let tint_v = f32x8::splat(token, tint_offset);
+    let sat_v = f32x8::splat(token, sat);
+    let vib_v = f32x8::splat(token, vib_amount);
+    let inv_mc = f32x8::splat(token, 1.0 / 0.4);
+
+    let mut i = 0;
+    while i + 8 <= n {
+        // ── Deinterleave 8 pixels ──
+        let mut r_arr = [0.0f32; 8];
+        let mut g_arr = [0.0f32; 8];
+        let mut b_arr = [0.0f32; 8];
+        for j in 0..8 {
+            let base = (i + j) * ch;
+            r_arr[j] = src[base];
+            g_arr[j] = src[base + 1];
+            b_arr[j] = src[base + 2];
+        }
+
+        let r = f32x8::from_array(token, r_arr) * inv_white_v;
+        let g = f32x8::from_array(token, g_arr) * inv_white_v;
+        let b = f32x8::from_array(token, b_arr) * inv_white_v;
+
+        // ── RGB → Oklab (stays in registers) ──
+        let lms_l = m1_00.mul_add(r, m1_01.mul_add(g, m1_02 * b));
+        let lms_m = m1_10.mul_add(r, m1_11.mul_add(g, m1_12 * b));
+        let lms_s = m1_20.mul_add(r, m1_21.mul_add(g, m1_22 * b));
+
+        let l_ = lms_l.cbrt_lowp();
+        let m_ = lms_m.cbrt_lowp();
+        let s_ = lms_s.cbrt_lowp();
+
+        let mut ok_l = m2_00.mul_add(l_, m2_01.mul_add(m_, m2_02 * s_));
+        let mut ok_a = m2_10.mul_add(l_, m2_11.mul_add(m_, m2_12 * s_));
+        let mut ok_b = m2_20.mul_add(l_, m2_21.mul_add(m_, m2_22 * s_));
+
+        // ── L adjustments (all in-register) ──
+        ok_l = ((ok_l - bp_v) * inv_range_v).max(zero_v);
+        ok_l *= wp_exp_v;
+        ok_l = ok_l.max(zero_v).pow_midp(contrast_exp) * cs_v;
+        let sm = (one_v - ok_l * two_v).max(zero_v);
+        ok_l = (sm * sm).mul_add(shadows_half, ok_l);
+        let hm = ((ok_l - half_v) * two_v).max(zero_v).min(one_v);
+        ok_l -= hm * hm * highlights_half;
+        ok_l = ok_l.mul_add(dc_v, dc_offset);
+
+        // ── AB adjustments (all in-register) ──
+        ok_a *= exp_chroma_v;
+        ok_b *= exp_chroma_v;
+        ok_a *= dc_chroma_v;
+        ok_b *= dc_chroma_v;
+        ok_b += temp_v;
+        ok_a += tint_v;
+        ok_a *= sat_v;
+        ok_b *= sat_v;
+        let chroma = (ok_a * ok_a + ok_b * ok_b).sqrt();
+        let normalized = (chroma * inv_mc).min(one_v);
+        let pf = (one_v - normalized).pow_midp(vib_protection);
+        let vib_scale = vib_v.mul_add(pf, one_v);
+        ok_a *= vib_scale;
+        ok_b *= vib_scale;
+
+        // ── Oklab → RGB (stays in registers) ──
+        let l2 = im2_00.mul_add(ok_l, im2_01.mul_add(ok_a, im2_02 * ok_b));
+        let m2 = im2_10.mul_add(ok_l, im2_11.mul_add(ok_a, im2_12 * ok_b));
+        let s2 = im2_20.mul_add(ok_l, im2_21.mul_add(ok_a, im2_22 * ok_b));
+
+        let lms_l2 = l2 * l2 * l2;
+        let lms_m2 = m2 * m2 * m2;
+        let lms_s2 = s2 * s2 * s2;
+
+        let r_out =
+            (im1_00.mul_add(lms_l2, im1_01.mul_add(lms_m2, im1_02 * lms_s2)) * white_v).max(zero_v);
+        let g_out =
+            (im1_10.mul_add(lms_l2, im1_11.mul_add(lms_m2, im1_12 * lms_s2)) * white_v).max(zero_v);
+        let b_out =
+            (im1_20.mul_add(lms_l2, im1_21.mul_add(lms_m2, im1_22 * lms_s2)) * white_v).max(zero_v);
+
+        // ── Reinterleave and store ──
+        let r_a = r_out.to_array();
+        let g_a = g_out.to_array();
+        let b_a = b_out.to_array();
+        for j in 0..8 {
+            let base = (i + j) * ch;
+            dst[base] = r_a[j];
+            dst[base + 1] = g_a[j];
+            dst[base + 2] = b_a[j];
+        }
+
+        i += 8;
+    }
+
+    // Scalar tail
+    for idx in i..n {
+        let base = idx * ch;
+        let r = src[base] * inv_white;
+        let g = src[base + 1] * inv_white;
+        let bv = src[base + 2] * inv_white;
+        let [mut ok_l, mut ok_a, mut ok_b] = oklab::rgb_to_oklab(r, g, bv, m1);
+
+        // L adjust
+        ok_l = ((ok_l - bp) * inv_range).max(0.0);
+        ok_l *= wp_exp;
+        if ok_l > 0.0 {
+            ok_l = ok_l.powf(contrast_exp) * contrast_scale;
+        }
+        let sm = (1.0 - ok_l * 2.0).max(0.0);
+        ok_l += sm * sm * shadows * 0.5;
+        let hm = ((ok_l - 0.5) * 2.0).clamp(0.0, 1.0);
+        ok_l -= hm * hm * highlights * 0.5;
+        ok_l = ok_l * dehaze_contrast + 0.5 * (1.0 - dehaze_contrast);
+
+        // AB adjust
+        ok_a *= exposure_chroma * dehaze_chroma;
+        ok_b *= exposure_chroma * dehaze_chroma;
+        ok_b += temp_offset;
+        ok_a += tint_offset;
+        ok_a *= sat;
+        ok_b *= sat;
+        let chroma = (ok_a * ok_a + ok_b * ok_b).sqrt();
+        let pf = (1.0 - (chroma / 0.4).min(1.0)).powf(vib_protection);
+        let vib_scale = 1.0 + vib_amount * pf;
+        ok_a *= vib_scale;
+        ok_b *= vib_scale;
+
+        let [ro, go, bo] = oklab::oklab_to_rgb(ok_l, ok_a, ok_b, m1_inv);
+        dst[base] = (ro * reference_white).max(0.0);
+        dst[base + 1] = (go * reference_white).max(0.0);
+        dst[base + 2] = (bo * reference_white).max(0.0);
+    }
+}
+
+// ============================================================================
 // SIMD Stackblur — 2 memory passes, no transpose
 // ============================================================================
 

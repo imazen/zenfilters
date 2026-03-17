@@ -35,6 +35,10 @@ compare samples="32":
 blur-bench:
     cargo run --release --features experimental --example blur_bench
 
+# Run fused interleaved vs planar pipeline benchmark
+fused-bench:
+    cargo run --release --features experimental --example fused_bench
+
 # Quick DNG parity sweep over sigmoid params
 sigmoid-sweep:
     @for c in 1.2 1.4 1.6; do \

@@ -48,6 +48,10 @@ name = "blur_bench"
 required-features = ["experimental"]
 
 [[example]]
+name = "fused_bench"
+required-features = ["experimental"]
+
+[[example]]
 name = "train_autotune"
 required-features = ["experimental"]
 

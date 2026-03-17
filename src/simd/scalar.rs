@@ -311,3 +311,70 @@ pub(super) fn fused_adjust_impl_scalar(
         *b_val = bv * scale;
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn fused_interleaved_adjust_impl_scalar(
+    _token: ScalarToken,
+    src: &[f32],
+    dst: &mut [f32],
+    channels: u32,
+    m1: &GamutMatrix,
+    m1_inv: &GamutMatrix,
+    inv_white: f32,
+    reference_white: f32,
+    bp: f32,
+    inv_range: f32,
+    wp_exp: f32,
+    contrast_exp: f32,
+    contrast_scale: f32,
+    shadows: f32,
+    highlights: f32,
+    dehaze_contrast: f32,
+    dehaze_chroma: f32,
+    exposure_chroma: f32,
+    temp_offset: f32,
+    tint_offset: f32,
+    sat: f32,
+    vib_amount: f32,
+    vib_protection: f32,
+) {
+    let ch = channels as usize;
+    let n = dst.len() / ch;
+    const MAX_CHROMA: f32 = 0.4;
+
+    for idx in 0..n {
+        let base = idx * ch;
+        let r = src[base] * inv_white;
+        let g = src[base + 1] * inv_white;
+        let bv = src[base + 2] * inv_white;
+        let [mut ok_l, mut ok_a, mut ok_b] = oklab::rgb_to_oklab(r, g, bv, m1);
+
+        ok_l = ((ok_l - bp) * inv_range).max(0.0);
+        ok_l *= wp_exp;
+        if ok_l > 0.0 {
+            ok_l = ok_l.powf(contrast_exp) * contrast_scale;
+        }
+        let sm = (1.0 - ok_l * 2.0).max(0.0);
+        ok_l += sm * sm * shadows * 0.5;
+        let hm = ((ok_l - 0.5) * 2.0).clamp(0.0, 1.0);
+        ok_l -= hm * hm * highlights * 0.5;
+        ok_l = ok_l * dehaze_contrast + 0.5 * (1.0 - dehaze_contrast);
+
+        ok_a *= exposure_chroma * dehaze_chroma;
+        ok_b *= exposure_chroma * dehaze_chroma;
+        ok_b += temp_offset;
+        ok_a += tint_offset;
+        ok_a *= sat;
+        ok_b *= sat;
+        let chroma = (ok_a * ok_a + ok_b * ok_b).sqrt();
+        let pf = (1.0 - (chroma / MAX_CHROMA).min(1.0)).powf(vib_protection);
+        let vib_scale = 1.0 + vib_amount * pf;
+        ok_a *= vib_scale;
+        ok_b *= vib_scale;
+
+        let [ro, go, bo] = oklab::oklab_to_rgb(ok_l, ok_a, ok_b, m1_inv);
+        dst[base] = (ro * reference_white).max(0.0);
+        dst[base + 1] = (go * reference_white).max(0.0);
+        dst[base + 2] = (bo * reference_white).max(0.0);
+    }
+}

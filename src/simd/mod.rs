@@ -214,3 +214,58 @@ pub(crate) fn fused_adjust(
         [v3]
     );
 }
+
+/// Dispatch: fused interleaved per-pixel adjustment (RGB→Oklab→adjust→RGB in one pass).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fused_interleaved_adjust(
+    src: &[f32],
+    dst: &mut [f32],
+    channels: u32,
+    m1: &GamutMatrix,
+    m1_inv: &GamutMatrix,
+    inv_white: f32,
+    reference_white: f32,
+    bp: f32,
+    inv_range: f32,
+    wp_exp: f32,
+    contrast_exp: f32,
+    contrast_scale: f32,
+    shadows: f32,
+    highlights: f32,
+    dehaze_contrast: f32,
+    dehaze_chroma: f32,
+    exposure_chroma: f32,
+    temp_offset: f32,
+    tint_offset: f32,
+    sat: f32,
+    vib_amount: f32,
+    vib_protection: f32,
+) {
+    archmage::incant!(
+        fused_interleaved_adjust_impl(
+            src,
+            dst,
+            channels,
+            m1,
+            m1_inv,
+            inv_white,
+            reference_white,
+            bp,
+            inv_range,
+            wp_exp,
+            contrast_exp,
+            contrast_scale,
+            shadows,
+            highlights,
+            dehaze_contrast,
+            dehaze_chroma,
+            exposure_chroma,
+            temp_offset,
+            tint_offset,
+            sat,
+            vib_amount,
+            vib_protection
+        ),
+        [v3]
+    );
+}
