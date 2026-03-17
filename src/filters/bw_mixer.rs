@@ -91,7 +91,11 @@ impl Filter for BwMixer {
                     lum_scale /= total_w;
 
                     // Blend effect by chroma — more saturated pixels get more effect.
-                    // Normalize chroma influence (typical Oklab chroma peaks ~0.3).
+                    // 0.15 is the chroma at which the mixer reaches full influence.
+                    // Typical sRGB skin tones have chroma ~0.05-0.08; saturated
+                    // reds/blues reach ~0.25-0.3. Using 0.15 means the mixer is
+                    // fully engaged for moderately saturated colors, giving strong
+                    // hue-dependent B&W control without requiring extreme saturation.
                     let chroma_influence = (chroma / 0.15).min(1.0);
                     let effective_scale = 1.0 + (lum_scale - 1.0) * chroma_influence;
 

@@ -24,7 +24,11 @@ impl Filter for Temperature {
         if self.shift.abs() < 1e-6 {
             return;
         }
-        // Scale: 0.08 per unit produces natural results
+        // Scale: ±1.0 shift maps to ±0.08 Oklab b offset.
+        // 0.08 is calibrated so shift=1.0 ≈ 1000K color temperature change
+        // (from ~5500K daylight to ~4500K tungsten). Oklab b axis spans
+        // roughly [-0.3, +0.3] for saturated colors, so 0.08 is a moderate
+        // but visible shift without oversaturating.
         let offset = self.shift * 0.08;
         simd::offset_plane(&mut planes.b, offset);
     }

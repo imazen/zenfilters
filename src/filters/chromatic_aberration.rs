@@ -39,6 +39,10 @@ impl ChromaticAberration {
 }
 
 /// Bilinear interpolation sample from a plane at fractional coordinates.
+///
+/// Bilinear is adequate for CA correction because the shifts are sub-pixel
+/// (typically < 0.5px at image edges). Bicubic would add computational cost
+/// without visible improvement at these magnitudes.
 #[inline]
 fn sample_bilinear(plane: &[f32], w: usize, h: usize, x: f32, y: f32) -> f32 {
     let x0 = (x.floor() as isize).clamp(0, w as isize - 1) as usize;

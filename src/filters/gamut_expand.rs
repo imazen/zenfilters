@@ -79,7 +79,10 @@ impl Filter for GamutExpand {
         // P3 is roughly 25% wider than sRGB in the red-orange axis.
         let max_expansion = 0.25;
 
-        // Vibrance-style protection: already-saturated colors get less boost
+        // Vibrance-style protection: already-saturated colors get less boost.
+        // 0.4 is the approximate maximum Oklab chroma for the Display P3 gamut
+        // at typical luminance levels. Colors approaching this limit get
+        // progressively less expansion to avoid gamut clipping.
         const MAX_CHROMA: f32 = 0.4;
 
         for (a_val, b_val) in planes.a.iter_mut().zip(planes.b.iter_mut()) {
