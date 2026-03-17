@@ -3,10 +3,17 @@
 const MAX_KERNEL_SIZE: usize = 512;
 
 /// Minimum sigma for the extended box blur fast path.
-/// Below this, the SIMD FIR convolution is faster (fewer memory passes, FMA
-/// throughput beats scalar prefix sums). The box blur wins at very large sigma
-/// where the FIR kernel exceeds ~200 taps.
-const BOX_BLUR_SIGMA_THRESHOLD: f32 = 40.0;
+///
+/// Below this threshold, SIMD FIR convolution is faster. Above it, the O(1)/pixel
+/// box blur wins because the FIR kernel size grows linearly with sigma.
+///
+/// Benchmark-derived crossover (2026-03-16, x86_64 AVX2):
+///   σ=4:  FIR 8.6ms vs box 33ms (1080p), FIR 37ms vs box 152ms (4K)
+///   σ=16: FIR 36ms  vs box 34ms (1080p), FIR 148ms vs box 153ms (4K)
+///   σ=30: FIR 71ms  vs box 35ms (1080p), FIR 295ms vs box 152ms (4K)
+///
+/// Crossover: ~σ=12 at 1080p, ~σ=16 at 4K. Using σ=12 (conservative).
+const BOX_BLUR_SIGMA_THRESHOLD: f32 = 12.0;
 
 /// Precomputed separable Gaussian kernel.
 ///
