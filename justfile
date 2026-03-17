@@ -31,6 +31,10 @@ train:
 compare samples="32":
     ZEN_SAMPLES={{samples}} cargo run --release --features experimental --example compare_autotune
 
+# Run blur optimization benchmarks (A/B comparison)
+blur-bench:
+    cargo run --release --features experimental --example blur_bench
+
 # Quick DNG parity sweep over sigmoid params
 sigmoid-sweep:
     @for c in 1.2 1.4 1.6; do \

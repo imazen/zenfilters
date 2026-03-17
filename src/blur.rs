@@ -97,7 +97,7 @@ pub fn gaussian_blur_plane(
 ///
 /// For sigma >= 1.5, dispatches to the extended box blur (O(1)/pixel).
 /// For smaller sigma, uses direct FIR convolution (kernel is tiny).
-pub(crate) fn gaussian_blur_plane_scalar(
+pub fn gaussian_blur_plane_scalar(
     src: &[f32],
     dst: &mut [f32],
     width: u32,
@@ -162,7 +162,7 @@ pub(crate) fn gaussian_blur_plane_scalar(
 /// Reference: Gwosdek et al., "Addendum to 'Recursive Gaussian filtering'";
 /// Getreuer, "A Survey of Gaussian Convolution Algorithms," IPOL 2013.
 #[derive(Clone, Debug)]
-pub(crate) struct ExtendedBoxBlur {
+pub struct ExtendedBoxBlur {
     /// Half-width (radius) for each of the 3 passes.
     radii: [u32; 3],
     /// Precomputed `1.0 / (2*r + 1)` for each pass.
@@ -171,7 +171,7 @@ pub(crate) struct ExtendedBoxBlur {
 
 impl ExtendedBoxBlur {
     /// Compute box widths for K=3 passes approximating a Gaussian with the given sigma.
-    pub(crate) fn from_sigma(sigma: f32) -> Self {
+    pub fn from_sigma(sigma: f32) -> Self {
         // Target variance per pass: sigma² / 3
         // Ideal box width: sqrt(12 * sigma² / 3 + 1)
         let k = 3.0f32;
@@ -210,7 +210,7 @@ impl ExtendedBoxBlur {
     }
 
     /// Maximum radius across all 3 passes.
-    pub(crate) fn max_radius(&self) -> u32 {
+    pub fn max_radius(&self) -> u32 {
         self.radii[0].max(self.radii[1]).max(self.radii[2])
     }
 }
@@ -317,7 +317,7 @@ fn transpose_plane(src: &[f32], dst: &mut [f32], w: usize, h: usize) {
 ///
 /// This is the fast path for `gaussian_blur_plane` when sigma >= 1.5.
 /// O(1) per pixel regardless of sigma, with cache-friendly memory access.
-pub(crate) fn extended_box_blur_plane(
+pub fn extended_box_blur_plane(
     src: &[f32],
     dst: &mut [f32],
     width: u32,
@@ -415,12 +415,12 @@ pub(crate) fn extended_box_blur_plane(
 }
 
 /// Check if sigma is large enough to benefit from the extended box blur path.
-pub(crate) fn should_use_box_blur(sigma: f32) -> bool {
+pub fn should_use_box_blur(sigma: f32) -> bool {
     sigma >= BOX_BLUR_SIGMA_THRESHOLD
 }
 
 /// Get sigma from a GaussianKernel (approximate, from radius).
-pub(crate) fn kernel_sigma(kernel: &GaussianKernel) -> f32 {
+pub fn kernel_sigma(kernel: &GaussianKernel) -> f32 {
     kernel.radius as f32 / 3.0
 }
 

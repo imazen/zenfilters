@@ -43,6 +43,10 @@ zenpixels-convert = { version = "0.1", path = "../zenpixels/zenpixels-convert", 
 image = "0.25"
 
 [[example]]
+name = "blur_bench"
+required-features = ["experimental"]
+
+[[example]]
 name = "train_autotune"
 required-features = ["experimental"]
 

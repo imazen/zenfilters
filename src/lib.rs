@@ -72,6 +72,16 @@ pub mod srgb_filters;
 
 pub use access::ChannelAccess;
 pub use blur::GaussianKernel;
+
+/// Internal blur functions exposed for benchmarking. Not part of the public API.
+#[cfg(feature = "experimental")]
+#[doc(hidden)]
+pub mod blur_internals {
+    pub use crate::blur::{
+        ExtendedBoxBlur, GaussianKernel, extended_box_blur_plane, gaussian_blur_plane,
+        gaussian_blur_plane_scalar, kernel_sigma,
+    };
+}
 pub use context::FilterContext;
 #[cfg(feature = "buffer")]
 pub use convenience::{ConvenienceError, PipelineBufferExt, apply_to_buffer};
