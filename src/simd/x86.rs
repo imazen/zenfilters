@@ -251,37 +251,35 @@ fn gaussian_blur_plane_simd(
         }
     }
 
-    // Vertical pass — column-tiled for cache locality.
-    // Process 8 adjacent columns per tile so each tile's working set
-    // (kernel_len rows × 32 bytes) stays hot in L1/L2.
-    let num_tiles = w / 8;
-    let weights = kernel.weights();
+    // Vertical pass — row-major for sequential writes.
+    // Column-tiling was benchmarked twice and regressed both times
+    // (strided writes are worse than strided reads for FIR where
+    // O(kernel_size) reads per pixel dominate the access pattern).
+    for y in 0..h {
+        let out_row = &mut dst[y * w..(y + 1) * w];
+        let (out_chunks, out_tail) = f32x8::partition_slice_mut(token, out_row);
 
-    for tile in 0..num_tiles {
-        let x = tile * 8;
-        for y in 0..h {
+        for (ci, out_chunk) in out_chunks.iter_mut().enumerate() {
+            let x = ci * 8;
             let mut acc = f32x8::zero(token);
-            for (k, &weight) in weights.iter().enumerate() {
+            for (k, &weight) in kernel.weights().iter().enumerate() {
                 let sy = (y + k).saturating_sub(radius).min(h - 1);
                 let wv = f32x8::splat(token, weight);
                 let src_chunk: &[f32; 8] = h_buf[sy * w + x..sy * w + x + 8].try_into().unwrap();
                 acc = f32x8::load(token, src_chunk).mul_add(wv, acc);
             }
-            let out: &mut [f32; 8] = (&mut dst[y * w + x..y * w + x + 8]).try_into().unwrap();
-            acc.store(out);
+            acc.store(out_chunk);
         }
-    }
 
-    // Scalar tail for remaining w % 8 columns
-    let x_start = num_tiles * 8;
-    for x in x_start..w {
-        for y in 0..h {
+        let x_start = out_chunks.len() * 8;
+        for (xi, v) in out_tail.iter_mut().enumerate() {
+            let x = x_start + xi;
             let mut sum = 0.0f32;
-            for (k, &weight) in weights.iter().enumerate() {
+            for (k, &weight) in kernel.weights().iter().enumerate() {
                 let sy = (y + k).saturating_sub(radius).min(h - 1);
                 sum += h_buf[sy * w + x] * weight;
             }
-            dst[y * w + x] = sum;
+            *v = sum;
         }
     }
 
