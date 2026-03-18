@@ -81,6 +81,7 @@ mod pipeline;
 mod planes;
 pub mod presets;
 pub mod regional;
+pub mod resize_pipeline;
 mod scatter_gather;
 mod simd;
 pub mod slider;

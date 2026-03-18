@@ -1,144 +1,275 @@
 # zenfilters
 
-Photo filter pipeline operating in Oklab perceptual color space with SIMD acceleration via [archmage](https://github.com/imazen/archmage).
+Photo filter pipeline in Oklab perceptual color space with SIMD acceleration via [archmage](https://github.com/imazen/archmage).
 
-45+ filters covering Lightroom-equivalent adjustments: exposure, contrast, highlights/shadows, clarity, noise reduction, color grading, tone curves, HSL, vibrance, grain, vignette, and more.
+51 filters covering full Lightroom/darktable parity for tone, color, detail, and effects. 19 built-in presets with intensity blending. Self-describing parameter schemas for automatic UI generation. Serde support for serialization.
 
-`#![forbid(unsafe_code)]` — entirely safe Rust. SIMD dispatch happens through archmage's compile-time token system.
+`#![forbid(unsafe_code)]` — entirely safe Rust.
 
-## How it works
+## Architecture
 
 ```text
 Input (linear RGB f32 or sRGB u8)
-  → scatter: deinterleave to planar Oklab (separate L, a, b arrays)
+  → scatter: deinterleave to planar Oklab (L, a, b planes)
     → filter stack: each filter modifies planes in-place
       → gamut mapping: compress out-of-gamut colors
         → gather: reinterleave to output format
 ```
 
-Splitting L/a/b into contiguous `Vec<f32>` planes means luminance-only filters (exposure, contrast, tone curves) touch one plane of contiguous floats — ideal for SIMD. Oklab is perceptually uniform, so arithmetic operations produce visually proportional changes without the nonlinear surprises of sRGB or even Lab.
+Oklab is perceptually uniform — arithmetic operations produce visually proportional changes. Splitting into contiguous f32 planes means luminance-only filters (exposure, contrast, curves) process one plane at full SIMD width.
 
-Processing happens in L3-cache-friendly horizontal strips. Each strip is scattered, filtered, and gathered before moving on, keeping working data under ~4 MB. Neighborhood filters (clarity, sharpen, denoise) use overlapping strips with halo rows — no full-frame materialization needed.
+### Strip processing
 
-## Usage
+All processing uses L3-cache-friendly horizontal strips (~4 MB working set). Neighborhood filters use overlapping halo rows. At 4K with clarity + sharpen (halo ~50px), the working set is ~9 MB per strip vs ~100 MB full-frame.
+
+### SIMD
+
+AVX2 f32x8 dispatch via archmage for all hot paths:
+- Scatter/gather (RGB→Oklab→RGB conversion)
+- Gaussian blur (FIR horizontal, stackblur vertical with 8-column tiles)
+- FusedAdjust (11 per-pixel operations in one pass)
+- Wavelet threshold + accumulate (noise reduction)
+- Adaptive sharpen energy gating
+- All per-pixel plane operations (scale, offset, power contrast, sigmoid, vibrance)
+
+Fast math: `pow_lowp_unchecked` (~1% precision, 2× faster than midp) for contrast, sigmoid, and vibrance power curves. `cbrt_lowp` for Oklab conversion.
+
+## Quick start
 
 ```rust
 use zenfilters::{Pipeline, PipelineConfig, FilterContext};
 use zenfilters::filters::*;
 
-let mut pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
+let mut pipeline = Pipeline::new(PipelineConfig::default())?;
 
-pipeline.push(Box::new(Exposure { stops: 0.5 }));
-pipeline.push(Box::new(Clarity { sigma: 4.0, amount: 0.3 }));
-pipeline.push(Box::new(Vibrance { amount: 0.4, protection: 0.8 }));
+let mut exposure = Exposure::default();
+exposure.stops = 0.5;
+pipeline.push(Box::new(exposure));
 
-// Reusable context eliminates per-call allocations
+let mut clarity = Clarity::default();
+clarity.amount = 0.3;
+pipeline.push(Box::new(clarity));
+
 let mut ctx = FilterContext::new();
-
 let (w, h) = (1920, 1080);
-let src = vec![0.5f32; w * h * 3]; // interleaved linear RGB f32
+let src = vec![0.5f32; w * h * 3];
 let mut dst = vec![0.0f32; w * h * 3];
-pipeline.apply(&src, &mut dst, w as u32, h as u32, 3, &mut ctx).unwrap();
+pipeline.apply(&src, &mut dst, w as u32, h as u32, 3, &mut ctx)?;
 ```
 
-The `buffer` feature adds a convenience API that handles format conversion (sRGB u8, HDR PQ, Display P3) automatically via `PipelineBufferExt`.
+## Presets
 
-## Filters
+19 built-in presets with intensity blending:
 
-### Tone & Exposure
-| Filter | Parameters | Description |
-|--------|-----------|-------------|
-| `Exposure` | `stops` | Linear light exposure in stops |
-| `AutoExposure` | `strength`, `target`, `max_correction` | Geometric mean normalization |
-| `Contrast` | `amount` | Midtone-pivoted contrast |
-| `HighlightsShadows` | `highlights`, `shadows` | Highlight/shadow recovery |
-| `WhitesBlacks` | `whites`, `blacks` | Extreme luminance control (smoothstep-weighted) |
-| `BlackPoint` / `WhitePoint` | `level` | Black/white level remap |
-| `HighlightRecovery` | `strength` | Dedicated clipping recovery |
-| `ShadowLift` | `strength` | Dedicated shadow recovery |
-| `ToneCurve` | control points or LUT | Monotone cubic Hermite interpolation |
-| `ParametricCurve` | 4 zones, 3 dividers | Lightroom-style parametric curve |
-| `ChannelCurves` | per-channel R/G/B LUTs | sRGB-space per-channel curves |
-| `Sigmoid` | `contrast`, `skew`, `chroma_compression` | Generalized sigmoid tone mapper |
-| `BasecurveToneMap` | preset-based | Camera-specific tone curves |
-| `DtSigmoid` | `contrast`, `skew` | darktable-compatible sigmoid |
-| `LocalToneMap` | `compression`, `detail_boost`, `sigma` | Base/detail decomposition (neighborhood) |
+```rust
+use zenfilters::presets;
 
-### Sharpening & Detail
-| Filter | Parameters | Description |
-|--------|-----------|-------------|
-| `AdaptiveSharpen` | `amount`, `sigma`, `noise_floor`, `detail`, `masking` | Noise-gated unsharp mask with edge masking |
-| `Sharpen` | `sigma`, `amount` | Basic unsharp mask |
-| `Clarity` | `sigma`, `amount` | Two-band mid-frequency local contrast |
-| `Texture` | `sigma`, `amount` | Fine detail enhancement |
+let preset = &presets::builtin_presets()[0]; // "Vivid"
+let pipe = preset.build_pipeline_at(0.6);   // 60% intensity
+pipe.apply(&src, &mut dst, w, h, 3, &mut ctx)?;
+```
 
-### Noise Reduction
-| Filter | Parameters | Description |
-|--------|-----------|-------------|
-| `NoiseReduction` | `luminance`, `chroma`, `detail`, `luminance_contrast`, `chroma_detail` | Wavelet (a trous) with soft thresholding |
-| `Bilateral` | `spatial_sigma`, `range_sigma`, `strength` | Edge-preserving bilateral filter |
-| `Blur` | `sigma` | Gaussian blur |
+Categories: Enhance (Vivid, Enhance, Clean), Warm (Warm, Golden Hour), Cool, Portrait (Portrait, Portrait Warm), Landscape, Film (Vintage, Film Warm, Film Cool, Faded), Cinematic (Cinematic, Moody), B&W (Classic, High Contrast, Film, Sepia).
 
-### Color
-| Filter | Parameters | Description |
-|--------|-----------|-------------|
-| `Temperature` | `shift` | Color temperature via b-channel offset |
-| `Tint` | `shift` | Green-magenta tint via a-channel offset |
-| `Saturation` | `factor` | Linear saturation scaling |
-| `Vibrance` | `amount`, `protection` | Smart saturation (protects already-saturated colors) |
-| `HueRotate` | `shift` | Hue rotation in a/b plane |
-| `HslAdjust` | per-range hue/sat/lum (8 ranges) | Selective per-hue-range adjustments |
-| `ColorGrading` | shadow/midtone/highlight tints | Split-tone color grading |
-| `CameraCalibration` | R/G/B hue+sat, shadow tint | Camera primary calibration |
-| `ColorMatrix` | 5x5 matrix | Arbitrary color matrix in linear RGB |
-| `Cat16` | source/target primaries | Chromatic adaptation (CAT16) |
-| `GamutExpand` | `strength`, `knee` | Soft chroma expansion toward gamut boundary |
-| `BwMixer` | 8 per-color luminance weights | Chroma-aware B&W channel mixer |
+Presets support tone curves, sigmoid, clarity, sharpening, grain, vignette, bloom, and B&W modes. Intensity blending lerps each parameter toward its identity value.
 
-### Effects
-| Filter | Parameters | Description |
-|--------|-----------|-------------|
-| `Grain` | `amount`, `size`, `seed` | Deterministic film grain |
-| `Vignette` | `strength`, `exponent` | Radial edge darkening |
-| `Devignette` | `strength`, `exponent` | Lens vignette correction |
-| `Dehaze` | `strength` | Contrast and chroma boost |
-| `ChromaticAberration` | `shift_a`, `shift_b` | Lateral CA correction |
-| `Grayscale` / `Sepia` / `Invert` | — | Standard effects |
+Presets serialize to JSON (with the `serde` feature) for storage and sharing.
 
-### Performance
+## Parameter schemas
+
+Every filter is self-describing for automatic UI generation:
+
+```rust
+use zenfilters::param_schema::Describe;
+use zenfilters::filters::AdaptiveSharpen;
+
+let schema = AdaptiveSharpen::schema();
+// schema.name = "adaptive_sharpen"
+// schema.label = "Adaptive Sharpen"
+// schema.group = FilterGroup::Detail
+// schema.params[0] = ParamDesc {
+//     name: "amount", label: "Amount",
+//     kind: Float { min: 0.0, max: 2.0, default: 0.0, identity: 0.0, step: 0.05 },
+//     unit: "×", section: "Main", slider: SliderMapping::Linear
+// }
+```
+
+Each parameter carries: name, label, tooltip, type (Float/Int/Bool/FloatArray), range, default, identity point, step size, unit, UI section, and slider mapping.
+
+Data binding via `get_param`/`set_param` by name:
+
+```rust
+filter.set_param("amount", ParamValue::Float(0.5));
+let val = filter.get_param("amount"); // Some(Float(0.5))
+```
+
+### Slider mappings
+
+Some parameters have non-linear perceptual response. The `slider` module provides mapping functions so equal slider increments produce equal perceived changes:
+
+| Mapping | Parameters | Effect |
+|---------|-----------|--------|
+| `Linear` | Most params | Direct 1:1 |
+| `SquareFromSlider` | Contrast, dehaze, NR, LTM compression | First half = useful range |
+| `FactorCentered` | Saturation | 0.5 = identity, 0 = gray, 1 = double |
+
+```rust
+use zenfilters::slider;
+let internal = slider::contrast_from_slider(0.5); // → 0.25 (moderate)
+let back = slider::contrast_to_slider(internal);   // → 0.5
+```
+
+## Filter compatibility
+
+Machine-readable rules prevent common mistakes:
+
+```rust
+use zenfilters::filter_compat::{validate_pipeline, FilterTag};
+
+let tags = [FilterTag::Sigmoid, FilterTag::DtSigmoid];
+let issues = validate_pipeline(&tags);
+// → error: "tone_mapper: 2 filters active, use only one"
+```
+
+**Exclusive groups** (use only one): tone mappers, sharpeners, smoothers.
+
+**Ordering constraints**: denoise before sharpen, recovery before tuning, tone map before contrast.
+
+**Range conflicts** with max-combined-intensity thresholds: Sigmoid + Contrast (0.6), LocalToneMap + Clarity (0.7), Saturation + GamutExpand (0.6).
+
+## Resize-aware filtering
+
+Each filter declares when it should run relative to a resize operation:
+
+```rust
+use zenfilters::ResizePhase;
+
+filter.resize_phase() // → PreResize, PostResize, or Either
+```
+
+| Phase | Filters | Reason |
+|-------|---------|--------|
+| **PreResize** | CA correction, noise reduction, sharpening, clarity, texture, bilateral, dehaze, brilliance | Sigma in absolute pixels; full-res detail |
+| **PostResize** | Grain, vignette, bloom | Spatial effects relative to output frame |
+| **Either** | Exposure, contrast, curves, saturation, vibrance, temperature, tint, color grading, levels | Per-pixel, no spatial dependency |
+
+A resize-aware pipeline can split the filter stack automatically. For pre-resize filters applied after downscale, adjust sigma: `sigma_effective = sigma * (output / input)`.
+
+## Filters (51)
+
+### Tone & Exposure (16)
+
 | Filter | Description |
 |--------|-------------|
-| `FusedAdjust` | Combines 11 per-pixel operations (exposure, contrast, H/S, dehaze, temperature, tint, saturation, vibrance, BP/WP) in a single SIMD pass |
+| `Exposure` | Linear light exposure in stops |
+| `AutoExposure` | Geometric mean normalization |
+| `Contrast` | Midtone-pivoted power curve |
+| `HighlightsShadows` | Highlight/shadow recovery with quadratic masks |
+| `WhitesBlacks` | Smoothstep-weighted extreme luminance control |
+| `BlackPoint` / `WhitePoint` | Level remapping with optional soft-clip headroom |
+| `HighlightRecovery` | Histogram-adaptive soft-knee compression |
+| `ShadowLift` | Histogram-adaptive toe lift |
+| `ToneCurve` | Monotone cubic Hermite (Fritsch-Carlson) |
+| `ParametricCurve` | 4-zone Lightroom-style parametric curve |
+| `ChannelCurves` | Per-channel R/G/B LUTs in sRGB space |
+| `Levels` | Input/output range remap with gamma |
+| `Sigmoid` | Generalized sigmoid with chroma compression |
+| `BasecurveToneMap` | Camera-specific tone curves (14 cameras + 16 makers) |
+| `DtSigmoid` | darktable-compatible log-logistic sigmoid |
+| `ToneEqualizer` | 9-zone guided-filter luminance adjustment (darktable equivalent) |
+| `LocalToneMap` | Base/detail decomposition with pivoted gamma |
 
-## Strip processing
+### Sharpening & Detail (6)
 
-All processing (including pipelines with neighborhood filters) uses horizontal strip processing to stay L3-cache-friendly.
+| Filter | Description |
+|--------|-------------|
+| `AdaptiveSharpen` | Noise-gated USM with Lightroom's 4 controls (amount, radius, detail, masking) |
+| `Sharpen` | Basic unsharp mask |
+| `Clarity` | Two-band mid-frequency local contrast |
+| `Texture` | Fine detail enhancement (finer scale than clarity) |
+| `Brilliance` | S-curve local adaptation (smoothstep-weighted) |
+| `Bloom` | Soft-knee highlight glow with screen blending |
 
-For per-pixel-only pipelines, strips are independent — scatter, filter, gather, move on. For pipelines with neighborhood filters, each strip is extended by a halo of extra rows on each side. The halo size is the sum of all neighborhood radii in the pipeline. Each filter "consumes" its radius of correct context from the previous filter's output, so the core rows are always correct.
+### Noise Reduction (3)
 
-At 4K width with a typical clarity + sharpen pipeline (halo ~50px, strip ~130 core rows), the working set is ~9 MB per strip vs ~100 MB for the full frame.
+| Filter | Description |
+|--------|-------------|
+| `NoiseReduction` | Wavelet (à trous) with BayesShrink optimal thresholding |
+| `Bilateral` | Guided filter (O(1)/pixel, edge-preserving) |
+| `Blur` | Gaussian blur (SIMD stackblur for σ≥6, FIR for small σ) |
 
-## Gamut mapping
+### Color (13)
 
-Three strategies for handling out-of-gamut colors after filtering:
+| Filter | Description |
+|--------|-------------|
+| `Temperature` / `Tint` | Oklab b/a channel offsets |
+| `Saturation` / `Vibrance` | Uniform and chroma-protective saturation |
+| `HueRotate` | 2D rotation in a/b plane |
+| `HslAdjust` | Per-hue H/S/L adjustments (8 ranges) |
+| `ColorGrading` | Shadow/midtone/highlight split-toning |
+| `CameraCalibration` | R/G/B primary hue+sat shifts, shadow tint |
+| `ColorMatrix` | 5×5 affine transform in linear RGB |
+| `Cat16` | Chromatic adaptation (CAT16) |
+| `GamutExpand` | Hue-selective P3 chroma expansion |
+| `BwMixer` | Chroma-aware B&W channel mixer (8 weights) |
 
-- **Clip** (default) — clamp negative RGB to 0. Fast; sufficient for most adjustments.
-- **ChromaReduce** — bisection to reduce chroma until in-gamut. Preserves hue.
-- **SoftCompress** — precomputed LUT of max chroma per (L, hue), with a smooth rational knee function. Best quality for aggressive saturation boosts.
+### Effects (8)
 
-## Color space support
+| Filter | Description |
+|--------|-------------|
+| `Grain` | Deterministic film grain with midtone response curve |
+| `Vignette` / `Devignette` | Radial darkening / lens correction |
+| `Dehaze` | Dark channel prior analog in Oklab |
+| `ChromaticAberration` | Radial chroma plane shift (bilinear) |
+| `Grayscale` / `Sepia` / `Invert` | Standard effects |
 
-The pipeline supports BT.709 (sRGB), Display P3, and BT.2020 primaries. HDR content is handled via reference white normalization — set `reference_white` to 203.0 for PQ (ITU-R BT.2408) so that filters operate in a normalized [0, 1] range regardless of absolute luminance.
+### Performance (1)
 
-## Auto-tuning (experimental)
+| Filter | Description |
+|--------|-------------|
+| `FusedAdjust` | 11 per-pixel ops in one SIMD pass (exposure, contrast, H/S, dehaze, temp, tint, sat, vibrance, BP/WP) |
 
-The `experimental` feature enables automatic photo enhancement:
+## Performance
 
-1. Extract 142-dim histogram features from an image (luminance zones, chroma zones, hue sectors)
-2. K-means lookup against 64 pre-trained clusters (in `data/`)
-3. Inverse-distance blend of k=3 nearest cluster parameters into 18 filter params
+All numbers single-threaded on x86-64 AVX2.
 
-Trained on the MIT-Adobe FiveK dataset using Nelder-Mead optimization with zensim (perceptual similarity) as the loss function. Also includes a rule-based heuristic fallback.
+| Pipeline | 2K (1920×1080) | 4K (3840×2160) | 8K (7680×4320) |
+|----------|---------------|----------------|----------------|
+| Per-pixel (FusedAdjust) | 9 ms | 37 ms | 147 ms |
+| Clarity (blur + unsharp) | 20 ms | 88 ms | 418 ms |
+| Realistic (adjust + clarity + sharpen) | 39 ms | 174 ms | 773 ms |
+| Heavy (clarity + texture + NR) | 87 ms | 413 ms | 1.6 s |
+
+Blur performance (σ=16, SIMD stackblur):
+| Resolution | Time | Throughput |
+|-----------|------|-----------|
+| 2K | 4.0 ms | 520 Mpx/s |
+| 4K | 28 ms | 295 Mpx/s |
+| 8K | 111 ms | 300 Mpx/s |
+
+## Algorithms
+
+| Component | Algorithm | Reference |
+|-----------|-----------|-----------|
+| Blur (σ≥6) | SIMD stackblur, 8-column f32x8 vertical | Klingemann 2004 |
+| Blur (σ<6) | Separable FIR with AVX2 FMA | — |
+| Noise reduction | À trous wavelet + BayesShrink | Chang et al., IEEE TIP 2000 |
+| Bilateral | Guided filter, O(1)/pixel | He et al., TPAMI 2013 |
+| Tone equalizer | Guided filter mask + zone LUT | Pierre (darktable) 2019 |
+| Brilliance | Smoothstep S-curve local adaptation | — |
+| Tone curves | Fritsch-Carlson monotone cubic Hermite | Fritsch & Carlson 1980 |
+| Contrast | Anchored power curve at Oklab middle grey | darktable basicadj |
+
+All LUTs use 1024 entries (10-bit, 4 KB each) — balances curve fidelity against L1 cache pressure when multiple curves are active.
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| `serde` | Serialize/deserialize all filter structs, schemas, presets, compat types |
+| `buffer` | Convenience API for `PixelBuffer` format conversion |
+| `srgb-filters` | Direct sRGB u8 per-pixel filters (no Oklab roundtrip) |
+| `experimental` | Auto-tuning, fused interleaved path, blur benchmarks |
 
 ## License
 
