@@ -45,6 +45,9 @@ pub struct Preset {
     pub adjust: PresetAdjust,
     /// Optional sigmoid tone mapping (for scene-referred presets).
     pub sigmoid: Option<PresetSigmoid>,
+    /// Optional tone curve control points (x, y) in [0, 1].
+    /// Applied as a monotone cubic Hermite curve on L channel.
+    pub tone_curve: Option<Vec<(f32, f32)>>,
     /// Optional clarity/texture.
     pub clarity: Option<f32>,
     /// Optional sharpening amount.
@@ -160,6 +163,18 @@ impl Preset {
             s.contrast = 1.0 + (sig.contrast - 1.0) * t;
             s.skew = 0.5 + (sig.skew - 0.5) * t;
             pipe.push(Box::new(s));
+        }
+
+        // Optional tone curve (blended toward identity by lerping control points)
+        if let Some(ref points) = self.tone_curve {
+            if t > 0.01 {
+                let blended: Vec<(f32, f32)> = points
+                    .iter()
+                    .map(|&(x, y)| (x, x + (y - x) * t)) // lerp y toward x (identity)
+                    .collect();
+                let curve = ToneCurve::from_points(&blended);
+                pipe.push(Box::new(curve));
+            }
         }
 
         // Optional local tone map
@@ -459,20 +474,23 @@ fn film_warm() -> Preset {
     Preset {
         name: String::from("Film Warm"),
         category: PresetCategory::Film,
-        description: String::from("Warm analog film emulation"),
+        description: String::from("Warm analog film emulation with S-curve"),
         adjust: PresetAdjust {
             temperature: 0.12,
-            contrast: 0.08,
             saturation: 0.92,
             vibrance: 0.15,
             highlights: -0.1,
             black_point: 0.03,
             ..Default::default()
         },
-        sigmoid: Some(PresetSigmoid {
-            contrast: 1.3,
-            skew: 0.55,
-        }),
+        // Gentle S-curve: lift shadows slightly, compress highlights
+        tone_curve: Some(vec![
+            (0.0, 0.03),  // lifted blacks
+            (0.25, 0.30), // shadow lift
+            (0.5, 0.52),  // slight midtone push
+            (0.75, 0.73), // gentle highlight rolloff
+            (1.0, 0.97),  // compressed whites
+        ]),
         grain: Some(0.1),
         ..default_preset()
     }
@@ -623,6 +641,7 @@ fn default_preset() -> Preset {
         description: String::new(),
         adjust: PresetAdjust::default(),
         sigmoid: None,
+        tone_curve: None,
         clarity: None,
         sharpen: None,
         local_tonemap: None,

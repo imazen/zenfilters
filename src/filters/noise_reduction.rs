@@ -449,6 +449,9 @@ impl Filter for NoiseReduction {
         2 * max_step
     }
 
+    fn resize_phase(&self) -> crate::filter::ResizePhase {
+        crate::filter::ResizePhase::PreResize
+    }
     fn tag(&self) -> crate::filter_compat::FilterTag {
         crate::filter_compat::FilterTag::NoiseReduction
     }

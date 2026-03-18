@@ -58,6 +58,9 @@ impl Filter for Bloom {
         (self.sigma * 3.0).ceil() as u32
     }
 
+    fn resize_phase(&self) -> crate::filter::ResizePhase {
+        crate::filter::ResizePhase::PostResize
+    }
     fn tag(&self) -> crate::filter_compat::FilterTag {
         crate::filter_compat::FilterTag::Bloom
     }

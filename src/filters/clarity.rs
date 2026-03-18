@@ -59,6 +59,9 @@ impl Filter for Clarity {
         (self.sigma * 4.0 * 3.0).ceil() as u32
     }
 
+    fn resize_phase(&self) -> crate::filter::ResizePhase {
+        crate::filter::ResizePhase::PreResize
+    }
     fn tag(&self) -> crate::filter_compat::FilterTag {
         crate::filter_compat::FilterTag::Clarity
     }

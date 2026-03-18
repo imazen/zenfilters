@@ -43,6 +43,9 @@ impl Filter for Sharpen {
         (self.sigma * 3.0).ceil() as u32
     }
 
+    fn resize_phase(&self) -> crate::filter::ResizePhase {
+        crate::filter::ResizePhase::PreResize
+    }
     fn tag(&self) -> crate::filter_compat::FilterTag {
         crate::filter_compat::FilterTag::Sharpen
     }

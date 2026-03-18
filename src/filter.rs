@@ -47,9 +47,51 @@ pub trait Filter: Send + Sync {
         crate::filter_compat::FilterTag::Other
     }
 
+    /// When this filter should run relative to a resize operation.
+    ///
+    /// Filters return their preferred phase so a resize-aware pipeline
+    /// can split the filter stack into pre-resize and post-resize groups.
+    fn resize_phase(&self) -> ResizePhase {
+        ResizePhase::Either
+    }
+
     /// Apply the filter in-place to the given planes.
     ///
     /// `ctx` provides reusable scratch buffers — neighborhood filters should
     /// borrow temporary planes from `ctx` instead of allocating.
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext);
+}
+
+/// When a filter should run relative to a resize operation.
+///
+/// A resize-aware pipeline uses this to split filters into
+/// pre-resize and post-resize groups automatically.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ResizePhase {
+    /// Must run at full resolution before any downscale.
+    ///
+    /// Filters that operate at sub-pixel precision or whose sigma is
+    /// calibrated for full-resolution detail:
+    /// - Chromatic aberration (sub-pixel chroma shifts)
+    /// - Noise reduction (catches full-res noise before downscale averages it)
+    /// - Adaptive sharpen (preserves fine detail before blur)
+    /// - Clarity/texture (sigma is in absolute pixels)
+    PreResize,
+
+    /// Must run after resize, relative to output dimensions.
+    ///
+    /// Spatial effects whose coordinates are relative to the output frame:
+    /// - Grain (grain size relative to output pixels)
+    /// - Vignette (falloff relative to output frame)
+    /// - Bloom (glow relative to output viewing size)
+    PostResize,
+
+    /// Can run before or after resize with no quality difference.
+    ///
+    /// Per-pixel filters with no spatial dependency:
+    /// - Exposure, contrast, saturation, vibrance, temperature, tint
+    /// - Tone curves, color grading, levels
+    /// - All FusedAdjust operations
+    Either,
 }
