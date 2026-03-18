@@ -109,6 +109,6 @@ pub use tone_equalizer::ToneEqualizer;
 pub use vibrance::Vibrance;
 pub use vignette::Vignette;
 #[cfg(feature = "experimental")]
-pub use warp::{Warp, WarpBackground};
+pub use warp::{Warp, WarpBackground, WarpInterpolation};
 pub use white_point::WhitePoint;
 pub use whites_blacks::WhitesBlacks;
