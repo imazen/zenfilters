@@ -16,11 +16,18 @@ Before training a neural model, zenfilters needs all the adjustment capabilities
 - ~~B&W Channel Mixer~~ → `BwMixer` (8 per-color luminance weights, chroma-aware)
 - ~~Camera Calibration~~ → `CameraCalibration` (R/G/B primary hue+sat shifts, shadow tint)
 
+**DONE (2026-03-18, GEGL gap analysis):**
+- ~~Median Blur~~ → `MedianBlur` (neighborhood median, L-only or all channels, radius 1-5)
+- ~~Edge Detection~~ → `EdgeDetect` (Sobel + Laplacian, gradient magnitude on L, configurable strength)
+- ~~Geometric Transform~~ → `Warp` (experimental, 3×3 projective matrix, bilinear interp, rotation/deskew/affine/perspective)
+- ~~Masked Filter~~ → `masked::MaskedFilter` (linear gradient, radial gradient, luminance range masks)
+
 **Still missing (lower priority or needs external data):**
 - **Tone Curve Saturation refinement** — per-region saturation on the curve
 - **Lens Blur** — AI depth-based bokeh with bokeh shape styles
-- **Transform/Upright** — perspective correction (auto, guided, level, vertical, full)
+- **Transform/Upright** — perspective correction (auto, guided, level, vertical, full). Warp provides raw matrix support; needs auto-detection via edge analysis.
 - **Lens Distortion** — barrel/pincushion correction with profiles
+- **Blend Layers** — Oklab-space compositing of two planes with blend modes (design notes in `masked.rs`)
 
 ### 2. zentract Integration (Neural Model)
 
