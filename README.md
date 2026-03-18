@@ -139,13 +139,7 @@ let issues = validate_pipeline(&tags);
 
 ## Resize-aware filtering
 
-Each filter declares when it should run relative to a resize operation:
-
-```rust
-use zenfilters::ResizePhase;
-
-filter.resize_phase() // → PreResize, PostResize, or Either
-```
+When processing includes geometry changes (crop, resize, orient, pad), filters must run at the correct stage. Each filter declares its phase via `resize_phase()`:
 
 | Phase | Filters | Reason |
 |-------|---------|--------|
@@ -153,7 +147,58 @@ filter.resize_phase() // → PreResize, PostResize, or Either
 | **PostResize** | Grain, vignette, bloom | Spatial effects relative to output frame |
 | **Either** | Exposure, contrast, curves, saturation, vibrance, temperature, tint, color grading, levels | Per-pixel, no spatial dependency |
 
-A resize-aware pipeline can split the filter stack automatically. For pre-resize filters applied after downscale, adjust sigma: `sigma_effective = sigma * (output / input)`.
+### ResizePipeline
+
+Automatically splits filters into pre-resize and post-resize groups:
+
+```rust
+use zenfilters::resize_pipeline::{ResizePipeline, LayoutSpec, CropRect};
+use zenfilters::filters::*;
+
+// From a zenlayout plan (crop + resize + pad):
+let spec = LayoutSpec {
+    source_width: 4000, source_height: 3000,
+    crop: Some(CropRect { x: 200, y: 150, w: 3600, h: 2700 }),
+    output_width: 1200, output_height: 900,
+    canvas_width: 1200, canvas_height: 900,
+    placement_x: 0, placement_y: 0,
+};
+
+let mut rp = ResizePipeline::from_layout(spec);
+rp.push(Box::new(NoiseReduction { luminance: 0.5, ..Default::default() }));
+rp.push(Box::new(Exposure { stops: 0.3 }));  // Either → goes pre
+rp.push(Box::new(Grain { amount: 0.2, ..Default::default() }));
+
+let plan = rp.build();
+// plan.pre  → apply at 3600×2700 (cropped source)
+// plan.post → apply at 1200×900  (output canvas)
+// plan.layout.scale_factor() → 0.33
+```
+
+The caller owns the resize step (via zenresize):
+
+```text
+Decode → Crop → [plan.pre filters] → Resize → Orient → [plan.post filters] → Encode
+```
+
+For simple resize-only workflows: `ResizePipeline::simple(in_w, in_h, out_w, out_h)`.
+
+### zenlayout integration
+
+zenlayout computes the geometry (crop, resize, orient, pad, codec alignment). zenfilters consumes it via `LayoutSpec`. The orchestrator (imageflow4 or your app) connects the three:
+
+```text
+zenlayout::Pipeline → LayoutPlan → zenfilters::LayoutSpec
+                                 → zenresize (pixel resampling)
+                                 → zenfilters pre/post pipelines
+```
+
+`LayoutSpec` fields map directly from zenlayout's `LayoutPlan`:
+- `source_width/height` ← plan input dimensions
+- `crop` ← plan.source_crop
+- `output_width/height` ← plan.resize_to
+- `canvas_width/height` ← plan.canvas
+- `placement_x/y` ← plan.placement
 
 ## Filters (51)
 
