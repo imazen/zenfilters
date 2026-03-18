@@ -162,6 +162,39 @@ impl Pipeline {
         }
     }
 
+    /// Scale and split in one call.
+    ///
+    /// If `reference_width` is set, scales PreResize filters for `input_width`
+    /// and PostResize filters for `output_width`, then splits.
+    ///
+    /// ```ignore
+    /// let (pre, post) = pipe.split_scaled(3840, 1920);
+    /// pre.apply(&src, &mut buf, 3840, 2160, 3, &mut ctx)?;
+    /// // ... resize ...
+    /// post.apply(&resized, &mut dst, 1920, 1080, 3, &mut ctx)?;
+    /// ```
+    pub fn split_scaled(mut self, input_width: u32, output_width: u32) -> (Self, Self) {
+        use crate::filter::ResizePhase;
+
+        if let Some(ref_w) = self.config.reference_width {
+            let pre_scale = input_width as f32 / ref_w as f32;
+            let post_scale = output_width as f32 / ref_w as f32;
+
+            for filter in &mut self.filters {
+                let scale = match filter.resize_phase() {
+                    ResizePhase::PreResize | ResizePhase::Either => pre_scale,
+                    ResizePhase::PostResize => post_scale,
+                };
+                if (scale - 1.0).abs() > 0.01 {
+                    filter.scale_for_resolution(scale);
+                }
+            }
+            self.config.reference_width = None;
+        }
+
+        self.split_for_resize()
+    }
+
     /// Split this pipeline into pre-resize and post-resize halves.
     ///
     /// Filters are classified by their [`ResizePhase`](crate::filter::ResizePhase):
