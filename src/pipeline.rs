@@ -77,7 +77,7 @@ pub struct Pipeline {
     filters: Vec<Box<dyn Filter>>,
     m1: GamutMatrix,
     m1_inv: GamutMatrix,
-    gamut_lut: Option<GamutBoundaryLut>,
+    gamut_lut: Option<alloc::sync::Arc<GamutBoundaryLut>>,
 }
 
 impl Pipeline {
@@ -90,7 +90,9 @@ impl Pipeline {
             .ok_or_else(|| at!(PipelineError::UnsupportedPrimaries(config.primaries)))?;
 
         let gamut_lut = match config.gamut_mapping {
-            GamutMapping::SoftCompress { .. } => Some(GamutBoundaryLut::new(&m1_inv)),
+            GamutMapping::SoftCompress { .. } => {
+                Some(alloc::sync::Arc::new(GamutBoundaryLut::new(&m1_inv)))
+            }
             _ => None,
         };
 
@@ -116,6 +118,50 @@ impl Pipeline {
     /// Whether the pipeline has no filters.
     pub fn is_empty(&self) -> bool {
         self.filters.is_empty()
+    }
+
+    /// Split this pipeline into pre-resize and post-resize halves.
+    ///
+    /// Filters are classified by their [`ResizePhase`](crate::filter::ResizePhase):
+    /// - `PreResize` → pre (full-res detail: NR, sharpen, clarity, CA)
+    /// - `PostResize` → post (output-relative: grain, vignette, bloom)
+    /// - `Either` → pre (more precision at full resolution)
+    ///
+    /// Both halves share the same `PipelineConfig` (primaries, gamut mapping).
+    ///
+    /// ```ignore
+    /// let (pre, post) = pipeline.split_for_resize();
+    ///
+    /// pre.apply(&src, &mut full_res, in_w, in_h, 3, &mut ctx)?;
+    /// // ... resize full_res → resized ...
+    /// post.apply(&resized, &mut dst, out_w, out_h, 3, &mut ctx)?;
+    /// ```
+    pub fn split_for_resize(self) -> (Self, Self) {
+        use crate::filter::ResizePhase;
+
+        let mut pre = Self {
+            config: self.config.clone(),
+            filters: Vec::new(),
+            m1: self.m1,
+            m1_inv: self.m1_inv,
+            gamut_lut: self.gamut_lut.clone(),
+        };
+        let mut post = Self {
+            config: self.config,
+            filters: Vec::new(),
+            m1: self.m1,
+            m1_inv: self.m1_inv,
+            gamut_lut: self.gamut_lut,
+        };
+
+        for filter in self.filters {
+            match filter.resize_phase() {
+                ResizePhase::PreResize | ResizePhase::Either => pre.filters.push(filter),
+                ResizePhase::PostResize => post.filters.push(filter),
+            }
+        }
+
+        (pre, post)
     }
 
     /// Whether any filter requires neighborhood access (spatial operations).
