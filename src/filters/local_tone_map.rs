@@ -79,6 +79,9 @@ impl Filter for LocalToneMap {
         (self.sigma * 3.0).ceil() as u32
     }
 
+    fn scale_for_resolution(&mut self, scale: f32) {
+        self.sigma = (self.sigma * scale).max(0.5);
+    }
     fn tag(&self) -> crate::filter_compat::FilterTag {
         crate::filter_compat::FilterTag::LocalToneMap
     }

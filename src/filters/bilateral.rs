@@ -63,6 +63,9 @@ impl Filter for Bilateral {
     fn resize_phase(&self) -> crate::filter::ResizePhase {
         crate::filter::ResizePhase::PreResize
     }
+    fn scale_for_resolution(&mut self, scale: f32) {
+        self.spatial_sigma = (self.spatial_sigma * scale).max(0.5);
+    }
     fn tag(&self) -> crate::filter_compat::FilterTag {
         crate::filter_compat::FilterTag::Bilateral
     }

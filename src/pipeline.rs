@@ -32,6 +32,16 @@ pub struct PipelineConfig {
     pub reference_white: f32,
     /// Gamut mapping strategy applied after filters, before gather.
     pub gamut_mapping: GamutMapping,
+    /// Reference width for resolution-independent parameters.
+    ///
+    /// When set, pixel-space sigma values in neighborhood filters are
+    /// automatically scaled at apply time: `sigma *= actual_width / reference_width`.
+    ///
+    /// This means you can define filter parameters once (e.g., calibrated for 4K)
+    /// and they'll produce visually identical results at any resolution.
+    ///
+    /// `None` (default): no scaling, sigma values are used as-is.
+    pub reference_width: Option<u32>,
 }
 
 impl Default for PipelineConfig {
@@ -40,6 +50,7 @@ impl Default for PipelineConfig {
             primaries: ColorPrimaries::Bt709,
             reference_white: 1.0,
             gamut_mapping: GamutMapping::Clip,
+            reference_width: None,
         }
     }
 }
@@ -118,6 +129,37 @@ impl Pipeline {
     /// Whether the pipeline has no filters.
     pub fn is_empty(&self) -> bool {
         self.filters.is_empty()
+    }
+
+    /// Scale all pixel-space parameters for the given output width.
+    ///
+    /// Requires `reference_width` to be set in `PipelineConfig`. Calls
+    /// `scale_for_resolution(actual / reference)` on every filter.
+    ///
+    /// Call this once before `apply()` when the output resolution differs
+    /// from the reference resolution the parameters were designed for.
+    ///
+    /// ```ignore
+    /// let mut pipe = Pipeline::new(PipelineConfig {
+    ///     reference_width: Some(3840), // parameters calibrated for 4K
+    ///     ..Default::default()
+    /// })?;
+    /// pipe.push(Box::new(Clarity { sigma: 4.0, amount: 0.3 }));
+    ///
+    /// pipe.scale_to_width(1920); // clarity sigma becomes 2.0
+    /// pipe.apply(&src, &mut dst, 1920, 1080, 3, &mut ctx)?;
+    /// ```
+    pub fn scale_to_width(&mut self, actual_width: u32) {
+        if let Some(ref_w) = self.config.reference_width {
+            let scale = actual_width as f32 / ref_w as f32;
+            if (scale - 1.0).abs() > 0.01 {
+                for filter in &mut self.filters {
+                    filter.scale_for_resolution(scale);
+                }
+            }
+            // Clear reference_width so it's not applied again
+            self.config.reference_width = None;
+        }
     }
 
     /// Split this pipeline into pre-resize and post-resize halves.

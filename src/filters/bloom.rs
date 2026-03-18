@@ -61,6 +61,9 @@ impl Filter for Bloom {
     fn resize_phase(&self) -> crate::filter::ResizePhase {
         crate::filter::ResizePhase::PostResize
     }
+    fn scale_for_resolution(&mut self, scale: f32) {
+        self.sigma = (self.sigma * scale).max(1.0);
+    }
     fn tag(&self) -> crate::filter_compat::FilterTag {
         crate::filter_compat::FilterTag::Bloom
     }

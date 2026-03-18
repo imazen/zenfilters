@@ -166,16 +166,27 @@ pre.apply(&src, &mut full_res, in_w, in_h, 3, &mut ctx)?;
 post.apply(&resized, &mut dst, out_w, out_h, 3, &mut ctx)?;
 ```
 
-### Sigma scaling
+### Resolution-independent parameters
 
-When applying pre-resize filters at a different resolution, adjust sigma values:
+Set `reference_width` in `PipelineConfig` to make all pixel-space parameters (sigma, noise_floor, grain size) automatically scale to any output resolution:
 
 ```rust
-use zenfilters::resize_pipeline::scale_sigma;
+let mut pipe = Pipeline::new(PipelineConfig {
+    reference_width: Some(3840), // parameters calibrated for 4K
+    ..Default::default()
+})?;
+pipe.push(Box::new(Clarity { sigma: 4.0, amount: 0.3 }));
+pipe.push(Box::new(Grain { amount: 0.2, size: 1.5, seed: 0 }));
 
-let scale = out_w as f32 / in_w as f32; // 0.5 for 2× downscale
-clarity.sigma = scale_sigma(clarity.sigma, scale);
+// At 1080p: sigma auto-scales to 2.0, grain size to 0.75
+pipe.scale_to_width(1920);
+pipe.apply(&src, &mut dst, 1920, 1080, 3, &mut ctx)?;
+
+// At 8K: sigma auto-scales to 8.0, grain size to 3.0
+// (rebuild pipeline from original params, or keep a template)
 ```
+
+Filters implement `scale_for_resolution(scale)` to adjust their pixel-space fields. The pipeline calls it on all filters when `scale_to_width()` is invoked. One-shot — clears `reference_width` after scaling so it's not applied twice.
 
 ## Filters (51)
 

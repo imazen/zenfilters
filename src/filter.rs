@@ -55,6 +55,14 @@ pub trait Filter: Send + Sync {
         ResizePhase::Either
     }
 
+    /// Scale pixel-space parameters for a different resolution.
+    ///
+    /// `scale` = actual_width / reference_width.
+    /// Example: parameters designed for 4K, running at 1080p → scale = 0.5.
+    ///
+    /// Default: no-op. Filters with pixel-space sigma override this.
+    fn scale_for_resolution(&mut self, _scale: f32) {}
+
     /// Apply the filter in-place to the given planes.
     ///
     /// `ctx` provides reusable scratch buffers — neighborhood filters should
