@@ -89,6 +89,8 @@ pub mod masked;
 
 #[cfg(feature = "experimental")]
 pub mod document;
+#[cfg(feature = "experimental")]
+pub mod segment;
 
 #[cfg(feature = "buffer")]
 mod convenience;
