@@ -87,6 +87,9 @@ mod simd;
 pub mod slider;
 pub mod masked;
 
+#[cfg(feature = "experimental")]
+pub mod document;
+
 #[cfg(feature = "buffer")]
 mod convenience;
 #[cfg(feature = "srgb-filters")]
