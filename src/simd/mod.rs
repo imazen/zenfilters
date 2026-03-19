@@ -255,6 +255,7 @@ pub(crate) fn fused_adjust(
 }
 
 /// Dispatch: fused interleaved per-pixel adjustment (RGB→Oklab→adjust→RGB in one pass).
+#[allow(dead_code, clippy::too_many_arguments)]
 pub(crate) fn fused_interleaved_adjust(
     src: &[f32],
     dst: &mut [f32],

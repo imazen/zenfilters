@@ -1,3 +1,4 @@
+use alloc::{boxed::Box, vec::Vec};
 use whereat::{At, at};
 use zenpixels::ColorPrimaries;
 use zenpixels_convert::gamut::GamutMatrix;
@@ -76,7 +77,7 @@ impl core::fmt::Display for PipelineError {
     }
 }
 
-impl std::error::Error for PipelineError {}
+impl core::error::Error for PipelineError {}
 
 /// A composable filter pipeline operating on planar Oklab f32.
 ///

@@ -1,11 +1,10 @@
-//! Document quadrilateral detection — find the 4 corners of a document.
 //!
 //! Given LSD line segments, generates candidate quadrilaterals and scores them
 //! by edge response, inside/outside contrast, and geometric plausibility.
 //! Returns the best-scoring document boundary.
+use alloc::{boxed::Box, string::String, sync::Arc, vec, vec::Vec};
 
 extern crate alloc;
-use alloc::vec::Vec;
 
 use super::lsd::LineSegment;
 
@@ -73,7 +72,10 @@ pub fn find_document_quad(
 
     // Split horizontals into top/bottom candidates by y position
     let mid_y = h * 0.5;
-    let top_h: Vec<_> = horizontals.iter().filter(|s| midpoint_y(s) < mid_y).collect();
+    let top_h: Vec<_> = horizontals
+        .iter()
+        .filter(|s| midpoint_y(s) < mid_y)
+        .collect();
     let bot_h: Vec<_> = horizontals
         .iter()
         .filter(|s| midpoint_y(s) >= mid_y)
@@ -82,7 +84,10 @@ pub fn find_document_quad(
     // Split verticals into left/right by x position
     let mid_x = w * 0.5;
     let left_v: Vec<_> = verticals.iter().filter(|s| midpoint_x(s) < mid_x).collect();
-    let right_v: Vec<_> = verticals.iter().filter(|s| midpoint_x(s) >= mid_x).collect();
+    let right_v: Vec<_> = verticals
+        .iter()
+        .filter(|s| midpoint_x(s) >= mid_x)
+        .collect();
 
     if top_h.is_empty() || bot_h.is_empty() || left_v.is_empty() || right_v.is_empty() {
         return None;
@@ -131,13 +136,7 @@ pub fn find_document_quad(
                         continue;
                     }
 
-                    let score = score_quad(
-                        &corners,
-                        l_plane,
-                        grad_mag,
-                        width,
-                        height,
-                    );
+                    let score = score_quad(&corners, l_plane, grad_mag, width, height);
 
                     if score > best.as_ref().map_or(0.0, |b| b.score) {
                         best = Some(DocumentQuad { corners, score });
@@ -186,11 +185,7 @@ pub fn score_quad(
                 }
             }
         }
-        if count > 0 {
-            sum / count as f32
-        } else {
-            0.0
-        }
+        if count > 0 { sum / count as f32 } else { 0.0 }
     };
 
     // 2. Inside/outside contrast (Tropin et al. 2020 approach)
@@ -367,12 +362,7 @@ mod tests {
 
     #[test]
     fn polygon_area_correct() {
-        let quad = [
-            (0.0f32, 0.0),
-            (100.0, 0.0),
-            (100.0, 100.0),
-            (0.0, 100.0),
-        ];
+        let quad = [(0.0f32, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)];
         let area = polygon_area(&quad);
         assert!(
             (area - 10000.0).abs() < 1.0,
@@ -382,12 +372,7 @@ mod tests {
 
     #[test]
     fn point_in_quad_works() {
-        let quad = [
-            (10.0f32, 10.0),
-            (90.0, 10.0),
-            (90.0, 90.0),
-            (10.0, 90.0),
-        ];
+        let quad = [(10.0f32, 10.0), (90.0, 10.0), (90.0, 90.0), (10.0, 90.0)];
         assert!(point_in_quad(50.0, 50.0, &quad)); // center
         assert!(!point_in_quad(0.0, 0.0, &quad)); // outside
         assert!(!point_in_quad(95.0, 50.0, &quad)); // outside right
@@ -480,13 +465,11 @@ mod tests {
             grad_mag[79 * w + x] = 0.5;
         }
 
-        let corners = [
-            (20.0f32, 20.0),
-            (79.0, 20.0),
-            (79.0, 79.0),
-            (20.0, 79.0),
-        ];
+        let corners = [(20.0f32, 20.0), (79.0, 20.0), (79.0, 79.0), (20.0, 79.0)];
         let score = score_quad(&corners, &l_plane, &grad_mag, w as u32, h as u32);
-        assert!(score > 0.0, "matching quad should have positive score, got {score}");
+        assert!(
+            score > 0.0,
+            "matching quad should have positive score, got {score}"
+        );
     }
 }

@@ -1,4 +1,3 @@
-//! Line Segment Detector (LSD) — parameter-free line detection.
 //!
 //! Implements the algorithm from Grompone von Gioi et al. (IPOL 2012).
 //! Given an L plane, detects line segments with sub-pixel accuracy and
@@ -11,9 +10,9 @@
 //!    of pixels with similar level-line angles
 //! 4. Fit a bounding rectangle to each region
 //! 5. Validate via NFA (reject segments likely due to noise)
+use alloc::{boxed::Box, string::String, sync::Arc, vec, vec::Vec};
 
 extern crate alloc;
-use alloc::vec::Vec;
 
 use crate::context::FilterContext;
 
@@ -387,12 +386,7 @@ fn log_gamma(x: f64) -> f64 {
 
 /// Access the gradient magnitude buffer (for reuse in quad scoring).
 /// Re-runs the gradient computation. For efficiency, callers should cache this.
-pub fn compute_gradient_magnitude(
-    l_plane: &[f32],
-    grad_mag: &mut [f32],
-    width: u32,
-    height: u32,
-) {
+pub fn compute_gradient_magnitude(l_plane: &[f32], grad_mag: &mut [f32], width: u32, height: u32) {
     let w = width as usize;
     let h = height as usize;
     // Simple Sobel-like 2×2 gradient (matches LSD's internal computation)
@@ -457,7 +451,11 @@ mod tests {
             "best segment should be horizontal, angle={:.2}°",
             best.angle.to_degrees()
         );
-        assert!(best.length > 50.0, "segment should be long, got {:.1}", best.length);
+        assert!(
+            best.length > 50.0,
+            "segment should be long, got {:.1}",
+            best.length
+        );
     }
 
     #[test]
@@ -475,8 +473,7 @@ mod tests {
         let best = &segs[0];
         // Should be roughly vertical (angle near ±π/2)
         let abs_angle = best.angle.abs();
-        let is_vertical =
-            (abs_angle - core::f32::consts::FRAC_PI_2).abs() < 0.5;
+        let is_vertical = (abs_angle - core::f32::consts::FRAC_PI_2).abs() < 0.5;
         assert!(
             is_vertical,
             "best segment should be vertical, angle={:.2}°",

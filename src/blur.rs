@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 /// Maximum supported kernel radius. Sigma 50 → radius 150 → 301 weights.
 /// This covers any realistic blur sigma.
 const MAX_KERNEL_SIZE: usize = 512;

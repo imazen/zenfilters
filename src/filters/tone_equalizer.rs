@@ -4,6 +4,7 @@ use crate::filter::Filter;
 use crate::filters::guided_filter::guided_filter_plane;
 use crate::param_schema::*;
 use crate::planes::OklabPlanes;
+use alloc::{vec, vec::Vec};
 
 /// Zone-based luminance adjustment with edge-aware masking.
 ///
@@ -124,11 +125,11 @@ impl Describe for ToneEqualizer {
     fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
         match name {
             "zones" => {
-                if let ParamValue::FloatArray(ref arr) = value {
-                    if arr.len() == 9 {
-                        self.zones.copy_from_slice(arr);
-                        return true;
-                    }
+                if let ParamValue::FloatArray(ref arr) = value
+                    && arr.len() == 9
+                {
+                    self.zones.copy_from_slice(arr);
+                    return true;
                 }
                 return false;
             }
@@ -164,10 +165,10 @@ impl ToneEqualizer {
         let mut lut = vec![1.0f32; lut_size];
 
         const ZONE_CENTERS: [f32; 9] = [0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0];
-        const ZONE_WIDTH: f32 = 0.15;
+        const _ZONE_WIDTH: f32 = 0.15;
         const INV_2_WIDTH_SQ: f32 = 1.0 / (2.0 * 0.15 * 0.15);
 
-        for i in 0..lut_size {
+        for (i, lut_val) in lut.iter_mut().enumerate().take(lut_size) {
             let l = i as f32 / lut_max;
             let mut total_weight = 0.0f32;
             let mut total_comp = 0.0f32;
@@ -181,7 +182,7 @@ impl ToneEqualizer {
                 total_comp += weight * factor;
             }
 
-            lut[i] = if total_weight > 1e-8 {
+            *lut_val = if total_weight > 1e-8 {
                 total_comp / total_weight
             } else {
                 1.0
@@ -252,8 +253,8 @@ impl Filter for ToneEqualizer {
         // and the LUT provides the smooth compensation factor.
         let lut_max = crate::LUT_MAX;
         let scale = lut_max as f32;
-        for i in 0..n {
-            let guide_l = guide[i].clamp(0.0, 1.0);
+        for (l, &g) in planes.l.iter_mut().zip(guide.iter()).take(n) {
+            let guide_l = g.clamp(0.0, 1.0);
             let x = guide_l * scale;
             let idx = x as usize;
             let frac = x - idx as f32;
@@ -264,7 +265,7 @@ impl Filter for ToneEqualizer {
                 lut[lut_max]
             };
 
-            planes.l[i] = (planes.l[i] * factor).max(0.0);
+            *l = (*l * factor).max(0.0);
         }
 
         ctx.return_f32(guide);

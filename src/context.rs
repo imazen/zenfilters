@@ -1,3 +1,5 @@
+use alloc::{vec, vec::Vec};
+
 /// Reusable scratch buffer pool for filter pipeline operations.
 ///
 /// `FilterContext` eliminates per-call heap allocations by maintaining a

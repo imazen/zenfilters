@@ -70,11 +70,12 @@ impl Describe for BwMixer {
     }
 
     fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
-        if let ParamValue::FloatArray(ref arr) = value {
-            if name == "weights" && arr.len() == 8 {
-                self.weights.copy_from_slice(arr);
-                return true;
-            }
+        if let ParamValue::FloatArray(ref arr) = value
+            && name == "weights"
+            && arr.len() == 8
+        {
+            self.weights.copy_from_slice(arr);
+            return true;
         }
         false
     }

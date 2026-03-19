@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use alloc::{vec, vec::Vec};
 use archmage::prelude::*;
 use magetypes::simd::f32x8;
 
@@ -1703,32 +1704,32 @@ fn stackblur_plane_simd(
         // Fill left side + center of stack (edge-replicated from row 0)
         let first: &[f32; 8] = h_buf[x..x + 8].try_into().unwrap();
         let first_v = f32x8::load(token, first);
-        for i in 0..=r {
-            stack_v[i] = first_v.to_array();
+        for sv in stack_v.iter_mut().take(r + 1) {
+            *sv = first_v.to_array();
         }
 
         // Fill right side of stack
-        for i in (r + 1)..stack_size {
+        for (i, sv) in stack_v.iter_mut().enumerate().take(stack_size).skip(r + 1) {
             let offset = i - r; // row offset from center (positive)
             let sy = offset.min(h - 1);
             let chunk: &[f32; 8] = h_buf[sy * w + x..sy * w + x + 8].try_into().unwrap();
-            stack_v[i] = f32x8::load(token, chunk).to_array();
+            *sv = f32x8::load(token, chunk).to_array();
         }
 
         // Compute initial weighted sum
-        for i in 0..stack_size {
-            let dist = if i <= r { r - i } else { i - r };
+        for (i, sv) in stack_v.iter().enumerate().take(stack_size) {
+            let dist = r.abs_diff(i);
             let weight = f32x8::splat(token, (r + 1 - dist) as f32);
-            let val = f32x8::from_array(token, stack_v[i]);
+            let val = f32x8::from_array(token, *sv);
             sum = val.mul_add(weight, sum);
         }
 
         // Initial sum_out (positions 0..=r) and sum_in (positions r+1..stack_size)
-        for i in 0..=r {
-            sum_out += f32x8::from_array(token, stack_v[i]);
+        for sv in stack_v.iter().take(r + 1) {
+            sum_out += f32x8::from_array(token, *sv);
         }
-        for i in (r + 1)..stack_size {
-            sum_in += f32x8::from_array(token, stack_v[i]);
+        for sv in stack_v.iter().take(stack_size).skip(r + 1) {
+            sum_in += f32x8::from_array(token, *sv);
         }
 
         let mut sp = 0usize;

@@ -38,6 +38,7 @@
 use crate::blur::{GaussianKernel, gaussian_blur_plane};
 use crate::context::FilterContext;
 use crate::planes::OklabPlanes;
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
 /// Smoothstep: 0 when x <= edge0, 1 when x >= edge1, smooth cubic in between.
 #[inline]
@@ -161,11 +162,7 @@ impl SegmentMasks {
     /// This shares intermediate results (local mean, local variance, chroma)
     /// across masks for efficiency. The blur kernel is computed once at the
     /// configured sigma and reused for all local statistics.
-    pub fn compute(
-        planes: &OklabPlanes,
-        config: &SegmentConfig,
-        ctx: &mut FilterContext,
-    ) -> Self {
+    pub fn compute(planes: &OklabPlanes, config: &SegmentConfig, ctx: &mut FilterContext) -> Self {
         let w = planes.width;
         let h = planes.height;
         let n = planes.pixel_count();
@@ -209,7 +206,11 @@ impl SegmentMasks {
         // --- Highlight mask ---
         let mut highlight = Vec::with_capacity(n);
         for i in 0..n {
-            highlight.push(smoothstep(config.highlight_lo, config.highlight_hi, planes.l[i]));
+            highlight.push(smoothstep(
+                config.highlight_lo,
+                config.highlight_hi,
+                planes.l[i],
+            ));
         }
 
         // --- Midtone mask (bell curve) ---
@@ -410,8 +411,7 @@ impl SegmentMasks {
         let n = planes.pixel_count();
         let mut mask = Vec::with_capacity(n);
         for i in 0..n {
-            let chroma =
-                (planes.a[i] * planes.a[i] + planes.b[i] * planes.b[i]).sqrt();
+            let chroma = (planes.a[i] * planes.a[i] + planes.b[i] * planes.b[i]).sqrt();
             mask.push(smoothstep(config.saturated_lo, config.saturated_hi, chroma));
         }
         mask
@@ -427,8 +427,7 @@ impl SegmentMasks {
 
         let mut mask = Vec::with_capacity(n);
         for i in 0..n {
-            let chroma =
-                (planes.a[i] * planes.a[i] + planes.b[i] * planes.b[i]).sqrt();
+            let chroma = (planes.a[i] * planes.a[i] + planes.b[i] * planes.b[i]).sqrt();
             let hue = planes.b[i].atan2(planes.a[i]);
             let hue = if hue < 0.0 {
                 hue + core::f32::consts::TAU
@@ -446,11 +445,7 @@ impl SegmentMasks {
     }
 
     /// Compute only the sky mask.
-    pub fn sky(
-        planes: &OklabPlanes,
-        config: &SegmentConfig,
-        ctx: &mut FilterContext,
-    ) -> Vec<f32> {
+    pub fn sky(planes: &OklabPlanes, config: &SegmentConfig, ctx: &mut FilterContext) -> Vec<f32> {
         let w = planes.width;
         let h = planes.height;
         let n = planes.pixel_count();
@@ -581,10 +576,7 @@ mod tests {
         let config = SegmentConfig::default();
         let mask = SegmentMasks::highlight(&planes, &config);
         for &v in &mask {
-            assert!(
-                v < 0.01,
-                "dark pixel highlight should be ~0.0, got {v}"
-            );
+            assert!(v < 0.01, "dark pixel highlight should be ~0.0, got {v}");
         }
     }
 
@@ -631,10 +623,7 @@ mod tests {
         let mask = SegmentMasks::high_texture(&planes, &config, &mut ctx);
         // Uniform image has zero local variance -> texture should be ~0
         for &v in &mask {
-            assert!(
-                v < 0.3,
-                "uniform image texture mask should be low, got {v}"
-            );
+            assert!(v < 0.3, "uniform image texture mask should be low, got {v}");
         }
     }
 
@@ -656,8 +645,7 @@ mod tests {
         let mask = SegmentMasks::high_texture(&planes, &config, &mut ctx);
 
         // Interior pixels should have high texture value
-        let interior_mean: f32 = mask[n / 4..3 * n / 4].iter().sum::<f32>()
-            / (n / 2) as f32;
+        let interior_mean: f32 = mask[n / 4..3 * n / 4].iter().sum::<f32>() / (n / 2) as f32;
         assert!(
             interior_mean > 0.5,
             "checkerboard texture should be high, mean = {interior_mean}"
@@ -774,9 +762,9 @@ mod tests {
         let planes = OklabPlanes {
             width: w,
             height: h,
-            l: vec![0.75; n],    // bright
-            a: vec![0.0; n],     // neutral a
-            b: vec![-0.05; n],   // blue
+            l: vec![0.75; n],  // bright
+            a: vec![0.0; n],   // neutral a
+            b: vec![-0.05; n], // blue
             alpha: None,
         };
         let config = SegmentConfig::default();
@@ -792,8 +780,10 @@ mod tests {
 
         // Bottom rows should have lower sky mask (y_weight drops off)
         let last_row_start = ((h - 1) as usize) * (w as usize);
-        let bottom_row_mean: f32 =
-            mask[last_row_start..last_row_start + w as usize].iter().sum::<f32>() / w as f32;
+        let bottom_row_mean: f32 = mask[last_row_start..last_row_start + w as usize]
+            .iter()
+            .sum::<f32>()
+            / w as f32;
         assert!(
             bottom_row_mean < top_row_mean,
             "bottom row sky mask ({bottom_row_mean}) should be less than top ({top_row_mean})"
@@ -823,10 +813,7 @@ mod tests {
         let mut ctx = FilterContext::new();
         let mask = SegmentMasks::sky(&planes, &config, &mut ctx);
         for &v in &mask {
-            assert!(
-                v < 0.01,
-                "dark pixel should have zero sky mask, got {v}"
-            );
+            assert!(v < 0.01, "dark pixel should have zero sky mask, got {v}");
         }
     }
 

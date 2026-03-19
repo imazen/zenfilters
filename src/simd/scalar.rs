@@ -380,7 +380,7 @@ pub(super) fn adaptive_sharpen_apply_impl_scalar(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(dead_code, clippy::too_many_arguments)]
 pub(super) fn fused_interleaved_adjust_impl_scalar(
     _token: ScalarToken,
     src: &[f32],

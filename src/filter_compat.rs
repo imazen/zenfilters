@@ -1,4 +1,3 @@
-//! Filter compatibility rules: conflicts, ordering constraints, and safe ranges.
 //!
 //! These rules prevent common mistakes when building filter pipelines:
 //! - Mutually exclusive filters (e.g., two different tone mappers)
@@ -8,7 +7,6 @@
 //! The pipeline can use [`validate_pipeline`] to check for problems before
 //! processing, and the autotune system uses these rules to avoid generating
 //! conflicting parameter combinations.
-
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -200,15 +198,15 @@ pub fn validate_pipeline(tags: &[FilterTag]) -> Vec<CompatIssue> {
     for (first, second) in ORDER_CONSTRAINTS {
         let pos_first = tags.iter().rposition(|t| t == first);
         let pos_second = tags.iter().position(|t| t == second);
-        if let (Some(pf), Some(ps)) = (pos_first, pos_second) {
-            if pf > ps {
-                issues.push(CompatIssue {
-                    severity: "error",
-                    message: alloc::format!(
-                        "{first:?} must come before {second:?} (denoise before sharpen, recovery before tuning)"
-                    ),
-                });
-            }
+        if let (Some(pf), Some(ps)) = (pos_first, pos_second)
+            && pf > ps
+        {
+            issues.push(CompatIssue {
+                severity: "error",
+                message: alloc::format!(
+                    "{first:?} must come before {second:?} (denoise before sharpen, recovery before tuning)"
+                ),
+            });
         }
     }
 

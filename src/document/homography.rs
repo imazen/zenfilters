@@ -147,12 +147,7 @@ mod tests {
 
     #[test]
     fn identity_mapping() {
-        let points = [
-            (0.0f32, 0.0),
-            (100.0, 0.0),
-            (100.0, 100.0),
-            (0.0, 100.0),
-        ];
+        let points = [(0.0f32, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)];
         let h = compute_homography(&points, &points).unwrap();
 
         // Should be approximately identity: [1 0 0; 0 1 0; 0 0 1]
@@ -175,12 +170,7 @@ mod tests {
             (110.0, 120.0),
             (10.0, 120.0),
         ];
-        let dst = [
-            (0.0f32, 0.0),
-            (100.0, 0.0),
-            (100.0, 100.0),
-            (0.0, 100.0),
-        ];
+        let dst = [(0.0f32, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)];
         let h = compute_homography(&src, &dst).unwrap();
 
         // Map dst (0,0) → should give src (10,20)
@@ -202,17 +192,12 @@ mod tests {
     fn perspective_transform() {
         // Trapezoid → rectangle (simulated perspective correction)
         let src = [
-            (20.0f32, 10.0),  // TL (shifted inward at top)
-            (80.0, 10.0),     // TR
-            (100.0, 90.0),    // BR (wider at bottom)
-            (0.0, 90.0),      // BL
+            (20.0f32, 10.0), // TL (shifted inward at top)
+            (80.0, 10.0),    // TR
+            (100.0, 90.0),   // BR (wider at bottom)
+            (0.0, 90.0),     // BL
         ];
-        let dst = [
-            (0.0f32, 0.0),
-            (100.0, 0.0),
-            (100.0, 100.0),
-            (0.0, 100.0),
-        ];
+        let dst = [(0.0f32, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)];
         let h = compute_homography(&src, &dst);
         assert!(h.is_some(), "perspective transform should be solvable");
 
@@ -229,12 +214,7 @@ mod tests {
 
     #[test]
     fn rectify_quad_produces_valid_matrix() {
-        let corners = [
-            (10.0f32, 5.0),
-            (90.0, 8.0),
-            (95.0, 92.0),
-            (8.0, 88.0),
-        ];
+        let corners = [(10.0f32, 5.0), (90.0, 8.0), (95.0, 92.0), (8.0, 88.0)];
         let h = rectify_quad(&corners, 100.0, 100.0);
         assert!(h.is_some());
     }

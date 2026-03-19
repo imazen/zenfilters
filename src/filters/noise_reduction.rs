@@ -291,6 +291,7 @@ fn atrous_smooth(src: &[f32], dst: &mut [f32], w: usize, h: usize, scale: u32, t
 /// Soft thresholding (wavelet shrinkage).
 /// Reduces coefficients toward zero by `threshold`, preserving sign.
 #[inline]
+#[allow(dead_code)]
 fn soft_threshold(val: f32, threshold: f32) -> f32 {
     if val > threshold {
         val - threshold

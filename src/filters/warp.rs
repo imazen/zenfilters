@@ -604,9 +604,9 @@ fn apply_cardinal(planes: &mut OklabPlanes, quarter_turns: u8, ctx: &mut FilterC
         for sy in 0..src_h {
             for sx in 0..src_w {
                 let (dx, dy) = match quarter_turns {
-                    1 => (sy, src_w - 1 - sx),              // 90° CCW
-                    2 => (src_w - 1 - sx, src_h - 1 - sy),  // 180°
-                    3 => (src_h - 1 - sy, sx),               // 270° CCW
+                    1 => (sy, src_w - 1 - sx),             // 90° CCW
+                    2 => (src_w - 1 - sx, src_h - 1 - sy), // 180°
+                    3 => (src_h - 1 - sy, sx),             // 270° CCW
                     _ => (sx, sy),
                 };
                 dst[dy * dst_w + dx] = src[sy * src_w + sx];
@@ -1053,7 +1053,10 @@ mod tests {
 
         assert_eq!(planes.width, 20);
         assert_eq!(planes.height, 12);
-        assert_eq!(planes.l, original, "4×90° cardinal should be exactly identity");
+        assert_eq!(
+            planes.l, original,
+            "4×90° cardinal should be exactly identity"
+        );
     }
 
     #[test]

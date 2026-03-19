@@ -2,6 +2,7 @@ use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::planes::OklabPlanes;
+use alloc::{vec, vec::Vec};
 
 /// Per-channel tone curves applied independently to R, G, B in sRGB space.
 ///
@@ -146,7 +147,7 @@ impl Filter for ChannelCurves {
 
 // ── LUT evaluation ──────────────────────────────────────────────────
 
-fn eval_lut(lut: &Vec<f32>, x: f32) -> f32 {
+fn eval_lut(lut: &[f32], x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     let idx_f = x * crate::LUT_MAX as f32;
     let idx = idx_f as usize;

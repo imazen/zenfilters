@@ -54,7 +54,7 @@ impl core::fmt::Display for ConvenienceError {
     }
 }
 
-impl std::error::Error for ConvenienceError {}
+impl core::error::Error for ConvenienceError {}
 
 /// Determines the working primaries for the filter pipeline.
 ///

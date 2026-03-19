@@ -12,7 +12,6 @@
 /// - `hue_preservation`: 0.0-1.0 (1.0 default, maps from dt's 0-100)
 ///
 /// Data from darktable (GPL-2.0+), reimplemented from mathematical description.
-
 const MIDDLE_GREY: f32 = 0.1845;
 
 /// Internal parameters computed from user-facing contrast/skew.

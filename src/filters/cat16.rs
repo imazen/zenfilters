@@ -8,7 +8,7 @@
 ///
 /// Reference: darktable's `chromatic_adaptation.h` (GPL-2.0+),
 /// reimplemented from the mathematical specification.
-
+///
 /// CIE XYZ → CAT16 LMS matrix (CIECAM16 cone responses).
 ///
 /// From darktable's `chromatic_adaptation.h` lines 92-94.
@@ -63,10 +63,10 @@ pub fn illuminant_xy_from_dng(
     color_matrix: Option<&[f64]>,
 ) -> Option<(f32, f32)> {
     // Direct path: AsShotWhiteXY tag
-    if let Some((x, y)) = as_shot_white_xy {
-        if y > 1e-6 {
-            return Some((x as f32, y as f32));
-        }
+    if let Some((x, y)) = as_shot_white_xy
+        && y > 1e-6
+    {
+        return Some((x as f32, y as f32));
     }
 
     // Computed path: inv(ColorMatrix) * AsShotNeutral → XYZ → xy

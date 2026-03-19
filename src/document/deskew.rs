@@ -8,8 +8,8 @@
 //! Accuracy: ~0.05° on typical documents. Runtime: O(w·h·k) where k is the
 //! number of angle candidates tested (~200 for coarse + fine sweep).
 
-use crate::context::FilterContext;
 use super::otsu;
+use crate::context::FilterContext;
 
 /// Detect the skew angle of a document image.
 ///
@@ -185,7 +185,9 @@ mod tests {
         let cy = h as f32 * 0.5;
 
         // Non-uniform line positions (text paragraphs with gaps)
-        let line_starts = [20, 35, 50, 65, 80, 120, 135, 150, 165, 200, 215, 230, 280, 295, 310, 325, 340, 355];
+        let line_starts = [
+            20, 35, 50, 65, 80, 120, 135, 150, 165, 200, 215, 230, 280, 295, 310, 325, 340, 355,
+        ];
 
         for y in 0..h {
             for x in 0..w {
@@ -205,7 +207,9 @@ mod tests {
         let mut binary = alloc::vec![0.0f32; w * h];
         binary.copy_from_slice(&plane);
         super::otsu::binarize(&mut binary, threshold);
-        for v in binary.iter_mut() { *v = 1.0 - *v; }
+        for v in binary.iter_mut() {
+            *v = 1.0 - *v;
+        }
 
         let var_0 = projection_variance(&binary, w, h, 0.0);
         let var_true = projection_variance(&binary, w, h, skew_deg);
@@ -245,6 +249,9 @@ mod tests {
         // Constant binary → zero variance
         let binary = alloc::vec![1.0f32; 100 * 100];
         let v = projection_variance(&binary, 100, 100, 0.0);
-        assert!(v.abs() < 1.0, "constant binary should have near-zero variance, got {v}");
+        assert!(
+            v.abs() < 1.0,
+            "constant binary should have near-zero variance, got {v}"
+        );
     }
 }

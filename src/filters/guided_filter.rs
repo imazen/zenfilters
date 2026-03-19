@@ -21,6 +21,7 @@ use crate::context::FilterContext;
 ///
 /// Reference: He, Sun, Tang, "Guided Image Filtering," TPAMI 2013.
 /// eps controls smoothing strength: larger eps = more smoothing.
+#[allow(clippy::too_many_arguments)]
 pub fn guided_filter_plane(
     input: &[f32],
     guide: &[f32],

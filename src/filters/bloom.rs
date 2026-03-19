@@ -79,11 +79,10 @@ impl Filter for Bloom {
         // 1. Extract bright pixels (soft threshold for smooth transition)
         let mut bright = ctx.take_f32(n);
         let knee = 0.05; // soft knee width
-        for i in 0..n {
-            let l = planes.l[i];
+        for (b, &l) in bright.iter_mut().zip(planes.l.iter()).take(n) {
             let excess = l - self.threshold;
             // Soft knee: smooth ramp from 0 at (threshold - knee) to linear at (threshold + knee)
-            bright[i] = if excess > knee {
+            *b = if excess > knee {
                 excess
             } else if excess > -knee {
                 let t = (excess + knee) / (2.0 * knee);
@@ -102,10 +101,9 @@ impl Filter for Bloom {
         // 3. Screen blend: output = L + bloom - L * bloom
         // This prevents values from exceeding 1.0 naturally.
         let amount = self.amount;
-        for i in 0..n {
-            let l = planes.l[i];
-            let bloom = blurred[i] * amount;
-            planes.l[i] = l + bloom - l * bloom;
+        for (l, &bl) in planes.l.iter_mut().zip(blurred.iter()).take(n) {
+            let bloom = bl * amount;
+            *l = *l + bloom - *l * bloom;
         }
 
         ctx.return_f32(blurred);

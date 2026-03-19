@@ -6,18 +6,27 @@ test:
 
 # Run all tests including experimental
 test-all:
-    cargo test --features experimental
+    cargo test --features "buffer,experimental,serde,srgb-filters"
 
 # Run clippy on everything
 clippy:
-    cargo clippy --features experimental --examples
+    cargo clippy --features "buffer,experimental,serde,srgb-filters" --examples -- -D warnings
 
 # Format and check
 fmt:
     cargo fmt
 
+# Check all feature permutations
+feature-check:
+    cargo check
+    cargo check --features buffer
+    cargo check --features experimental
+    cargo check --features serde
+    cargo check --features srgb-filters
+    cargo check --features "buffer,experimental,serde,srgb-filters"
+
 # Local CI sanity check
-ci: fmt clippy test-all
+ci: fmt clippy feature-check test-all
 
 # Run parity evaluation (20 samples, rule-based only)
 parity samples="20":

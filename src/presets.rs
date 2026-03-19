@@ -1,4 +1,3 @@
-//! Filter presets — named parameter bundles with intensity control.
 //!
 //! A preset is a collection of filter parameters that can be applied with
 //! one call and blended with an intensity slider (0.0 = no effect, 1.0 = full).
@@ -24,9 +23,7 @@
 //! [`Preset::build_pipeline_at`] blends each parameter between its identity
 //! value and the preset value: `effective = identity + intensity * (preset - identity)`.
 //! This gives smooth ramping from no effect (0.0) to full preset (1.0).
-
-use alloc::string::String;
-use alloc::vec::Vec;
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
 use crate::filters::*;
 use crate::pipeline::{Pipeline, PipelineConfig};
@@ -159,30 +156,34 @@ impl Preset {
 
         // Optional sigmoid
         if let Some(ref sig) = self.sigmoid {
-            let mut s = Sigmoid::default();
-            s.contrast = 1.0 + (sig.contrast - 1.0) * t;
-            s.skew = 0.5 + (sig.skew - 0.5) * t;
+            let s = Sigmoid {
+                contrast: 1.0 + (sig.contrast - 1.0) * t,
+                skew: 0.5 + (sig.skew - 0.5) * t,
+                ..Default::default()
+            };
             pipe.push(Box::new(s));
         }
 
         // Optional tone curve (blended toward identity by lerping control points)
-        if let Some(ref points) = self.tone_curve {
-            if t > 0.01 {
-                let blended: Vec<(f32, f32)> = points
-                    .iter()
-                    .map(|&(x, y)| (x, x + (y - x) * t)) // lerp y toward x (identity)
-                    .collect();
-                let curve = ToneCurve::from_points(&blended);
-                pipe.push(Box::new(curve));
-            }
+        if let Some(ref points) = self.tone_curve
+            && t > 0.01
+        {
+            let blended: Vec<(f32, f32)> = points
+                .iter()
+                .map(|&(x, y)| (x, x + (y - x) * t)) // lerp y toward x (identity)
+                .collect();
+            let curve = ToneCurve::from_points(&blended);
+            pipe.push(Box::new(curve));
         }
 
         // Optional local tone map
         if let Some(ltm) = self.local_tonemap {
             let v = ltm * t;
             if v > 0.01 {
-                let mut l = LocalToneMap::default();
-                l.compression = v;
+                let l = LocalToneMap {
+                    compression: v,
+                    ..Default::default()
+                };
                 pipe.push(Box::new(l));
             }
         }
@@ -191,8 +192,10 @@ impl Preset {
         if let Some(cl) = self.clarity {
             let v = cl * t;
             if v.abs() > 0.01 {
-                let mut c = Clarity::default();
-                c.amount = v;
+                let c = Clarity {
+                    amount: v,
+                    ..Default::default()
+                };
                 pipe.push(Box::new(c));
             }
         }
@@ -201,8 +204,10 @@ impl Preset {
         if let Some(sh) = self.sharpen {
             let v = sh * t;
             if v > 0.01 {
-                let mut s = AdaptiveSharpen::default();
-                s.amount = v;
+                let s = AdaptiveSharpen {
+                    amount: v,
+                    ..Default::default()
+                };
                 pipe.push(Box::new(s));
             }
         }
@@ -211,8 +216,10 @@ impl Preset {
         if let Some(gr) = self.grain {
             let v = gr * t;
             if v > 0.01 {
-                let mut g = Grain::default();
-                g.amount = v;
+                let g = Grain {
+                    amount: v,
+                    ..Default::default()
+                };
                 pipe.push(Box::new(g));
             }
         }
@@ -221,8 +228,10 @@ impl Preset {
         if let Some(vig) = self.vignette {
             let v = vig * t;
             if v.abs() > 0.01 {
-                let mut vi = Vignette::default();
-                vi.strength = v;
+                let vi = Vignette {
+                    strength: v,
+                    ..Default::default()
+                };
                 pipe.push(Box::new(vi));
             }
         }
@@ -231,8 +240,10 @@ impl Preset {
         if let Some(bl) = self.bloom {
             let v = bl * t;
             if v > 0.01 {
-                let mut b = Bloom::default();
-                b.amount = v;
+                let b = Bloom {
+                    amount: v,
+                    ..Default::default()
+                };
                 pipe.push(Box::new(b));
             }
         }
@@ -243,8 +254,7 @@ impl Preset {
             if let Some(sep) = self.sepia {
                 let v = sep * t;
                 if v > 0.01 {
-                    let mut s = Sepia::default();
-                    s.amount = v;
+                    let s = Sepia { amount: v };
                     pipe.push(Box::new(s));
                 }
             }

@@ -97,8 +97,8 @@ impl Filter for Bilateral {
             eps,
             ctx,
         );
-        for i in 0..n {
-            planes.l[i] = planes.l[i] * (1.0 - strength) + filtered[i] * strength;
+        for (l, f) in planes.l.iter_mut().zip(filtered.iter()).take(n) {
+            *l = *l * (1.0 - strength) + *f * strength;
         }
 
         // Filter a (L-guided)
@@ -112,8 +112,8 @@ impl Filter for Bilateral {
             eps,
             ctx,
         );
-        for i in 0..n {
-            planes.a[i] = planes.a[i] * (1.0 - strength) + filtered[i] * strength;
+        for (a, f) in planes.a.iter_mut().zip(filtered.iter()).take(n) {
+            *a = *a * (1.0 - strength) + *f * strength;
         }
 
         // Filter b (L-guided)
@@ -127,8 +127,8 @@ impl Filter for Bilateral {
             eps,
             ctx,
         );
-        for i in 0..n {
-            planes.b[i] = planes.b[i] * (1.0 - strength) + filtered[i] * strength;
+        for (b, f) in planes.b.iter_mut().zip(filtered.iter()).take(n) {
+            *b = *b * (1.0 - strength) + *f * strength;
         }
 
         ctx.return_f32(filtered);

@@ -54,6 +54,10 @@
 
 use crate::pipeline::{Pipeline, PipelineConfig};
 use crate::planes::OklabPlanes;
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
+
+#[cfg(feature = "serde")]
+use serde_big_array::BigArray;
 
 use super::{
     AdaptiveSharpen, Clarity, FusedAdjust, GamutExpand, HighlightRecovery, LocalToneMap,
@@ -67,6 +71,7 @@ use super::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ImageFeatures {
     /// L channel histogram, 64 bins, normalized to sum=1.
+    #[cfg_attr(feature = "serde", serde(with = "BigArray"))]
     pub l_histogram: [f32; 64],
     /// a channel histogram, 32 bins over [-0.4, 0.4], normalized.
     pub a_histogram: [f32; 32],
@@ -600,6 +605,7 @@ pub const LINEAR_MODEL_OUTPUTS: usize = 18;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LinearModel {
     /// Weight matrix, row-major [142 × 18].
+    #[cfg_attr(feature = "serde", serde(with = "BigArray"))]
     pub weights: [f32; LINEAR_MODEL_INPUTS * LINEAR_MODEL_OUTPUTS],
     /// Bias vector [18].
     pub bias: [f32; LINEAR_MODEL_OUTPUTS],
@@ -651,6 +657,66 @@ impl LinearModel {
 /// Number of clusters in the trained model.
 pub const CLUSTER_COUNT: usize = 64;
 
+/// Serde helper for `[[f32; N]; M]` where both dimensions exceed serde's
+/// built-in array limit of 32 elements. Serializes as a flat sequence of
+/// `N * M` floats and deserializes back into the nested array.
+#[cfg(feature = "serde")]
+mod serde_nested_big_array {
+    use serde::de::{self, SeqAccess, Visitor};
+    use serde::ser::SerializeSeq;
+    use serde::{Deserializer, Serializer};
+
+    use super::{CLUSTER_COUNT, LINEAR_MODEL_INPUTS};
+
+    const N: usize = LINEAR_MODEL_INPUTS; // 142
+    const M: usize = CLUSTER_COUNT; // 64
+
+    pub fn serialize<S>(data: &[[f32; N]; M], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(N * M))?;
+        for row in data {
+            for &val in row {
+                seq.serialize_element(&val)?;
+            }
+        }
+        seq.end()
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[[f32; N]; M], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct NestedArrayVisitor;
+
+        impl<'de> Visitor<'de> for NestedArrayVisitor {
+            type Value = [[f32; N]; M];
+
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                write!(f, "a sequence of {} floats", N * M)
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut result = [[0.0f32; N]; M];
+                for row in &mut result {
+                    for val in row.iter_mut() {
+                        *val = seq
+                            .next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                    }
+                }
+                Ok(result)
+            }
+        }
+
+        deserializer.deserialize_seq(NestedArrayVisitor)
+    }
+}
+
 /// Cluster-based auto-tuner: nearest-centroid lookup.
 ///
 /// Each cluster has a centroid (142 features) and optimized parameters (18 floats).
@@ -661,8 +727,10 @@ pub const CLUSTER_COUNT: usize = 64;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ClusterModel {
     /// Cluster centroids, each [142] floats.
+    #[cfg_attr(feature = "serde", serde(with = "serde_nested_big_array"))]
     pub centroids: [[f32; LINEAR_MODEL_INPUTS]; CLUSTER_COUNT],
     /// Optimized parameters per cluster, each [18] floats.
+    #[cfg_attr(feature = "serde", serde(with = "BigArray"))]
     pub params: [[f32; LINEAR_MODEL_OUTPUTS]; CLUSTER_COUNT],
 }
 

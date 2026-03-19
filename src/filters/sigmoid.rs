@@ -4,6 +4,7 @@ use crate::filter::Filter;
 use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use crate::simd;
+use alloc::vec::Vec;
 
 /// Sigmoid tone mapper: maps scene luminance through an S-curve for display.
 ///
@@ -82,13 +83,12 @@ impl Filter for Sigmoid {
             simd::sigmoid_tone_map_plane(&mut planes.l, self.contrast, bias_a);
 
             let strength = self.chroma_compression;
-            for i in 0..n {
-                let old = l_old[i];
+            for (idx, &old) in l_old.iter().enumerate().take(n) {
                 if old > 1e-6 {
-                    let ratio = planes.l[i] / old;
+                    let ratio = planes.l[idx] / old;
                     let scale = ratio.powf(strength);
-                    planes.a[i] *= scale;
-                    planes.b[i] *= scale;
+                    planes.a[idx] *= scale;
+                    planes.b[idx] *= scale;
                 }
             }
         } else {

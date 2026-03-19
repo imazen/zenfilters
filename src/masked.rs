@@ -1,4 +1,3 @@
-//! Masked and blend-layer filter application.
 //!
 //! This module provides spatial masks that control where a filter is applied,
 //! enabling selective adjustments — a core Lightroom/Photoshop workflow.
@@ -46,9 +45,6 @@
 //! When needed, it should be implemented as a separate `BlendLayer` struct
 //! that takes two OklabPlanes and a blend mode, rather than forcing it into
 //! the Filter trait.
-
-extern crate alloc;
-
 use alloc::boxed::Box;
 
 use crate::access::ChannelAccess;
@@ -68,12 +64,7 @@ pub enum Mask {
     /// Common uses:
     /// - Graduated neutral density: `(0.5, 0.0) → (0.5, 0.5)` (darken sky)
     /// - Left-right vignette: `(0.0, 0.5) → (1.0, 0.5)` (brighten right side)
-    LinearGradient {
-        x0: f32,
-        y0: f32,
-        x1: f32,
-        y1: f32,
-    },
+    LinearGradient { x0: f32, y0: f32, x1: f32, y1: f32 },
 
     /// Radial gradient centered at (cx, cy) in normalized [0, 1] coordinates.
     ///
@@ -167,8 +158,14 @@ impl Filter for MaskedFilter {
 
         // Save original planes that the filter modifies.
         // Check whether reads or writes touch luma/chroma using PlaneMask bit ops.
-        let touches_luma = !access.writes.intersection(zenpixels::PlaneMask::LUMA).is_empty();
-        let touches_chroma = !access.writes.intersection(zenpixels::PlaneMask::CHROMA).is_empty();
+        let touches_luma = !access
+            .writes
+            .intersection(zenpixels::PlaneMask::LUMA)
+            .is_empty();
+        let touches_chroma = !access
+            .writes
+            .intersection(zenpixels::PlaneMask::CHROMA)
+            .is_empty();
 
         let save_l = if touches_luma {
             let mut saved = ctx.take_f32(n);
@@ -235,13 +232,7 @@ impl Filter for MaskedFilter {
 /// Generate a mask plane from a [`Mask`] definition.
 ///
 /// `src_l` is the original L plane (needed for [`Mask::LuminanceRange`]).
-fn generate_mask(
-    mask: &Mask,
-    dst: &mut [f32],
-    width: u32,
-    height: u32,
-    src_l: Option<&[f32]>,
-) {
+fn generate_mask(mask: &Mask, dst: &mut [f32], width: u32, height: u32, src_l: Option<&[f32]>) {
     let w = width as f32;
     let h = height as f32;
 
@@ -456,6 +447,9 @@ mod tests {
         let dark = mask[0]; // L ≈ 0
         let bright = mask[n - 1]; // L ≈ 1
         assert!(dark < 0.01, "dark pixel should be masked out, got {dark}");
-        assert!(bright > 0.9, "bright pixel should be included, got {bright}");
+        assert!(
+            bright > 0.9,
+            "bright pixel should be included, got {bright}"
+        );
     }
 }

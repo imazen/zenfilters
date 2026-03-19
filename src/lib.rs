@@ -1,3 +1,4 @@
+#![no_std]
 #![forbid(unsafe_code)]
 //! Photo filter operations on planar Oklab f32 data with SIMD acceleration.
 //!
@@ -76,6 +77,8 @@ pub mod filters;
 mod fused_params;
 mod gamut_lut;
 mod gamut_map;
+pub mod masked;
+pub(crate) mod math;
 pub mod param_schema;
 mod pipeline;
 mod planes;
@@ -85,7 +88,6 @@ pub mod resize_pipeline;
 mod scatter_gather;
 mod simd;
 pub mod slider;
-pub mod masked;
 
 #[cfg(feature = "experimental")]
 pub mod document;

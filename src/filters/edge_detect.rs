@@ -255,9 +255,9 @@ fn canny(
 
             // Compare with neighbors along gradient direction
             let (n1, n2) = match d {
-                0 => (mag[idx - 1], mag[idx + 1]),                 // horizontal
+                0 => (mag[idx - 1], mag[idx + 1]), // horizontal
                 1 => (mag[(y - 1) * w + x - 1], mag[(y + 1) * w + x + 1]), // 45°
-                2 => (mag[(y - 1) * w + x], mag[(y + 1) * w + x]),         // vertical
+                2 => (mag[(y - 1) * w + x], mag[(y + 1) * w + x]), // vertical
                 _ => (mag[(y - 1) * w + x + 1], mag[(y + 1) * w + x - 1]), // 135°
             };
 
@@ -458,7 +458,10 @@ mod tests {
         }
         .apply(&mut planes, &mut FilterContext::new());
         for &v in &planes.l {
-            assert!(v.abs() < 1e-6, "constant plane should have zero edges, got {v}");
+            assert!(
+                v.abs() < 1e-6,
+                "constant plane should have zero edges, got {v}"
+            );
         }
     }
 
@@ -479,7 +482,10 @@ mod tests {
 
         let edge = planes.l[planes.index(15, 16)];
         let interior = planes.l[planes.index(8, 16)];
-        assert!(edge > 0.1, "edge pixel should have high gradient, got {edge}");
+        assert!(
+            edge > 0.1,
+            "edge pixel should have high gradient, got {edge}"
+        );
         assert!(
             interior < 0.01,
             "interior pixel should have near-zero gradient, got {interior}"
@@ -569,7 +575,10 @@ mod tests {
         }
         .apply(&mut planes, &mut FilterContext::new());
         for &v in &planes.l {
-            assert!(v.abs() < 1e-6, "Canny: constant plane should have no edges, got {v}");
+            assert!(
+                v.abs() < 1e-6,
+                "Canny: constant plane should have no edges, got {v}"
+            );
         }
     }
 
@@ -600,7 +609,10 @@ mod tests {
             }
         }
         assert!(has_edge_at_boundary, "Canny should detect boundary edge");
-        assert!(!has_edge_at_interior, "Canny should not detect interior edges");
+        assert!(
+            !has_edge_at_interior,
+            "Canny should not detect interior edges"
+        );
     }
 
     #[test]

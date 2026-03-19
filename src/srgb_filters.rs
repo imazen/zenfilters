@@ -207,9 +207,7 @@ pub fn sharpen(pixels: &mut PixelBuffer, amount: f32) {
         };
     }
 
-    *pixels = PixelBuffer::from_pixels(out, width, height)
-        .unwrap()
-        .erase();
+    *pixels = PixelBuffer::from_pixels_erased(out, width, height).unwrap();
 }
 
 /// Gaussian-approximation blur in sRGB space (3× box blur).
@@ -233,9 +231,7 @@ pub fn blur(pixels: &mut PixelBuffer, sigma: f32) {
         packed = box_blur_rgba(&packed, w, h, pass_radius);
     }
 
-    *pixels = PixelBuffer::from_pixels(packed, width, height)
-        .unwrap()
-        .erase();
+    *pixels = PixelBuffer::from_pixels_erased(packed, width, height).unwrap();
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────
