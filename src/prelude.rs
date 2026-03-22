@@ -4,6 +4,5 @@
 
 pub use alloc::boxed::Box;
 pub use alloc::string::String;
-pub use alloc::sync::Arc;
 pub use alloc::vec;
 pub use alloc::vec::Vec;
