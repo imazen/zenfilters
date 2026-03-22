@@ -34,7 +34,10 @@ pub(crate) fn power_contrast_plane(plane: &mut [f32], exp: f32, scale: f32) {
 ///
 /// Applies Schlick bias (if bias_a != 0) then generalized sigmoid `x^c / (x^c + (1-x)^c)`.
 pub(crate) fn sigmoid_tone_map_plane(plane: &mut [f32], contrast: f32, bias_a: f32) {
-    archmage::incant!(sigmoid_tone_map_plane_impl(plane, contrast, bias_a), [v3, neon]);
+    archmage::incant!(
+        sigmoid_tone_map_plane_impl(plane, contrast, bias_a),
+        [v3, neon]
+    );
 }
 
 /// Dispatch: unsharp mask fuse: dst[i] = (src[i] + (src[i] - blurred[i]) * amount).max(0)
@@ -165,7 +168,10 @@ pub(crate) fn hue_rotate(a: &mut [f32], b: &mut [f32], cos_r: f32, sin_r: f32) {
 
 /// Dispatch: highlights and shadows recovery on L plane.
 pub(crate) fn highlights_shadows(plane: &mut [f32], shadows: f32, highlights: f32) {
-    archmage::incant!(highlights_shadows_impl(plane, shadows, highlights), [v3, neon]);
+    archmage::incant!(
+        highlights_shadows_impl(plane, shadows, highlights),
+        [v3, neon]
+    );
 }
 
 /// Dispatch: vibrance (smart saturation) on a/b planes.

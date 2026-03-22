@@ -145,13 +145,7 @@ pub(super) fn unsharp_fuse_impl_neon(
 }
 
 #[rite]
-fn unsharp_fuse_simd(
-    token: NeonToken,
-    src: &[f32],
-    blurred: &[f32],
-    dst: &mut [f32],
-    amount: f32,
-) {
+fn unsharp_fuse_simd(token: NeonToken, src: &[f32], blurred: &[f32], dst: &mut [f32], amount: f32) {
     let amount_v = f32x8::splat(token, amount);
     let zero_v = f32x8::zero(token);
 
