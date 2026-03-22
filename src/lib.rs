@@ -94,6 +94,9 @@ pub mod document;
 #[cfg(feature = "experimental")]
 pub mod segment;
 
+#[cfg(feature = "zenode")]
+pub mod zenode_defs;
+
 #[cfg(feature = "buffer")]
 mod convenience;
 #[cfg(feature = "srgb-filters")]
