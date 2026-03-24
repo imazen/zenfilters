@@ -9,7 +9,7 @@ use crate::filter::Filter;
 use crate::gamut_lut::GamutBoundaryLut;
 use crate::gamut_map::GamutMapping;
 use crate::planes::OklabPlanes;
-use crate::scatter_gather::scatter_to_oklab;
+use crate::scatter_gather::{gather_from_oklab, scatter_to_oklab};
 
 /// Compute the number of core rows per strip for L3-friendly processing.
 ///
@@ -320,16 +320,56 @@ impl Pipeline {
             }));
         }
 
+        // Neighborhood filters need full-frame access for correct output.
+        // Per-pixel filters use L3-cache-friendly strips (no halo needed).
+        // Halo-based stripping for neighborhood filters is possible but
+        // benchmarks show 4x slower than full-frame due to redundant
+        // re-filtering of overlapping rows.
+        if self.has_neighborhood_filter() {
+            return self.apply_full_frame(src, dst, width, height, channels, ctx);
+        }
+
         self.apply_stripped(src, dst, width, height, channels, ctx)
+    }
+
+    /// Full-frame path for pipelines with neighborhood filters.
+    fn apply_full_frame(
+        &self,
+        src: &[f32],
+        dst: &mut [f32],
+        width: u32,
+        height: u32,
+        channels: u32,
+        ctx: &mut FilterContext,
+    ) -> Result<(), At<PipelineError>> {
+        let mut planes = if channels == 4 {
+            OklabPlanes::from_ctx_with_alpha(ctx, width, height)
+        } else {
+            OklabPlanes::from_ctx(ctx, width, height)
+        };
+        scatter_to_oklab(
+            src,
+            &mut planes,
+            channels,
+            &self.m1,
+            self.config.reference_white,
+        );
+        self.apply_planar(&mut planes, ctx);
+        gather_from_oklab(
+            &planes,
+            dst,
+            channels,
+            &self.m1_inv,
+            self.config.reference_white,
+        );
+        planes.return_to_ctx(ctx);
+        Ok(())
     }
 
     /// Strip-process: scatter, filter, gather in L3-sized horizontal strips.
     ///
-    /// Each strip is extended by `total_halo` rows on each side to give
-    /// neighborhood filters enough context. After filtering the extended
-    /// strip, only the core rows are gathered to the output. When there
-    /// are no neighborhood filters, `total_halo` is 0 and behavior is
-    /// identical to non-overlapping strip processing.
+    /// Only used for per-pixel filters (halo = 0). Neighborhood filter
+    /// pipelines use `apply_full_frame()` instead.
     fn apply_stripped(
         &self,
         src: &[f32],
