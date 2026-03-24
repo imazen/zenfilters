@@ -94,7 +94,7 @@ pub mod document;
 #[cfg(feature = "experimental")]
 pub mod segment;
 
-#[cfg(feature = "zenode")]
+#[cfg(feature = "zennode")]
 pub mod zenode_defs;
 
 #[cfg(feature = "buffer")]

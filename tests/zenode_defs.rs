@@ -1,9 +1,9 @@
 //! Integration tests for zenode node definitions.
 
-#[cfg(feature = "zenode")]
+#[cfg(feature = "zennode")]
 mod tests {
     use zenfilters::zenode_defs::*;
-    use zenode::*;
+    use zennode::*;
 
     #[test]
     fn exposure_node_schema_matches() {
@@ -11,7 +11,7 @@ mod tests {
         assert_eq!(schema.id, "zenfilters.exposure");
         assert_eq!(schema.label, "Exposure");
         assert_eq!(schema.group, NodeGroup::Tone);
-        assert_eq!(schema.phase, Phase::DisplayAdjust);
+        assert_eq!(schema.role, NodeRole::DisplayAdjust);
         assert_eq!(schema.params.len(), 1);
         assert_eq!(schema.params[0].name, "stops");
         match &schema.params[0].kind {
@@ -59,7 +59,7 @@ mod tests {
         let schema = CLARITY_NODE.schema();
         assert_eq!(schema.id, "zenfilters.clarity");
         assert_eq!(schema.group, NodeGroup::Detail);
-        assert_eq!(schema.phase, Phase::PreResize);
+        assert_eq!(schema.role, NodeRole::PreResize);
         assert!(schema.format.is_neighborhood);
         assert_eq!(schema.params.len(), 2);
     }
@@ -69,7 +69,7 @@ mod tests {
         let schema = VIGNETTE_NODE.schema();
         assert_eq!(schema.id, "zenfilters.vignette");
         assert_eq!(schema.group, NodeGroup::Effects);
-        assert_eq!(schema.phase, Phase::PostResize);
+        assert_eq!(schema.role, NodeRole::PostResize);
         assert_eq!(schema.params.len(), 4);
     }
 
@@ -78,7 +78,7 @@ mod tests {
         let schema = DT_SIGMOID_NODE.schema();
         assert_eq!(schema.id, "zenfilters.dt_sigmoid");
         assert_eq!(schema.group, NodeGroup::ToneMap);
-        assert_eq!(schema.phase, Phase::ToneMap);
+        assert_eq!(schema.role, NodeRole::ToneMap);
     }
 
     #[test]
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn node_instance_get_set() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let mut node = Exposure { stops: 1.5 };
         assert_eq!(node.get_param("stops"), Some(ParamValue::F32(1.5)));
         assert!(node.set_param("stops", ParamValue::F32(-2.0)));
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn node_instance_to_params() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let node = Vibrance {
             amount: 0.3,
             protection: 1.5,
@@ -230,7 +230,7 @@ mod tests {
         let schema = HSL_ADJUST_NODE.schema();
         assert_eq!(schema.id, "zenfilters.hsl_adjust");
         assert_eq!(schema.group, NodeGroup::Color);
-        assert_eq!(schema.phase, Phase::DisplayAdjust);
+        assert_eq!(schema.role, NodeRole::DisplayAdjust);
         assert_eq!(schema.params.len(), 3);
 
         // Check hue param
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn hsl_adjust_identity() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let node = HslAdjust::default();
         assert!(node.is_identity());
 
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn hsl_adjust_get_set() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let mut node = HslAdjust::default();
 
         // Get returns F32Array
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn bw_mixer_identity() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let node = BwMixer::default();
         assert!(node.is_identity());
 
@@ -378,7 +378,7 @@ mod tests {
         let schema = BASECURVE_TONE_MAP_NODE.schema();
         assert_eq!(schema.id, "zenfilters.basecurve_tonemap");
         assert_eq!(schema.group, NodeGroup::ToneMap);
-        assert_eq!(schema.phase, Phase::ToneMap);
+        assert_eq!(schema.role, NodeRole::ToneMap);
         assert_eq!(schema.params.len(), 2);
 
         // preset is a String param
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn basecurve_tonemap_get_set() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let mut node = BasecurveToneMap::default();
 
         assert_eq!(

@@ -13,7 +13,7 @@
 //! struct `Exposure`). Access via `zenode_defs::EXPOSURE_NODE` etc.
 
 use alloc::string::String;
-use zenode::*;
+use zennode::*;
 
 // ═══════════════════════════════════════════════════════════════════
 // TONE
@@ -24,7 +24,7 @@ use zenode::*;
 /// +1 stop doubles linear light, -1 halves it. Preserves hue and saturation
 /// by scaling all Oklab channels proportionally.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.exposure", group = Tone, phase = DisplayAdjust)]
+#[node(id = "zenfilters.exposure", group = Tone, role = Filter)]
 #[node(label = "Exposure")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(coalesce = "fused_adjust")]
@@ -40,7 +40,7 @@ pub struct Exposure {
 /// Uses a power curve that pivots at the perceptual equivalent of 18.42%
 /// middle grey in Oklab space. Positive values increase contrast.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.contrast", group = Tone, phase = DisplayAdjust)]
+#[node(id = "zenfilters.contrast", group = Tone, role = Filter)]
 #[node(label = "Contrast")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(coalesce = "fused_adjust")]
@@ -56,7 +56,7 @@ pub struct Contrast {
 /// Remaps the shadow floor. A black point of 0.05 means values that were
 /// L=0.05 become L=0.0, and the range is stretched accordingly.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.black_point", group = ToneRange, phase = DisplayAdjust)]
+#[node(id = "zenfilters.black_point", group = ToneRange, role = Filter)]
 #[node(label = "Black Point")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(coalesce = "fused_adjust")]
@@ -73,7 +73,7 @@ pub struct BlackPoint {
 /// highlights; values > 1.0 extend the dynamic range. Optional soft-clip
 /// headroom compresses super-whites instead of hard clipping.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.white_point", group = ToneRange, phase = DisplayAdjust)]
+#[node(id = "zenfilters.white_point", group = ToneRange, role = Filter)]
 #[node(label = "White Point")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(coalesce = "fused_adjust")]
@@ -105,7 +105,7 @@ impl Default for WhitePoint {
 /// apply a smooth, localized adjustment that matches Lightroom's Whites/Blacks
 /// sliders.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.whites_blacks", group = ToneRange, phase = DisplayAdjust)]
+#[node(id = "zenfilters.whites_blacks", group = ToneRange, role = Filter)]
 #[node(label = "Whites / Blacks")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct WhitesBlacks {
@@ -126,7 +126,7 @@ pub struct WhitesBlacks {
 /// controls steepness, skew shifts the midpoint, and chroma_compression
 /// adapts saturation to luminance changes.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.sigmoid", group = Tone, phase = DisplayAdjust)]
+#[node(id = "zenfilters.sigmoid", group = Tone, role = Filter)]
 #[node(label = "Sigmoid")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct Sigmoid {
@@ -156,11 +156,38 @@ impl Default for Sigmoid {
     }
 }
 
-// TODO: ToneCurve -- requires control point array, skip for now.
+/// Arbitrary tone curve via control points with cubic spline interpolation
+///
+/// Control points define an input→output mapping on the L channel.
+/// Points are encoded as a comma-separated string of "x:y" pairs,
+/// e.g., "0.0:0.0,0.25:0.15,0.75:0.85,1.0:1.0".
+/// The execution layer parses this and calls ToneCurve::from_points().
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.tone_curve", group = Tone, role = Filter)]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("tone", "curve"))]
+pub struct ToneCurve {
+    /// Control points as "x:y" pairs, comma-separated.
+    ///
+    /// Each point is input_L:output_L in [0,1] range.
+    /// Default is identity (diagonal line): "0:0,1:1".
+    /// Example S-curve: "0:0,0.25:0.15,0.75:0.85,1:1".
+    #[param(default = "0:0,1:1")]
+    #[param(section = "Main", label = "Control Points", slider = NotSlider)]
+    pub points: String,
+}
+
+impl Default for ToneCurve {
+    fn default() -> Self {
+        Self {
+            points: alloc::string::String::from("0:0,1:1"),
+        }
+    }
+}
 
 /// Camera-matched basecurve tone mapping from darktable presets
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.basecurve_tonemap", group = ToneMap, phase = ToneMap)]
+#[node(id = "zenfilters.basecurve_tonemap", group = ToneMap, role = Filter)]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(tags("tonemap", "camera", "basecurve"))]
 pub struct BasecurveToneMap {
@@ -189,7 +216,7 @@ impl Default for BasecurveToneMap {
 /// Zone-based control similar to Lightroom's parametric tone curve panel.
 /// Each zone slider pushes the curve up or down within its region.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.parametric_curve", group = Tone, phase = DisplayAdjust)]
+#[node(id = "zenfilters.parametric_curve", group = Tone, role = Filter)]
 #[node(label = "Parametric Curve")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct ParametricCurve {
@@ -238,7 +265,7 @@ pub struct ParametricCurve {
 /// Implements the generalized log-logistic sigmoid from darktable's sigmoid
 /// module. Operates per-channel in linear RGB space (not Oklab).
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.dt_sigmoid", group = ToneMap, phase = ToneMap)]
+#[node(id = "zenfilters.dt_sigmoid", group = ToneMap, role = Filter)]
 #[node(label = "DtSigmoid")]
 #[node(format(preferred = LinearF32, alpha = Skip))]
 pub struct DtSigmoid {
@@ -273,7 +300,7 @@ impl Default for DtSigmoid {
 /// The classic Photoshop/Lightroom Levels dialog: clip input range, adjust
 /// midtone gamma, and remap output range.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.levels", group = ToneMap, phase = DisplayAdjust)]
+#[node(id = "zenfilters.levels", group = ToneMap, role = Filter)]
 #[node(label = "Levels")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct Levels {
@@ -325,7 +352,7 @@ impl Default for Levels {
 /// lifts dark areas (fill light). Custom thresholds control where transitions
 /// begin.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.highlights_shadows", group = ToneRange, phase = DisplayAdjust)]
+#[node(id = "zenfilters.highlights_shadows", group = ToneRange, role = Filter)]
 #[node(label = "Highlights / Shadows")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct HighlightsShadows {
@@ -367,7 +394,7 @@ impl Default for HighlightsShadows {
 /// a proportional toe lift curve. Images with properly exposed shadows
 /// are barely affected.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.shadow_lift", group = ToneRange, phase = DisplayAdjust)]
+#[node(id = "zenfilters.shadow_lift", group = ToneRange, role = Filter)]
 #[node(label = "Shadow Lift")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct ShadowLift {
@@ -383,7 +410,7 @@ pub struct ShadowLift {
 /// a proportional soft knee compression. Images with properly exposed
 /// highlights are barely affected.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.highlight_recovery", group = ToneRange, phase = DisplayAdjust)]
+#[node(id = "zenfilters.highlight_recovery", group = ToneRange, role = Filter)]
 #[node(label = "Highlight Recovery")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct HighlightRecovery {
@@ -402,7 +429,7 @@ pub struct HighlightRecovery {
 /// Scales chroma by a constant factor. 1.0 = no change, 0.0 = grayscale,
 /// 2.0 = double saturation.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.saturation", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.saturation", group = Color, role = Filter)]
 #[node(label = "Saturation")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(coalesce = "fused_adjust")]
@@ -424,7 +451,7 @@ impl Default for Saturation {
 /// Boosts chroma of low-saturation pixels more than high-saturation ones,
 /// preventing skin tone and sky clipping.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.vibrance", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.vibrance", group = Color, role = Filter)]
 #[node(label = "Vibrance")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(coalesce = "fused_adjust")]
@@ -454,7 +481,7 @@ impl Default for Vibrance {
 /// Positive values warm the image (shift toward yellow/orange).
 /// Negative values cool it (shift toward blue).
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.temperature", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.temperature", group = Color, role = Filter)]
 #[node(label = "Temperature")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(coalesce = "fused_adjust")]
@@ -469,7 +496,7 @@ pub struct Temperature {
 ///
 /// Positive values shift toward magenta, negative toward green.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.tint", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.tint", group = Color, role = Filter)]
 #[node(label = "Tint")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(coalesce = "fused_adjust")]
@@ -482,7 +509,7 @@ pub struct Tint {
 
 /// Per-color hue, saturation, and luminance adjustment
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.hsl_adjust", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.hsl_adjust", group = Color, role = Filter)]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(tags("color", "hsl"))]
 pub struct HslAdjust {
@@ -520,7 +547,7 @@ impl Default for HslAdjust {
 /// Applies different color tints to shadows, midtones, and highlights
 /// independently. Colors are specified as Oklab a/b offsets.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.color_grading", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.color_grading", group = Color, role = Filter)]
 #[node(label = "Color Grading")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct ColorGrading {
@@ -566,7 +593,7 @@ pub struct ColorGrading {
 /// Equivalent to Lightroom's Camera Calibration panel. Adjusts how the
 /// camera's RGB primaries map to final color.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.camera_calibration", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.camera_calibration", group = Color, role = Filter)]
 #[node(label = "Camera Calibration")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct CameraCalibration {
@@ -622,7 +649,7 @@ impl Default for CameraCalibration {
 
 /// Grayscale conversion with per-color luminance weights
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.bw_mixer", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.bw_mixer", group = Color, role = Filter)]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(tags("color", "grayscale", "bw"))]
 pub struct BwMixer {
@@ -644,7 +671,7 @@ impl Default for BwMixer {
 /// In Oklab, grayscale means a=0, b=0. The perceived luminance is already
 /// encoded in the L channel, so there is no information loss.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.grayscale", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.grayscale", group = Color, role = Filter)]
 #[node(label = "Grayscale")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct Grayscale {}
@@ -654,7 +681,7 @@ pub struct Grayscale {}
 /// Rotates colors around the hue circle by the specified angle in degrees.
 /// Preserves lightness and chroma.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.hue_rotate", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.hue_rotate", group = Color, role = Filter)]
 #[node(label = "Hue Rotate")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct HueRotate {
@@ -669,7 +696,7 @@ pub struct HueRotate {
 /// Desaturates the image, then applies a warm brown tint by shifting
 /// the a and b channels toward the sepia point.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.sepia", group = Color, phase = DisplayAdjust)]
+#[node(id = "zenfilters.sepia", group = Color, role = Filter)]
 #[node(label = "Sepia")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct Sepia {
@@ -694,7 +721,7 @@ impl Default for Sepia {
 /// Uses a two-band decomposition to isolate the mid-frequency "clarity"
 /// band, avoiding both noise amplification and halos.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.clarity", group = Detail, phase = PreResize)]
+#[node(id = "zenfilters.clarity", group = Detail, role = Filter)]
 #[node(label = "Clarity")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(neighborhood)]
@@ -726,7 +753,7 @@ impl Default for Clarity {
 /// Produces natural dynamic range compression similar to Apple's
 /// Brilliance slider.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.brilliance", group = Detail, phase = PreResize)]
+#[node(id = "zenfilters.brilliance", group = Detail, role = Filter)]
 #[node(label = "Brilliance")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(neighborhood)]
@@ -768,7 +795,7 @@ impl Default for Brilliance {
 /// Measures local texture energy and only sharpens where there is actual
 /// detail to enhance, leaving flat areas (sky, skin) unaffected.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.adaptive_sharpen", group = Detail, phase = PreResize)]
+#[node(id = "zenfilters.adaptive_sharpen", group = Detail, role = Filter)]
 #[node(label = "Adaptive Sharpen")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(neighborhood)]
@@ -816,7 +843,7 @@ impl Default for AdaptiveSharpen {
 /// Like clarity but with a smaller sigma for fine detail enhancement.
 /// Sharpening in Oklab L avoids color fringing at high-contrast edges.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.sharpen", group = Detail, phase = PreResize)]
+#[node(id = "zenfilters.sharpen", group = Detail, role = Filter)]
 #[node(label = "Sharpen")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(neighborhood)]
@@ -847,7 +874,7 @@ impl Default for Sharpen {
 /// denoising uses a higher effective threshold since chroma noise is
 /// typically more objectionable.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.noise_reduction", group = Detail, phase = PreResize)]
+#[node(id = "zenfilters.noise_reduction", group = Detail, role = Filter)]
 #[node(label = "Noise Reduction")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(neighborhood)]
@@ -901,7 +928,7 @@ impl Default for NoiseReduction {
 /// Similar to Clarity but targets higher-frequency detail like skin pores,
 /// fabric weave, and individual leaves. Mirrors Lightroom's Texture slider.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.texture", group = Detail, phase = PreResize)]
+#[node(id = "zenfilters.texture", group = Detail, role = Filter)]
 #[node(label = "Texture")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(neighborhood)]
@@ -935,7 +962,7 @@ impl Default for Texture {
 /// Applies a radial falloff from center to edges. Positive strength darkens
 /// edges (classic vignette), negative brightens.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.vignette", group = Effects, phase = PostResize)]
+#[node(id = "zenfilters.vignette", group = Effects, role = Filter)]
 #[node(label = "Vignette")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct Vignette {
@@ -977,7 +1004,7 @@ impl Default for Vignette {
 /// Gaussian kernel, and adds the result back. Produces natural-looking
 /// soft glow around bright light sources.
 #[derive(Node, Clone, Debug)]
-#[node(id = "zenfilters.bloom", group = Effects, phase = PostResize)]
+#[node(id = "zenfilters.bloom", group = Effects, role = Filter)]
 #[node(label = "Bloom")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(neighborhood)]
@@ -1014,7 +1041,7 @@ impl Default for Bloom {
 /// with luminance: stronger in midtones, weaker in deep shadows and bright
 /// highlights, like real film.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.grain", group = Effects, phase = PostResize)]
+#[node(id = "zenfilters.grain", group = Effects, role = Filter)]
 #[node(label = "Grain")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct Grain {
@@ -1040,7 +1067,7 @@ pub struct Grain {
 /// remove atmospheric haze. Hazy regions get strong correction while
 /// clear regions are barely affected.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.dehaze", group = Effects, phase = DisplayAdjust)]
+#[node(id = "zenfilters.dehaze", group = Effects, role = Filter)]
 #[node(label = "Dehaze")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 #[node(coalesce = "fused_adjust")]
@@ -1057,7 +1084,7 @@ pub struct Dehaze {
 /// Inverts lightness (L' = 1.0 - L) and negates chroma (a' = -a, b' = -b).
 /// Produces a perceptually correct negative.
 #[derive(Node, Clone, Debug, Default)]
-#[node(id = "zenfilters.invert", group = Effects, phase = DisplayAdjust)]
+#[node(id = "zenfilters.invert", group = Effects, role = Filter)]
 #[node(label = "Invert")]
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct Invert {}
@@ -1075,6 +1102,7 @@ pub fn register_all(registry: &mut NodeRegistry) {
     registry.register(&WHITES_BLACKS_NODE);
     registry.register(&SIGMOID_NODE);
     registry.register(&PARAMETRIC_CURVE_NODE);
+    registry.register(&TONE_CURVE_NODE);
     registry.register(&DT_SIGMOID_NODE);
     registry.register(&BASECURVE_TONE_MAP_NODE);
     registry.register(&LEVELS_NODE);
@@ -1121,7 +1149,7 @@ mod tests {
         assert_eq!(schema.id, "zenfilters.exposure");
         assert_eq!(schema.label, "Exposure");
         assert_eq!(schema.group, NodeGroup::Tone);
-        assert_eq!(schema.phase, Phase::DisplayAdjust);
+        assert_eq!(schema.role, NodeRole::Filter);
         assert_eq!(schema.params.len(), 1);
         assert_eq!(schema.params[0].name, "stops");
         match &schema.params[0].kind {
@@ -1169,7 +1197,7 @@ mod tests {
         let schema = CLARITY_NODE.schema();
         assert_eq!(schema.id, "zenfilters.clarity");
         assert_eq!(schema.group, NodeGroup::Detail);
-        assert_eq!(schema.phase, Phase::PreResize);
+        assert_eq!(schema.role, NodeRole::Filter);
         assert!(schema.format.is_neighborhood);
         assert_eq!(schema.params.len(), 2);
     }
@@ -1179,7 +1207,7 @@ mod tests {
         let schema = VIGNETTE_NODE.schema();
         assert_eq!(schema.id, "zenfilters.vignette");
         assert_eq!(schema.group, NodeGroup::Effects);
-        assert_eq!(schema.phase, Phase::PostResize);
+        assert_eq!(schema.role, NodeRole::Filter);
         assert_eq!(schema.params.len(), 4);
     }
 
@@ -1188,7 +1216,7 @@ mod tests {
         let schema = DT_SIGMOID_NODE.schema();
         assert_eq!(schema.id, "zenfilters.dt_sigmoid");
         assert_eq!(schema.group, NodeGroup::ToneMap);
-        assert_eq!(schema.phase, Phase::ToneMap);
+        assert_eq!(schema.role, NodeRole::Filter);
     }
 
     #[test]
@@ -1238,7 +1266,7 @@ mod tests {
 
     #[test]
     fn node_instance_get_set() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let mut node = Exposure { stops: 1.5 };
         assert_eq!(node.get_param("stops"), Some(ParamValue::F32(1.5)));
         assert!(node.set_param("stops", ParamValue::F32(-2.0)));
@@ -1248,7 +1276,7 @@ mod tests {
 
     #[test]
     fn node_instance_to_params() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let node = Vibrance {
             amount: 0.3,
             protection: 1.5,
@@ -1263,7 +1291,7 @@ mod tests {
         let schema = HSL_ADJUST_NODE.schema();
         assert_eq!(schema.id, "zenfilters.hsl_adjust");
         assert_eq!(schema.group, NodeGroup::Color);
-        assert_eq!(schema.phase, Phase::DisplayAdjust);
+        assert_eq!(schema.role, NodeRole::Filter);
         assert_eq!(schema.params.len(), 3);
 
         // Check hue param
@@ -1335,7 +1363,7 @@ mod tests {
 
     #[test]
     fn hsl_adjust_identity() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let node = HslAdjust::default();
         assert!(node.is_identity());
 
@@ -1346,7 +1374,7 @@ mod tests {
 
     #[test]
     fn hsl_adjust_get_set() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let mut node = HslAdjust::default();
 
         // Get returns F32Array
@@ -1396,7 +1424,7 @@ mod tests {
 
     #[test]
     fn bw_mixer_identity() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let node = BwMixer::default();
         assert!(node.is_identity());
 
@@ -1410,7 +1438,7 @@ mod tests {
         let schema = BASECURVE_TONE_MAP_NODE.schema();
         assert_eq!(schema.id, "zenfilters.basecurve_tonemap");
         assert_eq!(schema.group, NodeGroup::ToneMap);
-        assert_eq!(schema.phase, Phase::ToneMap);
+        assert_eq!(schema.role, NodeRole::Filter);
         assert_eq!(schema.params.len(), 2);
 
         // preset is a String param
@@ -1447,7 +1475,7 @@ mod tests {
 
     #[test]
     fn basecurve_tonemap_get_set() {
-        use zenode::traits::NodeInstance;
+        use zennode::traits::NodeInstance;
         let mut node = BasecurveToneMap::default();
 
         assert_eq!(
