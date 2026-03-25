@@ -1,8 +1,6 @@
 //! WASM SIMD128 dispatch targets for zenfilters.
 //!
-//! All implementations currently delegate to the scalar fallback for correctness.
-//! Future work can add native WASM SIMD128 kernels using `magetypes::simd::f32x4`
-//! for hot-path operations (scatter/gather, fused_adjust, etc.).
+//! Real f32x8 SIMD via the shared `wide_simd` module (polyfilled as 2xf32x4).
 
 #![allow(clippy::too_many_arguments)]
 
@@ -13,49 +11,49 @@ use crate::context::FilterContext;
 use zenpixels_convert::gamut::GamutMatrix;
 
 #[archmage::arcane]
-pub(super) fn scale_plane_impl_wasm128(_token: Wasm128Token, plane: &mut [f32], factor: f32) {
-    super::scale_plane_impl_scalar(ScalarToken, plane, factor);
+pub(super) fn scale_plane_impl_wasm128(token: Wasm128Token, plane: &mut [f32], factor: f32) {
+    super::wide_simd::scale_plane_simd_wasm128(token, plane, factor);
 }
 
 #[archmage::arcane]
-pub(super) fn offset_plane_impl_wasm128(_token: Wasm128Token, plane: &mut [f32], offset: f32) {
-    super::offset_plane_impl_scalar(ScalarToken, plane, offset);
+pub(super) fn offset_plane_impl_wasm128(token: Wasm128Token, plane: &mut [f32], offset: f32) {
+    super::wide_simd::offset_plane_simd_wasm128(token, plane, offset);
 }
 
 #[archmage::arcane]
 pub(super) fn power_contrast_plane_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     plane: &mut [f32],
     exp: f32,
     scale: f32,
 ) {
-    super::power_contrast_plane_impl_scalar(ScalarToken, plane, exp, scale);
+    super::wide_simd::power_contrast_plane_simd_wasm128(token, plane, exp, scale);
 }
 
 #[archmage::arcane]
 pub(super) fn sigmoid_tone_map_plane_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     plane: &mut [f32],
     contrast: f32,
     bias_a: f32,
 ) {
-    super::sigmoid_tone_map_plane_impl_scalar(ScalarToken, plane, contrast, bias_a);
+    super::wide_simd::sigmoid_tone_map_plane_simd_wasm128(token, plane, contrast, bias_a);
 }
 
 #[archmage::arcane]
 pub(super) fn unsharp_fuse_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     src: &[f32],
     blurred: &[f32],
     dst: &mut [f32],
     amount: f32,
 ) {
-    super::unsharp_fuse_impl_scalar(ScalarToken, src, blurred, dst, amount);
+    super::wide_simd::unsharp_fuse_simd_wasm128(token, src, blurred, dst, amount);
 }
 
 #[archmage::arcane]
 pub(super) fn gaussian_blur_plane_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     src: &[f32],
     dst: &mut [f32],
     width: u32,
@@ -63,12 +61,14 @@ pub(super) fn gaussian_blur_plane_impl_wasm128(
     kernel: &GaussianKernel,
     ctx: &mut FilterContext,
 ) {
-    super::gaussian_blur_plane_impl_scalar(ScalarToken, src, dst, width, height, kernel, ctx);
+    super::wide_simd::gaussian_blur_plane_dispatch_simd_wasm128(
+        token, src, dst, width, height, kernel, ctx,
+    );
 }
 
 #[archmage::arcane]
 pub(super) fn brilliance_apply_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     src_l: &[f32],
     avg_l: &[f32],
     dst_l: &mut [f32],
@@ -76,8 +76,8 @@ pub(super) fn brilliance_apply_impl_wasm128(
     shadow_strength: f32,
     highlight_strength: f32,
 ) {
-    super::brilliance_apply_impl_scalar(
-        ScalarToken,
+    super::wide_simd::brilliance_apply_simd_wasm128(
+        token,
         src_l,
         avg_l,
         dst_l,
@@ -89,7 +89,7 @@ pub(super) fn brilliance_apply_impl_wasm128(
 
 #[archmage::arcane]
 pub(super) fn scatter_oklab_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     src: &[f32],
     l: &mut [f32],
     a: &mut [f32],
@@ -98,12 +98,12 @@ pub(super) fn scatter_oklab_impl_wasm128(
     m1: &GamutMatrix,
     inv_white: f32,
 ) {
-    super::scatter_oklab_impl_scalar(ScalarToken, src, l, a, b, channels, m1, inv_white);
+    super::wide_simd::scatter_oklab_simd_wasm128(token, src, l, a, b, channels, m1, inv_white);
 }
 
 #[archmage::arcane]
 pub(super) fn gather_oklab_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     l: &[f32],
     a: &[f32],
     b: &[f32],
@@ -112,21 +112,14 @@ pub(super) fn gather_oklab_impl_wasm128(
     m1_inv: &GamutMatrix,
     reference_white: f32,
 ) {
-    super::gather_oklab_impl_scalar(
-        ScalarToken,
-        l,
-        a,
-        b,
-        dst,
-        channels,
-        m1_inv,
-        reference_white,
+    super::wide_simd::gather_oklab_simd_wasm128(
+        token, l, a, b, dst, channels, m1_inv, reference_white,
     );
 }
 
 #[archmage::arcane]
 pub(super) fn scatter_srgb_u8_to_oklab_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     src: &[u8],
     l: &mut [f32],
     a: &mut [f32],
@@ -134,12 +127,12 @@ pub(super) fn scatter_srgb_u8_to_oklab_impl_wasm128(
     channels: u32,
     m1: &GamutMatrix,
 ) {
-    super::scatter_srgb_u8_to_oklab_impl_scalar(ScalarToken, src, l, a, b, channels, m1);
+    super::wide_simd::scatter_srgb_u8_to_oklab_simd_wasm128(token, src, l, a, b, channels, m1);
 }
 
 #[archmage::arcane]
 pub(super) fn gather_oklab_to_srgb_u8_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     l: &[f32],
     a: &[f32],
     b: &[f32],
@@ -147,100 +140,98 @@ pub(super) fn gather_oklab_to_srgb_u8_impl_wasm128(
     channels: u32,
     m1_inv: &GamutMatrix,
 ) {
-    super::gather_oklab_to_srgb_u8_impl_scalar(ScalarToken, l, a, b, dst, channels, m1_inv);
+    super::wide_simd::gather_oklab_to_srgb_u8_simd_wasm128(
+        token, l, a, b, dst, channels, m1_inv,
+    );
 }
 
 #[archmage::arcane]
 pub(super) fn black_point_plane_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     plane: &mut [f32],
     bp: f32,
     inv_range: f32,
 ) {
-    super::black_point_plane_impl_scalar(ScalarToken, plane, bp, inv_range);
+    super::wide_simd::black_point_plane_simd_wasm128(token, plane, bp, inv_range);
 }
 
 #[archmage::arcane]
 pub(super) fn hue_rotate_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     a: &mut [f32],
     b: &mut [f32],
     cos_r: f32,
     sin_r: f32,
 ) {
-    super::hue_rotate_impl_scalar(ScalarToken, a, b, cos_r, sin_r);
+    super::wide_simd::hue_rotate_simd_wasm128(token, a, b, cos_r, sin_r);
 }
 
 #[archmage::arcane]
 pub(super) fn highlights_shadows_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     plane: &mut [f32],
     shadows: f32,
     highlights: f32,
 ) {
-    super::highlights_shadows_impl_scalar(ScalarToken, plane, shadows, highlights);
+    super::wide_simd::highlights_shadows_simd_wasm128(token, plane, shadows, highlights);
 }
 
 #[archmage::arcane]
 pub(super) fn vibrance_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     a: &mut [f32],
     b: &mut [f32],
     amount: f32,
     protection: f32,
 ) {
-    super::vibrance_impl_scalar(ScalarToken, a, b, amount, protection);
+    super::wide_simd::vibrance_simd_wasm128(token, a, b, amount, protection);
 }
 
 #[archmage::arcane]
 pub(super) fn subtract_planes_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     a: &[f32],
     b: &[f32],
     dst: &mut [f32],
 ) {
-    super::subtract_planes_impl_scalar(ScalarToken, a, b, dst);
+    super::wide_simd::subtract_planes_simd_wasm128(token, a, b, dst);
 }
 
 #[archmage::arcane]
 pub(super) fn square_plane_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     src: &[f32],
     dst: &mut [f32],
 ) {
-    super::square_plane_impl_scalar(ScalarToken, src, dst);
+    super::wide_simd::square_plane_simd_wasm128(token, src, dst);
 }
 
 #[archmage::arcane]
 pub(super) fn wavelet_threshold_accumulate_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     current: &[f32],
     smooth: &[f32],
     result: &mut [f32],
     threshold: f32,
 ) {
-    super::wavelet_threshold_accumulate_impl_scalar(
-        ScalarToken,
-        current,
-        smooth,
-        result,
-        threshold,
+    super::wide_simd::wavelet_threshold_accumulate_simd_wasm128(
+        token, current, smooth, result, threshold,
     );
 }
 
 #[archmage::arcane]
 pub(super) fn add_clamped_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     a: &[f32],
     b: &[f32],
     dst: &mut [f32],
 ) {
-    super::add_clamped_impl_scalar(ScalarToken, a, b, dst);
+    super::wide_simd::add_clamped_simd_wasm128(token, a, b, dst);
 }
 
 #[archmage::arcane]
 pub(super) fn adaptive_sharpen_apply_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     l: &[f32],
     detail: &[f32],
     energy: &[f32],
@@ -249,21 +240,14 @@ pub(super) fn adaptive_sharpen_apply_impl_wasm128(
     noise_floor: f32,
     masking_threshold: f32,
 ) {
-    super::adaptive_sharpen_apply_impl_scalar(
-        ScalarToken,
-        l,
-        detail,
-        energy,
-        dst,
-        amount,
-        noise_floor,
-        masking_threshold,
+    super::wide_simd::adaptive_sharpen_apply_simd_wasm128(
+        token, l, detail, energy, dst, amount, noise_floor, masking_threshold,
     );
 }
 
 #[archmage::arcane]
 pub(super) fn fused_adjust_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     l: &mut [f32],
     a: &mut [f32],
     b: &mut [f32],
@@ -283,8 +267,8 @@ pub(super) fn fused_adjust_impl_wasm128(
     vib_amount: f32,
     vib_protection: f32,
 ) {
-    super::fused_adjust_impl_scalar(
-        ScalarToken,
+    super::wide_simd::fused_adjust_simd_wasm128(
+        token,
         l,
         a,
         b,
@@ -309,7 +293,7 @@ pub(super) fn fused_adjust_impl_wasm128(
 #[allow(dead_code)]
 #[archmage::arcane]
 pub(super) fn fused_interleaved_adjust_impl_wasm128(
-    _token: Wasm128Token,
+    token: Wasm128Token,
     src: &[f32],
     dst: &mut [f32],
     channels: u32,
@@ -333,8 +317,8 @@ pub(super) fn fused_interleaved_adjust_impl_wasm128(
     vib_amount: f32,
     vib_protection: f32,
 ) {
-    super::fused_interleaved_adjust_impl_scalar(
-        ScalarToken,
+    super::wide_simd::fused_interleaved_adjust_simd_wasm128(
+        token,
         src,
         dst,
         channels,

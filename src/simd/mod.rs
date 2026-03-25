@@ -10,6 +10,9 @@ mod x86;
 #[cfg(target_arch = "x86_64")]
 use x86::*;
 
+#[cfg(any(target_arch = "aarch64", target_arch = "wasm32"))]
+mod wide_simd;
+
 #[cfg(target_arch = "aarch64")]
 mod neon;
 #[cfg(target_arch = "aarch64")]
