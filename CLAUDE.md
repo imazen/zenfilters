@@ -6,7 +6,7 @@ Oklab perceptual color space image filter library with SIMD dispatch via archmag
 
 ### 1. Feature Parity with Lightroom
 
-Before training a neural model, zenfilters needs all the adjustment capabilities Lightroom offers. Current coverage: 45 filters across exposure, tone, color, detail, and effects.
+Before training a neural model, zenfilters needs all the adjustment capabilities Lightroom offers. Current coverage: 51 stable filters across exposure, tone, color, detail, and effects (plus Warp behind the experimental feature flag).
 
 **DONE (high priority, completed 2026-03-10):**
 - ~~Whites/Blacks sliders~~ → `WhitesBlacks` (smoothstep-weighted extreme luminance control)
