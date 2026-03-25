@@ -9,6 +9,7 @@
 //!
 //! Requires the `buffer` feature.
 
+use alloc::borrow::Cow;
 use whereat::{At, ResultAtExt, at};
 use zenpixels::buffer::PixelBuffer;
 use zenpixels::{
@@ -22,6 +23,19 @@ use crate::planes::OklabPlanes;
 use crate::scatter_gather::{
     gather_from_oklab, gather_oklab_to_srgb_u8, scatter_srgb_u8_to_oklab, scatter_to_oklab,
 };
+
+/// Cast `&[u8]` to `&[f32]`, copying to an aligned buffer only if needed.
+fn as_f32_slice(data: &[u8]) -> Cow<'_, [f32]> {
+    match bytemuck::try_cast_slice(data) {
+        Ok(s) => Cow::Borrowed(s),
+        Err(bytemuck::PodCastError::TargetAlignmentGreaterAndInputNotAligned) => Cow::Owned(
+            data.chunks_exact(4)
+                .map(|c| f32::from_ne_bytes([c[0], c[1], c[2], c[3]]))
+                .collect(),
+        ),
+        Err(e) => panic!("cannot cast &[u8] to &[f32]: {e:?}"),
+    }
+}
 
 /// Error type for convenience layer operations.
 #[derive(Debug)]
@@ -178,7 +192,7 @@ pub fn apply_to_buffer(
     } else {
         let linear_bytes = convert_buffer_bytes_pooled(input, linear_desc, ctx)
             .map_err(|e| at!(e).map_error(|e| ConvenienceError::Convert(e.into_inner())))?;
-        let linear_f32: &[f32] = bytemuck::cast_slice(&linear_bytes);
+        let linear_f32 = as_f32_slice(&linear_bytes);
         scatter_to_oklab(linear_f32, &mut planes, channels, &m1, reference_white);
         ctx.return_u8(linear_bytes);
     }
