@@ -31,14 +31,13 @@ zennode = { version = "0.1", path = "../zennode/zennode", default-features = fal
 zenpixels-convert = { version = "0.2.0" }
 
 [dev-dependencies]
-criterion = { version = "0.8", features = ["html_reports"] }
 imgref = "1.12"
 palette = { version = "0.7", default-features = false, features = ["std"] }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"] }
-zencodecs = { version = "0.1", path = "../zencodecs", features = ["jpeg", "png"] }
+zencodecs = { version = "0.1", path = "../zencodecs", default-features = false, features = ["jpeg", "png"] }
 zenraw = { version = "0.1", path = "../zenraw", features = ["rawler", "darktable", "exif", "apple"] }
 enough = "0.4"
-zenbench = { version = "0.1", path = "../zenbench" }
+zenbench = { version = "0.1.1", features = ["criterion-compat"] }
 libblur = { version = "0.23", default-features = true }
 zenresize = { version = "0.1", path = "../zenresize", default-features = false, features = ["std"] }
 zensim = { version = "0.2", path = "../zensim/zensim", default-features = false }
