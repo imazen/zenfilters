@@ -1189,6 +1189,87 @@ pub static ALL: &[&dyn NodeDef] = &[
 ];
 
 // ═══════════════════════════════════════════════════════════════════
+// NodeInstance → Filter bridge
+// ═══════════════════════════════════════════════════════════════════
+
+/// Convert a zenfilters `NodeInstance` to a `Box<dyn Filter>`.
+///
+/// Reads params from the node and constructs the corresponding filter type.
+/// Returns `None` if the node's schema_id is not recognized.
+pub fn node_to_filter(node: &dyn zennode::traits::NodeInstance) -> Option<alloc::boxed::Box<dyn crate::Filter>> {
+    use crate::filters::*;
+
+    fn f32_param(node: &dyn zennode::traits::NodeInstance, name: &str) -> f32 {
+        node.get_param(name).and_then(|p| match p {
+            ParamValue::F32(v) => Some(v),
+            _ => None,
+        }).unwrap_or(0.0)
+    }
+
+    match node.schema().id {
+        // Tone
+        "zenfilters.exposure" => Some(alloc::boxed::Box::new(Exposure { stops: f32_param(node, "stops") })),
+        "zenfilters.contrast" => Some(alloc::boxed::Box::new(Contrast { amount: f32_param(node, "amount") })),
+        "zenfilters.black_point" => Some(alloc::boxed::Box::new(BlackPoint { level: f32_param(node, "level") })),
+        "zenfilters.white_point" => Some(alloc::boxed::Box::new(WhitePoint {
+            level: f32_param(node, "level"),
+            headroom: f32_param(node, "headroom"),
+        })),
+        "zenfilters.sigmoid" => Some(alloc::boxed::Box::new(Sigmoid {
+            contrast: f32_param(node, "contrast"),
+            skew: f32_param(node, "skew"),
+            chroma_compression: f32_param(node, "chroma_compression"),
+        })),
+        // Color
+        "zenfilters.saturation" => {
+            let factor = f32_param(node, "factor");
+            let amount = f32_param(node, "amount");
+            // translate.rs uses "amount" param, but the filter uses "factor"
+            let val = if factor != 0.0 { factor } else { amount + 1.0 };
+            Some(alloc::boxed::Box::new(Saturation { factor: val }))
+        }
+        "zenfilters.vibrance" => Some(alloc::boxed::Box::new(Vibrance {
+            amount: f32_param(node, "amount"),
+            protection: f32_param(node, "protection"),
+        })),
+        "zenfilters.temperature" => Some(alloc::boxed::Box::new(Temperature { shift: f32_param(node, "amount") })),
+        "zenfilters.tint" => Some(alloc::boxed::Box::new(Tint { shift: f32_param(node, "amount") })),
+        "zenfilters.hue_rotate" => Some(alloc::boxed::Box::new(HueRotate { degrees: f32_param(node, "degrees") })),
+        "zenfilters.grayscale" => Some(alloc::boxed::Box::new(Grayscale::default())),
+        "zenfilters.sepia" => Some(alloc::boxed::Box::new(Sepia {
+            amount: f32_param(node, "amount"),
+        })),
+        "zenfilters.invert" => Some(alloc::boxed::Box::new(Invert)),
+        // Detail
+        "zenfilters.clarity" => Some(alloc::boxed::Box::new(Clarity {
+            amount: f32_param(node, "amount"),
+            sigma: f32_param(node, "sigma"),
+        })),
+        "zenfilters.sharpen" => Some(alloc::boxed::Box::new(Sharpen {
+            amount: f32_param(node, "amount"),
+            sigma: f32_param(node, "sigma"),
+        })),
+        "zenfilters.dehaze" => Some(alloc::boxed::Box::new(Dehaze { strength: f32_param(node, "strength") })),
+        "zenfilters.bloom" => Some(alloc::boxed::Box::new(Bloom {
+            amount: f32_param(node, "amount"),
+            sigma: f32_param(node, "sigma"),
+            threshold: f32_param(node, "threshold"),
+        })),
+        "zenfilters.grain" => Some(alloc::boxed::Box::new(Grain {
+            amount: f32_param(node, "amount"),
+            size: f32_param(node, "size"),
+            seed: 0,
+        })),
+        _ => None,
+    }
+}
+
+/// Returns true if the given schema ID is a zenfilters node.
+pub fn is_zenfilters_node(schema_id: &str) -> bool {
+    schema_id.starts_with("zenfilters.")
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════
 
