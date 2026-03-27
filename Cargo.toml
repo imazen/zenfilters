@@ -37,7 +37,7 @@ rgb = { version = "0.8", default-features = false, features = ["as-bytes"] }
 zencodecs = { version = "0.1", path = "../zencodecs", default-features = false, features = ["jpeg", "png"] }
 zenraw = { version = "0.1", path = "../zenraw", features = ["rawler", "darktable", "exif", "apple"] }
 enough = "0.4"
-zenbench = { version = "0.1.1", features = ["criterion-compat"] }
+zenbench = { version = "0.1.2", features = ["criterion-compat"] }
 libblur = { version = "0.23", default-features = true }
 zenresize = { version = "0.1", path = "../zenresize", default-features = false, features = ["std"] }
 zensim = { version = "0.2", path = "../zensim/zensim", default-features = false }
