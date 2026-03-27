@@ -1097,6 +1097,51 @@ pub struct Dehaze {
 #[node(format(preferred = OklabF32, alpha = Skip))]
 pub struct Invert {}
 
+/// Alpha channel scaling for transparency adjustment.
+///
+/// Multiplies all alpha values by a constant factor. Useful for fade effects
+/// or global opacity changes. If no alpha channel exists, this is a no-op.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.alpha", group = Effects, role = Filter)]
+#[node(label = "Alpha")]
+#[node(format(preferred = OklabF32, alpha = ModifyAlpha))]
+pub struct Alpha {
+    /// Alpha multiplier (0 = fully transparent, 1 = unchanged)
+    #[param(range(0.0..=1.0), default = 1.0, identity = 1.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub factor: f32,
+}
+
+impl Default for Alpha {
+    fn default() -> Self {
+        Self { factor: 1.0 }
+    }
+}
+
+/// 5x5 color matrix applied in linear RGB space.
+///
+/// Transforms `[R, G, B, A, 1]` -> `[R', G', B', A', 1]` using a row-major
+/// 5x5 matrix (25 elements). The 5th column is the bias/offset. The filter
+/// converts Oklab -> linear RGB, applies the matrix, then converts back.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.color_matrix", group = Color, role = Filter)]
+#[node(label = "Color Matrix")]
+#[node(format(preferred = OklabF32, alpha = Process))]
+pub struct ColorMatrix {
+    /// Row-major 5x5 color matrix (25 floats)
+    #[param(range(-10.0..=10.0), default = 0.0, identity = 0.0, step = 0.01)]
+    #[param(unit = "", section = "Main", slider = NotSlider)]
+    pub matrix: [f32; 25],
+}
+
+impl Default for ColorMatrix {
+    fn default() -> Self {
+        Self {
+            matrix: crate::filters::ColorMatrix::IDENTITY,
+        }
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Registry helper
 // ═══════════════════════════════════════════════════════════════════
@@ -1146,6 +1191,8 @@ pub fn register_all(registry: &mut NodeRegistry) {
     registry.register(&GRAIN_NODE);
     registry.register(&DEHAZE_NODE);
     registry.register(&INVERT_NODE);
+    registry.register(&ALPHA_NODE);
+    registry.register(&COLOR_MATRIX_NODE);
 }
 
 /// All zenfilters node definitions.
@@ -1186,6 +1233,8 @@ pub static ALL: &[&dyn NodeDef] = &[
     &GRAIN_NODE,
     &DEHAZE_NODE,
     &INVERT_NODE,
+    &ALPHA_NODE,
+    &COLOR_MATRIX_NODE,
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1196,21 +1245,31 @@ pub static ALL: &[&dyn NodeDef] = &[
 ///
 /// Reads params from the node and constructs the corresponding filter type.
 /// Returns `None` if the node's schema_id is not recognized.
-pub fn node_to_filter(node: &dyn zennode::traits::NodeInstance) -> Option<alloc::boxed::Box<dyn crate::Filter>> {
+pub fn node_to_filter(
+    node: &dyn zennode::traits::NodeInstance,
+) -> Option<alloc::boxed::Box<dyn crate::Filter>> {
     use crate::filters::*;
 
     fn f32_param(node: &dyn zennode::traits::NodeInstance, name: &str) -> f32 {
-        node.get_param(name).and_then(|p| match p {
-            ParamValue::F32(v) => Some(v),
-            _ => None,
-        }).unwrap_or(0.0)
+        node.get_param(name)
+            .and_then(|p| match p {
+                ParamValue::F32(v) => Some(v),
+                _ => None,
+            })
+            .unwrap_or(0.0)
     }
 
     match node.schema().id {
         // Tone
-        "zenfilters.exposure" => Some(alloc::boxed::Box::new(Exposure { stops: f32_param(node, "stops") })),
-        "zenfilters.contrast" => Some(alloc::boxed::Box::new(Contrast { amount: f32_param(node, "amount") })),
-        "zenfilters.black_point" => Some(alloc::boxed::Box::new(BlackPoint { level: f32_param(node, "level") })),
+        "zenfilters.exposure" => Some(alloc::boxed::Box::new(Exposure {
+            stops: f32_param(node, "stops"),
+        })),
+        "zenfilters.contrast" => Some(alloc::boxed::Box::new(Contrast {
+            amount: f32_param(node, "amount"),
+        })),
+        "zenfilters.black_point" => Some(alloc::boxed::Box::new(BlackPoint {
+            level: f32_param(node, "level"),
+        })),
         "zenfilters.white_point" => Some(alloc::boxed::Box::new(WhitePoint {
             level: f32_param(node, "level"),
             headroom: f32_param(node, "headroom"),
@@ -1232,9 +1291,15 @@ pub fn node_to_filter(node: &dyn zennode::traits::NodeInstance) -> Option<alloc:
             amount: f32_param(node, "amount"),
             protection: f32_param(node, "protection"),
         })),
-        "zenfilters.temperature" => Some(alloc::boxed::Box::new(Temperature { shift: f32_param(node, "amount") })),
-        "zenfilters.tint" => Some(alloc::boxed::Box::new(Tint { shift: f32_param(node, "amount") })),
-        "zenfilters.hue_rotate" => Some(alloc::boxed::Box::new(HueRotate { degrees: f32_param(node, "degrees") })),
+        "zenfilters.temperature" => Some(alloc::boxed::Box::new(Temperature {
+            shift: f32_param(node, "amount"),
+        })),
+        "zenfilters.tint" => Some(alloc::boxed::Box::new(Tint {
+            shift: f32_param(node, "amount"),
+        })),
+        "zenfilters.hue_rotate" => Some(alloc::boxed::Box::new(HueRotate {
+            degrees: f32_param(node, "degrees"),
+        })),
         "zenfilters.grayscale" => Some(alloc::boxed::Box::new(Grayscale::default())),
         "zenfilters.sepia" => Some(alloc::boxed::Box::new(Sepia {
             amount: f32_param(node, "amount"),
@@ -1249,7 +1314,9 @@ pub fn node_to_filter(node: &dyn zennode::traits::NodeInstance) -> Option<alloc:
             amount: f32_param(node, "amount"),
             sigma: f32_param(node, "sigma"),
         })),
-        "zenfilters.dehaze" => Some(alloc::boxed::Box::new(Dehaze { strength: f32_param(node, "strength") })),
+        "zenfilters.dehaze" => Some(alloc::boxed::Box::new(Dehaze {
+            strength: f32_param(node, "strength"),
+        })),
         "zenfilters.bloom" => Some(alloc::boxed::Box::new(Bloom {
             amount: f32_param(node, "amount"),
             sigma: f32_param(node, "sigma"),
@@ -1260,6 +1327,22 @@ pub fn node_to_filter(node: &dyn zennode::traits::NodeInstance) -> Option<alloc:
             size: f32_param(node, "size"),
             seed: 0,
         })),
+        "zenfilters.alpha" => Some(alloc::boxed::Box::new(crate::filters::Alpha {
+            factor: f32_param(node, "factor"),
+        })),
+        "zenfilters.color_matrix" => {
+            let matrix = match node.get_param("matrix") {
+                Some(ParamValue::F32Array(arr)) if arr.len() == 25 => {
+                    let mut m = [0.0f32; 25];
+                    m.copy_from_slice(&arr);
+                    m
+                }
+                _ => crate::filters::ColorMatrix::IDENTITY,
+            };
+            Some(alloc::boxed::Box::new(crate::filters::ColorMatrix {
+                matrix,
+            }))
+        }
         _ => None,
     }
 }
