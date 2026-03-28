@@ -83,7 +83,7 @@ pub use devignette::Devignette;
 pub use edge_detect::{EdgeDetect, EdgeMode};
 pub use exposure::Exposure;
 pub use fused_adjust::FusedAdjust;
-pub use gamut_expand::GamutExpand;
+pub use gamut_expand::{GamutExpand, GamutExpandMethod, GamutLut, GamutMLP};
 pub use grain::Grain;
 pub use grayscale::Grayscale;
 pub use highlight_recovery::HighlightRecovery;
