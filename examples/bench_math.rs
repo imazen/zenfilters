@@ -126,7 +126,10 @@ fn main() {
             let fast_ns = start.elapsed().as_nanos() as f64 / n as f64;
             black_box(sum);
 
-            println!("powf(x, 2.4)  std: {std_ns:5.2} ns   fast: {fast_ns:5.2} ns   speedup: {:.1}x", std_ns / fast_ns);
+            println!(
+                "powf(x, 2.4)  std: {std_ns:5.2} ns   fast: {fast_ns:5.2} ns   speedup: {:.1}x",
+                std_ns / fast_ns
+            );
         }
 
         // === atan2 ===
@@ -151,7 +154,10 @@ fn main() {
             let fast_ns = start.elapsed().as_nanos() as f64 / n as f64;
             black_box(sum);
 
-            println!("atan2(y,x)    std: {std_ns:5.2} ns   fast: {fast_ns:5.2} ns   speedup: {:.1}x", std_ns / fast_ns);
+            println!(
+                "atan2(y,x)    std: {std_ns:5.2} ns   fast: {fast_ns:5.2} ns   speedup: {:.1}x",
+                std_ns / fast_ns
+            );
         }
 
         // === sin + cos ===
@@ -173,7 +179,10 @@ fn main() {
             let fast_ns = start.elapsed().as_nanos() as f64 / n as f64;
             black_box(sum);
 
-            println!("sin+cos(x)    std: {std_ns:5.2} ns   fast: {fast_ns:5.2} ns   speedup: {:.1}x", std_ns / fast_ns);
+            println!(
+                "sin+cos(x)    std: {std_ns:5.2} ns   fast: {fast_ns:5.2} ns   speedup: {:.1}x",
+                std_ns / fast_ns
+            );
         }
 
         // === polar roundtrip (the real HSL adjust pattern) ===
@@ -206,7 +215,10 @@ fn main() {
             let fast_ns = start.elapsed().as_nanos() as f64 / n as f64;
             black_box(sum);
 
-            println!("polar round   std: {std_ns:5.2} ns   fast: {fast_ns:5.2} ns   speedup: {:.1}x", std_ns / fast_ns);
+            println!(
+                "polar round   std: {std_ns:5.2} ns   fast: {fast_ns:5.2} ns   speedup: {:.1}x",
+                std_ns / fast_ns
+            );
         }
 
         println!();
