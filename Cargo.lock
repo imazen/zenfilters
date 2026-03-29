@@ -2208,6 +2208,8 @@ dependencies = [
 [[package]]
 name = "ultrahdr-core"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d47f85993013e9469567e63d006d61076474aa55c52743472d5115cdafef1e3"
 dependencies = [
  "bytemuck",
  "enough",
@@ -2218,9 +2220,7 @@ dependencies = [
 
 [[package]]
 name = "ultrahdr-core"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d47f85993013e9469567e63d006d61076474aa55c52743472d5115cdafef1e3"
+version = "0.3.0"
 dependencies = [
  "bytemuck",
  "enough",
@@ -2769,9 +2769,9 @@ dependencies = [
 
 [[package]]
 name = "zencodec"
-version = "0.1.5"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7859f4791276d96421c828ce31e43f7b22c844b75d54130e6f6081e312207b0a"
+checksum = "4d055b475f345ab30e82f582cc1e54be97fcdf8a2ab6d427106a4195c2b899f2"
 dependencies = [
  "almost-enough",
  "enough",
@@ -2838,7 +2838,7 @@ dependencies = [
 
 [[package]]
 name = "zenjpeg"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "aligned-vec",
  "archmage",
@@ -2850,7 +2850,7 @@ dependencies = [
  "safe_unaligned_simd",
  "thiserror",
  "tinyvec",
- "ultrahdr-core 0.2.0",
+ "ultrahdr-core 0.3.0",
  "whereat",
  "wide",
  "yuv",
@@ -2882,9 +2882,9 @@ dependencies = [
 
 [[package]]
 name = "zenpixels"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0828926cd37f826702d167dc46e15dde519279d20a30d458acabc122043c8325"
+checksum = "4705187b555bc476109a2113ca007282fdf327bcc9edb4c692ae1e4d489bc9b2"
 dependencies = [
  "bytemuck",
  "imgref",
@@ -2894,9 +2894,9 @@ dependencies = [
 
 [[package]]
 name = "zenpixels-convert"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15525e70fac3b3a6c2f7e3826c4e11376dd3ae885eaa7fe0aa252238381c3732"
+checksum = "45c79098f78c1ea6bb065f28c633f7ad42c93c0a58e1a2d1c3bcdeeac444d360"
 dependencies = [
  "archmage",
  "bytemuck",
@@ -2955,14 +2955,14 @@ dependencies = [
  "rawler",
  "rawloader",
  "thiserror",
- "ultrahdr-core 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ultrahdr-core 0.2.0",
  "whereat",
  "zenpixels",
 ]
 
 [[package]]
 name = "zenresize"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "archmage",
  "imgref",
@@ -2974,13 +2974,14 @@ dependencies = [
  "whereat",
  "zenblend",
  "zenlayout",
- "zennode",
  "zenpixels",
 ]
 
 [[package]]
 name = "zensim"
-version = "0.2.1"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c2cfe0d24afe29012b75eb79cb151a10e7ce6460232682422ec92751985cb1b"
 dependencies = [
  "archmage",
  "bytemuck",

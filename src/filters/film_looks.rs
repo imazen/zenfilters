@@ -36,7 +36,6 @@ use crate::context::FilterContext;
 use crate::filter::Filter;
 use crate::param_schema::*;
 use crate::planes::OklabPlanes;
-use crate::prelude::*;
 
 use super::cube_lut::{CubeLut, TensorLut};
 
@@ -780,7 +779,6 @@ fn kodachrome(r: f32, g: f32, b: f32) -> [f32; 3] {
     let shadow = (1.0 - l * 2.0).max(0.0);
     let highlight = ((l - 0.5) * 2.0).max(0.0);
     let r_out = r_out + highlight * 0.02 - shadow * 0.02;
-    let g_out = g_out;
     let b_out = b_out + shadow * 0.02 - highlight * 0.01;
     // Crush blacks slightly
     [
@@ -903,7 +901,7 @@ fn classic_neg(r: f32, g: f32, b: f32) -> [f32; 3] {
 fn cyberpunk_neon(r: f32, g: f32, b: f32) -> [f32; 3] {
     // Deep blacks, neon cyan/magenta pushed into highlights, warm skin
     let l = luma(r, g, b);
-    let highlight = ((l - 0.4) * 2.5).max(0.0).min(1.0);
+    let highlight = ((l - 0.4) * 2.5).clamp(0.0, 1.0);
     // Crush blacks hard
     let r_out = (r - 0.03).max(0.0);
     let g_out = (g - 0.03).max(0.0);

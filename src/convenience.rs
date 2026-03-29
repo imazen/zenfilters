@@ -189,7 +189,7 @@ pub fn apply_to_buffer(
         ctx.return_u8(input_bytes);
     } else {
         let linear_bytes = convert_buffer_bytes_pooled(input, linear_desc, ctx)
-            .map_err(|e| at!(e).map_error(|e| ConvenienceError::Convert(e.into_inner())))?;
+            .map_err(|e| at!(e).map_error(|e| ConvenienceError::Convert(e.decompose().0)))?;
         let linear_f32 = as_f32_slice(&linear_bytes);
         scatter_to_oklab(&linear_f32, &mut planes, channels, &m1, reference_white);
         ctx.return_u8(linear_bytes);
@@ -221,7 +221,7 @@ pub fn apply_to_buffer(
 
         if convert_back && desc != linear_desc {
             let mut converter = RowConverter::new(linear_desc, desc)
-                .map_err(|e| at!(e).map_error(|e| ConvenienceError::Convert(e.into_inner())))?;
+                .map_err(|e| at!(e).map_error(|e| ConvenienceError::Convert(e.decompose().0)))?;
             let dst_bpp = desc.bytes_per_pixel();
             let dst_stride = (width as usize) * dst_bpp;
             let total = dst_stride * height as usize;
