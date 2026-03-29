@@ -768,6 +768,38 @@ pub struct CubeLut {
 #[node(tags("color", "curves", "grading", "hue"))]
 pub struct HueCurves {}
 
+/// Film look presets using tensor-compressed 3D LUTs.
+///
+/// 10 built-in mathematical film emulations, each ~5 KB. Select by
+/// preset name; strength blends between original and graded result.
+///
+/// Presets: bleach_bypass, cross_process, teal_orange, faded_film,
+/// golden_hour, cool_chrome, print_film, noir, technicolor, matte.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.film_look", group = Color, role = Filter)]
+#[node(label = "Film Look")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("color", "grading", "film", "lut"))]
+pub struct FilmLook {
+    /// Preset name (e.g. "teal_orange", "bleach_bypass")
+    #[param(default = "faded_film", section = "Main")]
+    pub preset: String,
+
+    /// Blend strength (0 = bypass, 1 = full effect)
+    #[param(range(0.0..=1.0), default = 1.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub strength: f32,
+}
+
+impl Default for FilmLook {
+    fn default() -> Self {
+        Self {
+            preset: String::from("faded_film"),
+            strength: 1.0,
+        }
+    }
+}
+
 /// Grayscale conversion with per-color luminance weights
 #[derive(Node, Clone, Debug)]
 #[node(id = "zenfilters.bw_mixer", group = Color, role = Filter)]
