@@ -270,27 +270,19 @@ function updateView() {
   const origSrc = imagePath(name, null);
   const hasFilter = preset && !showOriginal;
 
-  if (preset) {
-    const filtSrc = imagePath(name, preset.id);
-    if (showOriginal) {
-      // Main shows original, corner shows filtered (inverted)
-      mainImg.src = origSrc;
-      cornerImg.src = filtSrc;
-      imgOverlay.textContent = 'Original';
-    } else {
-      // Main shows filtered, corner shows original
-      mainImg.src = filtSrc;
-      cornerImg.src = origSrc;
-      imgOverlay.textContent = preset.name;
-    }
-    cornerDiv.style.display = '';
-    cornerBorder.style.display = '';
+  // Triangle always shows original. Main shows filtered (or original if no filter/A/B).
+  cornerImg.src = origSrc;
+  cornerDiv.style.display = '';
+  cornerBorder.style.display = '';
+
+  if (preset && !showOriginal) {
+    mainImg.src = imagePath(name, preset.id);
+    imgOverlay.textContent = preset.name;
     imgOverlay.style.display = '';
   } else {
     mainImg.src = origSrc;
-    cornerDiv.style.display = 'none';
-    cornerBorder.style.display = 'none';
-    imgOverlay.style.display = 'none';
+    imgOverlay.textContent = preset ? 'Original' : '';
+    imgOverlay.style.display = preset ? '' : 'none';
   }
 
   mainImg.onload = sizeCorner;
@@ -347,11 +339,11 @@ function setupControls() {
   // Triangle = always A/B toggle
   cornerDiv.addEventListener('click', (e) => { e.stopPropagation(); toggleAB(); });
 
-  // Image tap = switch photos (top half prev, bottom half next)
+  // Image tap = switch filters (left half prev, right half next)
   mainImg.addEventListener('click', (e) => {
     const rect = mainImg.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    if (y < rect.height / 2) { prevPhoto(); } else { nextPhoto(); }
+    const x = e.clientX - rect.left;
+    if (x < rect.width / 2) { prevFilter(); } else { nextFilter(); }
   });
 
   // Touch swipe on main area: left/right = filter, up/down = photo
