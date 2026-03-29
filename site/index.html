@@ -2,45 +2,149 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#111111">
 <title>zenfilters Film Look Gallery</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #111; color: #eee; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
-#viewer { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
-#img-container { position: relative; max-width: 90vw; max-height: 85vh; }
-#img-container img { max-width: 90vw; max-height: 85vh; object-fit: contain; display: block; }
+html, body { height: 100%; overflow: hidden; touch-action: none; }
+body {
+  background: #111; color: #eee;
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-user-select: none; user-select: none;
+}
+
+#viewer {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+#img-container { position: relative; }
+#img-container img {
+  max-width: 100vw; max-height: calc(100vh - 80px);
+  max-height: calc(100dvh - 80px);
+  object-fit: contain; display: block;
+}
+@media (max-width: 600px) {
+  #img-container img {
+    max-height: calc(100vh - 110px);
+    max-height: calc(100dvh - 110px);
+  }
+}
 #img-a, #img-b { position: absolute; top: 0; left: 0; }
 #img-b { opacity: 0; transition: opacity 0.15s; }
 #img-b.visible { opacity: 1; }
 
+/* ── HUD ── */
 #hud {
   position: fixed; bottom: 0; left: 0; right: 0;
-  background: rgba(0,0,0,0.85); padding: 12px 20px;
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 14px; z-index: 10;
+  background: rgba(0,0,0,0.88);
+  padding: 10px 16px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
+  z-index: 10;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
-#hud .preset-name { font-size: 18px; font-weight: 600; }
-#hud .image-name { color: #888; }
-#hud .controls { color: #666; font-size: 12px; }
-#hud .state { color: #aaa; }
-#hud .showing { color: #4af; font-weight: 600; }
+#hud-top {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 8px;
+}
+#hud .preset-name { font-size: 17px; font-weight: 600; white-space: nowrap; }
+#hud .state { color: #aaa; font-size: 14px; }
+#hud .image-name { color: #888; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Desktop controls hint */
+#hud .controls { color: #555; font-size: 11px; margin-top: 4px; }
+@media (max-width: 600px) { #hud .controls { display: none; } }
+@media (pointer: coarse) { #hud .controls { display: none; } }
+
+/* ── Mobile nav buttons ── */
+#mobile-nav {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0;
+  z-index: 15;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+@media (pointer: coarse) { #mobile-nav { display: flex; } }
+@media (max-width: 600px) { #mobile-nav { display: flex; } }
+
+#mobile-nav {
+  background: rgba(0,0,0,0.92);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  justify-content: space-around; align-items: center;
+  padding: 6px 4px 6px;
+}
+#mobile-nav button {
+  background: #222; border: none; color: #ccc;
+  padding: 10px 14px; border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; min-width: 48px; min-height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+#mobile-nav button:active { background: #444; }
+#mobile-nav button.toggle-active { background: #1a3a5a; color: #4af; }
+#mobile-nav .nav-label { font-size: 10px; color: #666; margin-top: 2px; }
+
+/* When mobile nav is visible, push HUD up */
+@media (pointer: coarse) {
+  #hud { bottom: 54px; bottom: calc(54px + env(safe-area-inset-bottom, 0)); padding-bottom: 8px; }
+}
+@media (max-width: 600px) {
+  #hud { bottom: 54px; bottom: calc(54px + env(safe-area-inset-bottom, 0)); padding-bottom: 8px; }
+}
+
+/* ── Preset drawer ── */
+#preset-drawer {
+  position: fixed; left: 0; top: 0; bottom: 0; right: 0;
+  z-index: 20; pointer-events: none;
+}
+#preset-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.5); opacity: 0;
+  transition: opacity 0.2s;
+}
+#preset-drawer.open #preset-backdrop { opacity: 1; pointer-events: auto; }
 
 #preset-list {
-  position: fixed; left: 0; top: 0; bottom: 50px;
-  width: 220px; background: rgba(0,0,0,0.9);
-  overflow-y: auto; padding: 10px 0; z-index: 5;
-  transform: translateX(-100%); transition: transform 0.2s;
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 260px; max-width: 80vw;
+  background: #181818;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 10px 0;
+  padding-top: calc(10px + env(safe-area-inset-top, 0));
+  transform: translateX(-100%); transition: transform 0.25s ease;
 }
-#preset-list.open { transform: translateX(0); }
-#preset-list .item {
-  padding: 6px 16px; cursor: pointer; font-size: 13px; color: #aaa;
-}
-#preset-list .item:hover { background: #222; color: #eee; }
-#preset-list .item.active { color: #4af; background: #1a2a3a; }
-#preset-list .category { padding: 8px 16px 4px; font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1px; }
+#preset-drawer.open #preset-list { transform: translateX(0); pointer-events: auto; }
 
-.loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #666; }
+#preset-list .item {
+  padding: 10px 18px; cursor: pointer; font-size: 15px; color: #aaa;
+  min-height: 44px; display: flex; align-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+#preset-list .item:active { background: #333; }
+#preset-list .item.active { color: #4af; background: #1a2a3a; }
+#preset-list .category {
+  padding: 12px 18px 6px; font-size: 11px; color: #555;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* ── Swipe hint overlay ── */
+#swipe-hint {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.7); border-radius: 12px;
+  padding: 16px 24px; color: #aaa; font-size: 14px;
+  text-align: center; line-height: 1.6;
+  pointer-events: none; opacity: 0;
+  transition: opacity 0.3s;
+}
+#swipe-hint.visible { opacity: 1; }
+
+.loading {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%,-50%); color: #666;
+}
 </style>
 </head>
 <body>
@@ -52,26 +156,46 @@ body { background: #111; color: #eee; font-family: system-ui, -apple-system, san
   </div>
 </div>
 
-<div id="preset-list"></div>
+<div id="preset-drawer">
+  <div id="preset-backdrop"></div>
+  <div id="preset-list"></div>
+</div>
 
 <div id="hud">
-  <div>
-    <span class="preset-name" id="preset-label">Original</span>
-    <span class="state" id="state-label"></span>
+  <div id="hud-top">
+    <div>
+      <span class="preset-name" id="preset-label">Original</span>
+      <span class="state" id="state-label"></span>
+    </div>
+    <div class="image-name" id="image-label"></div>
   </div>
-  <div class="image-name" id="image-label"></div>
   <div class="controls">
-    Left/Right: A/B compare &middot; Up/Down: switch photo &middot; Tab: preset list &middot; 1-9: preset
+    Left/Right: A/B &middot; Up/Down: photo &middot; Tab: presets &middot; PgUp/PgDn: cycle &middot; 0-9: quick
   </div>
 </div>
 
-<div class="loading" id="loading">Loading manifest...</div>
+<div id="mobile-nav">
+  <button id="btn-menu" aria-label="Presets">Presets</button>
+  <button id="btn-prev-photo" aria-label="Previous photo">Prev</button>
+  <button id="btn-toggle" aria-label="Toggle A/B">A/B</button>
+  <button id="btn-next-photo" aria-label="Next photo">Next</button>
+  <button id="btn-next-preset" aria-label="Next preset">Preset</button>
+</div>
+
+<div id="swipe-hint">
+  Swipe left/right: compare<br>
+  Swipe up/down: switch photo<br>
+  Tap: toggle A/B
+</div>
+
+<div class="loading" id="loading">Loading...</div>
 
 <script>
 let manifest = null;
 let imageIdx = 0;
-let presetIdx = -1; // -1 = original
+let presetIdx = -1;
 let showingB = false;
+
 const imgA = document.getElementById('img-a');
 const imgB = document.getElementById('img-b');
 const presetLabel = document.getElementById('preset-label');
@@ -79,6 +203,10 @@ const stateLabel = document.getElementById('state-label');
 const imageLabel = document.getElementById('image-label');
 const loading = document.getElementById('loading');
 const presetList = document.getElementById('preset-list');
+const presetDrawer = document.getElementById('preset-drawer');
+const presetBackdrop = document.getElementById('preset-backdrop');
+
+// ── Init ──
 
 async function init() {
   try {
@@ -91,16 +219,21 @@ async function init() {
   loading.style.display = 'none';
   buildPresetList();
   updateView();
+  setupTouch();
+  setupMobileButtons();
+  showHint();
 }
+
+// ── Preset list ──
 
 function buildPresetList() {
   let html = '<div class="item active" data-idx="-1">Original</div>';
-  let lastCategory = '';
+  let lastCat = '';
   manifest.presets.forEach((p, i) => {
     const cat = categorize(p.id);
-    if (cat !== lastCategory) {
+    if (cat !== lastCat) {
       html += `<div class="category">${cat}</div>`;
-      lastCategory = cat;
+      lastCat = cat;
     }
     html += `<div class="item" data-idx="${i}">${p.name}</div>`;
   });
@@ -108,25 +241,28 @@ function buildPresetList() {
   presetList.querySelectorAll('.item').forEach(el => {
     el.addEventListener('click', () => {
       presetIdx = parseInt(el.dataset.idx);
-      showingB = false;
+      showingB = presetIdx >= 0;
       updateView();
+      closeDrawer();
     });
   });
 }
 
 function categorize(id) {
-  const creative = ['bleach_bypass','cross_process','teal_orange','faded_film','golden_hour','noir','technicolor','matte'];
-  const negative = ['portra','kodak_gold','ektar','superia','pro_400h'];
-  const slide = ['velvia','provia','kodachrome','ektachrome'];
-  const cinema = ['print_2383','tungsten_500t'];
-  const digital = ['classic_chrome','classic_neg','cool_chrome'];
-  if (creative.includes(id)) return 'Creative';
-  if (negative.includes(id)) return 'Negative Film';
-  if (slide.includes(id)) return 'Slide Film';
-  if (cinema.includes(id)) return 'Cinema';
-  if (digital.includes(id)) return 'Digital';
-  return 'Cinematic Moods';
+  const m = {
+    bleach_bypass:'Creative', cross_process:'Creative', teal_orange:'Creative',
+    faded_film:'Creative', golden_hour:'Creative', noir:'Creative',
+    technicolor:'Creative', matte:'Creative',
+    portra:'Negative Film', kodak_gold:'Negative Film', ektar:'Negative Film',
+    superia:'Negative Film', pro_400h:'Negative Film',
+    velvia:'Slide Film', provia:'Slide Film', kodachrome:'Slide Film', ektachrome:'Slide Film',
+    print_2383:'Cinema', tungsten_500t:'Cinema',
+    classic_chrome:'Digital', classic_neg:'Digital', cool_chrome:'Digital',
+  };
+  return m[id] || 'Cinematic Moods';
 }
+
+// ── Image paths + view ──
 
 function imagePath(imgName, presetId) {
   if (presetId === null) return `gallery/originals/${imgName}.jpg`;
@@ -137,8 +273,6 @@ function updateView() {
   if (!manifest) return;
   const imgName = manifest.images[imageIdx];
   const preset = presetIdx >= 0 ? manifest.presets[presetIdx] : null;
-
-  // A = original, B = preset (or vice versa when toggling)
   const origPath = imagePath(imgName, null);
   const presetPath = preset ? imagePath(imgName, preset.id) : origPath;
 
@@ -148,74 +282,140 @@ function updateView() {
 
   presetLabel.textContent = preset ? preset.name : 'Original';
   stateLabel.textContent = preset ? (showingB ? ' (filtered)' : ' (original)') : '';
-  imageLabel.textContent = `${imgName} (${imageIdx + 1}/${manifest.images.length})`;
+  imageLabel.textContent = `${imageIdx + 1}/${manifest.images.length}`;
 
-  // Update active preset in list
   presetList.querySelectorAll('.item').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.idx) === presetIdx);
   });
+
+  // Update toggle button state
+  const btn = document.getElementById('btn-toggle');
+  if (btn) btn.classList.toggle('toggle-active', showingB && preset !== null);
 }
+
+// ── Drawer ──
+
+function openDrawer() { presetDrawer.classList.add('open'); }
+function closeDrawer() { presetDrawer.classList.remove('open'); }
+function toggleDrawer() { presetDrawer.classList.toggle('open'); }
+presetBackdrop.addEventListener('click', closeDrawer);
+
+// ── Touch gestures ──
+
+function setupTouch() {
+  let startX = 0, startY = 0, startTime = 0;
+  const viewer = document.getElementById('viewer');
+  const SWIPE_MIN = 30;
+  const TAP_MAX = 10;
+
+  viewer.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    startTime = Date.now();
+  }, { passive: true });
+
+  viewer.addEventListener('touchend', (e) => {
+    if (!manifest) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    const dt = Date.now() - startTime;
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+
+    // Tap (< 10px movement, < 300ms)
+    if (adx < TAP_MAX && ady < TAP_MAX && dt < 300) {
+      showingB = !showingB;
+      updateView();
+      return;
+    }
+
+    // Swipe
+    if (adx > ady && adx > SWIPE_MIN) {
+      // Horizontal: A/B
+      showingB = dx < 0; // swipe left = show filtered
+      updateView();
+    } else if (ady > adx && ady > SWIPE_MIN) {
+      // Vertical: switch photo
+      if (dy < 0) {
+        imageIdx = (imageIdx + 1) % manifest.images.length;
+      } else {
+        imageIdx = (imageIdx - 1 + manifest.images.length) % manifest.images.length;
+      }
+      updateView();
+    }
+  }, { passive: true });
+}
+
+// ── Mobile buttons ──
+
+function setupMobileButtons() {
+  document.getElementById('btn-menu').addEventListener('click', toggleDrawer);
+  document.getElementById('btn-prev-photo').addEventListener('click', () => {
+    if (!manifest) return;
+    imageIdx = (imageIdx - 1 + manifest.images.length) % manifest.images.length;
+    updateView();
+  });
+  document.getElementById('btn-next-photo').addEventListener('click', () => {
+    if (!manifest) return;
+    imageIdx = (imageIdx + 1) % manifest.images.length;
+    updateView();
+  });
+  document.getElementById('btn-toggle').addEventListener('click', () => {
+    showingB = !showingB;
+    updateView();
+  });
+  document.getElementById('btn-next-preset').addEventListener('click', () => {
+    if (!manifest) return;
+    presetIdx = (presetIdx + 1) % manifest.presets.length;
+    showingB = true;
+    updateView();
+  });
+}
+
+// ── Keyboard (desktop) ──
 
 document.addEventListener('keydown', (e) => {
   if (!manifest) return;
   switch (e.key) {
-    case 'ArrowLeft':
-      showingB = false;
-      updateView();
-      e.preventDefault();
-      break;
-    case 'ArrowRight':
-      showingB = true;
-      updateView();
-      e.preventDefault();
-      break;
+    case 'ArrowLeft':  showingB = false; updateView(); e.preventDefault(); break;
+    case 'ArrowRight': showingB = true;  updateView(); e.preventDefault(); break;
     case 'ArrowUp':
       imageIdx = (imageIdx - 1 + manifest.images.length) % manifest.images.length;
-      updateView();
-      e.preventDefault();
-      break;
+      updateView(); e.preventDefault(); break;
     case 'ArrowDown':
       imageIdx = (imageIdx + 1) % manifest.images.length;
-      updateView();
-      e.preventDefault();
-      break;
-    case 'Tab':
-      presetList.classList.toggle('open');
-      e.preventDefault();
-      break;
-    case 'Escape':
-      presetList.classList.remove('open');
-      break;
+      updateView(); e.preventDefault(); break;
+    case 'Tab': toggleDrawer(); e.preventDefault(); break;
+    case 'Escape': closeDrawer(); break;
     case 'PageUp':
       presetIdx = Math.max(-1, presetIdx - 1);
-      showingB = presetIdx >= 0;
-      updateView();
-      e.preventDefault();
-      break;
+      showingB = presetIdx >= 0; updateView(); e.preventDefault(); break;
     case 'PageDown':
       presetIdx = Math.min(manifest.presets.length - 1, presetIdx + 1);
-      showingB = presetIdx >= 0;
-      updateView();
-      e.preventDefault();
-      break;
+      showingB = presetIdx >= 0; updateView(); e.preventDefault(); break;
     default:
-      // 1-9 = quick preset select
       if (e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key) - 1;
-        if (idx < manifest.presets.length) {
-          presetIdx = idx;
-          showingB = true;
-          updateView();
-        }
+        if (idx < manifest.presets.length) { presetIdx = idx; showingB = true; updateView(); }
       }
-      // 0 = original
-      if (e.key === '0') {
-        presetIdx = -1;
-        showingB = false;
-        updateView();
-      }
+      if (e.key === '0') { presetIdx = -1; showingB = false; updateView(); }
   }
 });
+
+// ── First-visit hint ──
+
+function showHint() {
+  if (localStorage.getItem('zenfilters-hint-seen')) return;
+  const hint = document.getElementById('swipe-hint');
+  hint.classList.add('visible');
+  const dismiss = () => {
+    hint.classList.remove('visible');
+    localStorage.setItem('zenfilters-hint-seen', '1');
+  };
+  document.addEventListener('touchstart', dismiss, { once: true });
+  document.addEventListener('keydown', dismiss, { once: true });
+  setTimeout(dismiss, 4000);
+}
 
 init();
 </script>
