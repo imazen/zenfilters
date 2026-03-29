@@ -93,6 +93,10 @@ body {
 #filter-grid button:hover { background: #2a2a2a; color: #ccc; }
 #filter-grid button:active { background: #444; }
 #filter-grid button.active { background: #1a3a5a; color: #4af; border-color: #4af; }
+#filter-grid .group-label {
+  width: 100%; text-align: center; font-size: 10px; color: #555;
+  text-transform: uppercase; letter-spacing: 1px; padding: 6px 0 2px;
+}
 
 .loading {
   position: fixed; top: 50%; left: 50%;
@@ -172,12 +176,24 @@ function sortPresetsByAwesomeness() {
   ];
   const rank = {};
   order.forEach((id, i) => rank[id] = i);
-  manifest.presets.sort((a, b) => (rank[a.id] ?? 99) - (rank[b.id] ?? 99));
+  // Film Looks first (sorted by awesomeness), then Presets (original order)
+  const groupOrder = { 'Film Looks': 0, 'Presets': 1 };
+  manifest.presets.sort((a, b) => {
+    const ga = groupOrder[a.group] ?? 0, gb = groupOrder[b.group] ?? 0;
+    if (ga !== gb) return ga - gb;
+    return (rank[a.id] ?? 99) - (rank[b.id] ?? 99);
+  });
 }
 
 function buildFilterGrid() {
   let html = '<button class="active" data-idx="-1">Original</button>';
+  let lastGroup = '';
   manifest.presets.forEach((p, i) => {
+    const g = p.group || '';
+    if (g && g !== lastGroup) {
+      html += `<span class="group-label">${g}</span>`;
+      lastGroup = g;
+    }
     html += `<button data-idx="${i}">${p.name}</button>`;
   });
   filterGrid.innerHTML = html;

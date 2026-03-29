@@ -1,19 +1,14 @@
-//! Generate before/after comparison images for all film look presets.
+//! Generate before/after comparison images for film looks and pipeline presets.
 //!
-//! Uses codec-corpus to download test images automatically. Applies each
-//! of the 34 built-in film look presets and writes output images to a
-//! gallery directory with a JSON manifest for the comparison viewer.
+//! Uses codec-corpus to download test images automatically. Applies all 34
+//! film look presets and all 19 pipeline presets, writes output JPEGs and
+//! a JSON manifest for the comparison viewer.
 //!
 //! Usage:
 //!   cargo run --release --features experimental --example film_look_gallery -- <output_dir> [dataset]
 //!
 //! dataset defaults to "clic2025/final-test" (30 high-res photographic images).
 //! Other options: "clic2025/training", "CID22/CID22-512/validation", "gb82".
-//!
-//! The output directory will contain:
-//!   originals/    — resized input images (max 1024px long edge)
-//!   presets/      — filtered images: <preset_id>/<image_name>.jpg
-//!   manifest.json — metadata for the web viewer
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,8 +17,10 @@ use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::{ImageReader, RgbImage};
 use zenfilters::filters::{FilmLook, FilmPreset};
+use zenfilters::presets::{self, Preset};
 use zenfilters::{
-    Filter, FilterContext, OklabPlanes, gather_oklab_to_srgb_u8, scatter_srgb_u8_to_oklab,
+    Filter, FilterContext, OklabPlanes, Pipeline, PipelineConfig, gather_oklab_to_srgb_u8,
+    scatter_srgb_u8_to_oklab,
 };
 use zenpixels::ColorPrimaries;
 use zenpixels_convert::oklab;
@@ -32,11 +29,42 @@ const MAX_DIM: u32 = 1024;
 const JPEG_QUALITY: u8 = 88;
 const MAX_IMAGES: usize = 20;
 
+/// A gallery entry: either a film look or a pipeline preset.
+enum GalleryEntry {
+    Film(FilmPreset, FilmLook),
+    Pipeline(String, Pipeline),
+}
+
+impl GalleryEntry {
+    fn id(&self) -> String {
+        match self {
+            Self::Film(p, _) => p.id().to_string(),
+            Self::Pipeline(name, _) => {
+                format!("preset_{}", name.to_lowercase().replace(' ', "_"))
+            }
+        }
+    }
+
+    fn name(&self) -> String {
+        match self {
+            Self::Film(p, _) => p.name().to_string(),
+            Self::Pipeline(name, _) => name.clone(),
+        }
+    }
+
+    fn group(&self) -> &'static str {
+        match self {
+            Self::Film(..) => "Film Looks",
+            Self::Pipeline(..) => "Presets",
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <output_dir> [dataset]", args[0]);
-        eprintln!("  dataset: codec-corpus path (default: clic2025/professional_valid)");
+        eprintln!("  dataset: codec-corpus path (default: clic2025/final-test)");
         std::process::exit(1);
     }
 
@@ -53,7 +81,7 @@ fn main() {
         std::process::exit(1);
     });
 
-    // Collect input images (limit to MAX_IMAGES for gallery size)
+    // Collect input images
     let mut images: Vec<PathBuf> = Vec::new();
     for entry in fs::read_dir(&input_dir).expect("cannot read input dir") {
         let entry = entry.unwrap();
@@ -73,7 +101,6 @@ fn main() {
         let stem = p.file_stem().unwrap().to_str().unwrap();
         !skip_prefixes.iter().any(|pfx| stem.starts_with(pfx))
     });
-
     images.truncate(MAX_IMAGES);
 
     if images.is_empty() {
@@ -81,28 +108,36 @@ fn main() {
         std::process::exit(1);
     }
 
+    // Build all gallery entries: film looks + pipeline presets
+    let mut entries: Vec<GalleryEntry> = Vec::new();
+
+    // Film looks
+    for &p in FilmPreset::ALL {
+        eprintln!("  Building film look: {}...", p.name());
+        entries.push(GalleryEntry::Film(p, FilmLook::new(p)));
+    }
+
+    // Pipeline presets
+    for preset in presets::builtin_presets() {
+        eprintln!("  Building preset: {}...", preset.name);
+        let pipe = preset.build_pipeline_at(1.0);
+        entries.push(GalleryEntry::Pipeline(preset.name.clone(), pipe));
+    }
+
     eprintln!(
-        "Found {} images (using {}), {} presets",
+        "Found {} images, {} entries ({} film looks + {} presets)",
         images.len(),
-        MAX_IMAGES.min(images.len()),
-        FilmPreset::ALL.len()
+        entries.len(),
+        FilmPreset::ALL.len(),
+        presets::builtin_presets().len(),
     );
 
     // Create output directories
     let originals_dir = output_dir.join("originals");
     fs::create_dir_all(&originals_dir).unwrap();
-    for preset in FilmPreset::ALL {
-        fs::create_dir_all(output_dir.join("presets").join(preset.id())).unwrap();
+    for entry in &entries {
+        fs::create_dir_all(output_dir.join("presets").join(entry.id())).unwrap();
     }
-
-    // Pre-build all film looks (one-time cost)
-    let looks: Vec<(FilmPreset, FilmLook)> = FilmPreset::ALL
-        .iter()
-        .map(|&p| {
-            eprintln!("  Building {}...", p.name());
-            (p, FilmLook::new(p))
-        })
-        .collect();
 
     let mut ctx = FilterContext::new();
     let mut manifest_images = Vec::new();
@@ -137,38 +172,79 @@ fn main() {
         // Save original
         save_jpeg(&originals_dir.join(format!("{stem}.jpg")), &rgb);
 
-        // Scatter to Oklab once
+        // Prepare both formats for the two entry types
         let m1 = oklab::rgb_to_lms_matrix(ColorPrimaries::Bt709).unwrap();
         let m1_inv = oklab::lms_to_rgb_matrix(ColorPrimaries::Bt709).unwrap();
+
+        // Oklab planes for film looks
         let mut base_planes = OklabPlanes::new(rw, rh);
         scatter_srgb_u8_to_oklab(srgb_u8, &mut base_planes, 3, &m1);
 
-        // Apply each preset
-        for (preset, look) in &looks {
-            let mut planes = base_planes.clone();
-            look.apply(&mut planes, &mut ctx);
+        // Linear f32 for pipeline presets (sRGB u8 → linear f32)
+        let linear_src: Vec<f32> = srgb_u8
+            .iter()
+            .map(|&v| {
+                let x = v as f32 / 255.0;
+                if x <= 0.04045 {
+                    x / 12.92
+                } else {
+                    ((x + 0.055) / 1.055).powf(2.4)
+                }
+            })
+            .collect();
 
-            // Gather to sRGB u8
-            let mut out = vec![0u8; (rw as usize) * (rh as usize) * 3];
-            gather_oklab_to_srgb_u8(&planes, &mut out, 3, &m1_inv);
+        // Apply each entry
+        for entry in &entries {
+            let out_path = output_dir
+                .join("presets")
+                .join(entry.id())
+                .join(format!("{stem}.jpg"));
 
-            let out_img = RgbImage::from_raw(rw, rh, out).unwrap();
-            save_jpeg(
-                &output_dir
-                    .join("presets")
-                    .join(preset.id())
-                    .join(format!("{stem}.jpg")),
-                &out_img,
-            );
+            match entry {
+                GalleryEntry::Film(_, look) => {
+                    let mut planes = base_planes.clone();
+                    look.apply(&mut planes, &mut ctx);
+                    let mut out = vec![0u8; (rw as usize) * (rh as usize) * 3];
+                    gather_oklab_to_srgb_u8(&planes, &mut out, 3, &m1_inv);
+                    let out_img = RgbImage::from_raw(rw, rh, out).unwrap();
+                    save_jpeg(&out_path, &out_img);
+                }
+                GalleryEntry::Pipeline(_, pipe) => {
+                    let mut dst = vec![0.0f32; linear_src.len()];
+                    pipe.apply(&linear_src, &mut dst, rw, rh, 3, &mut ctx)
+                        .unwrap();
+                    // Linear f32 → sRGB u8
+                    let out: Vec<u8> = dst
+                        .iter()
+                        .map(|&v| {
+                            let s = if v <= 0.0031308 {
+                                v * 12.92
+                            } else {
+                                1.055 * v.max(0.0).powf(1.0 / 2.4) - 0.055
+                            };
+                            (s.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
+                        })
+                        .collect();
+                    let out_img = RgbImage::from_raw(rw, rh, out).unwrap();
+                    save_jpeg(&out_path, &out_img);
+                }
+            }
         }
 
         manifest_images.push(stem.to_string());
     }
 
     // Write manifest
-    let presets_json: Vec<String> = FilmPreset::ALL
+    let presets_json: Vec<String> = entries
         .iter()
-        .map(|p| format!("    {{\"id\": \"{}\", \"name\": \"{}\"}}", p.id(), p.name()))
+        .map(|e| {
+            format!(
+                "    {{\"id\": \"{}\", \"name\": \"{}\", \"group\": \"{}\"}}",
+                e.id(),
+                e.name(),
+                e.group()
+            )
+        })
         .collect();
 
     let images_json: Vec<String> = manifest_images
@@ -176,7 +252,6 @@ fn main() {
         .map(|s| format!("    \"{}\"", s))
         .collect();
 
-    // Default to image starting with "a2a946cc" if present
     let default_idx = manifest_images
         .iter()
         .position(|s| s.starts_with("a2a946cc"))
@@ -191,10 +266,10 @@ fn main() {
 
     fs::write(output_dir.join("manifest.json"), &manifest).unwrap();
     eprintln!(
-        "Done. {} images x {} presets = {} outputs",
+        "Done. {} images x {} entries = {} outputs",
         manifest_images.len(),
-        FilmPreset::ALL.len(),
-        manifest_images.len() * FilmPreset::ALL.len(),
+        entries.len(),
+        manifest_images.len() * entries.len(),
     );
 }
 
