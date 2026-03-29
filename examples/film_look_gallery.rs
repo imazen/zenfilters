@@ -252,10 +252,8 @@ fn main() {
         .map(|s| format!("    \"{}\"", s))
         .collect();
 
-    let default_idx = manifest_images
-        .iter()
-        .position(|s| s.starts_with("a2a946cc"))
-        .unwrap_or(0);
+    // Default to image 18 (0-indexed 17)
+    let default_idx = 17.min(manifest_images.len().saturating_sub(1));
 
     let manifest = format!(
         "{{\n  \"presets\": [\n{}\n  ],\n  \"images\": [\n{}\n  ],\n  \"default_image\": {}\n}}\n",
