@@ -51,10 +51,10 @@ jobs:
       - name: Build gallery tool
         run: cargo build --release --features experimental --example film_look_gallery
 
-      - name: Generate gallery
+      - name: Generate gallery (codec-corpus downloads images automatically)
         run: |
           mkdir -p _site/gallery
-          ./target/release/examples/film_look_gallery _site/gallery CID22/CID22-512
+          ./target/release/examples/film_look_gallery _site/gallery
 
       - name: Copy site files
         run: cp site/index.html _site/

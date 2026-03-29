@@ -1,11 +1,14 @@
 //! Generate before/after comparison images for all film look presets.
 //!
-//! Takes a directory of input images (JPEG/PNG), applies each of the 34
-//! built-in film look presets, and writes output images to a gallery directory.
-//! Also generates a JSON manifest for the comparison viewer.
+//! Uses codec-corpus to download test images automatically. Applies each
+//! of the 34 built-in film look presets and writes output images to a
+//! gallery directory with a JSON manifest for the comparison viewer.
 //!
 //! Usage:
-//!   cargo run --release --features experimental --example film_look_gallery -- <input_dir> <output_dir>
+//!   cargo run --release --features experimental --example film_look_gallery -- <output_dir> [dataset]
+//!
+//! dataset defaults to "clic2025/professional_valid" (5 images used).
+//! Other options: "CID22/CID22-512", "kodak".
 //!
 //! The output directory will contain:
 //!   originals/    — resized input images (max 1024px long edge)
@@ -27,39 +30,50 @@ use zenpixels_convert::oklab;
 
 const MAX_DIM: u32 = 1024;
 const JPEG_QUALITY: u8 = 88;
+const MAX_IMAGES: usize = 8;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() < 3 {
-        eprintln!("Usage: {} <input_dir> <output_dir>", args[0]);
+    if args.len() < 2 {
+        eprintln!("Usage: {} <output_dir> [dataset]", args[0]);
+        eprintln!("  dataset: codec-corpus path (default: clic2025/professional_valid)");
         std::process::exit(1);
     }
 
-    let input_dir = PathBuf::from(&args[1]);
-    let output_dir = PathBuf::from(&args[2]);
+    let output_dir = PathBuf::from(&args[1]);
+    let dataset = args.get(2).map(|s| s.as_str()).unwrap_or("CID22/CID22-512");
 
-    // Collect input images
+    // Get images via codec-corpus
+    let corpus = codec_corpus::Corpus::new().expect("failed to init codec-corpus");
+    let input_dir = corpus.get(dataset).unwrap_or_else(|e| {
+        eprintln!("Failed to get dataset '{}': {}", dataset, e);
+        std::process::exit(1);
+    });
+
+    // Collect input images (limit to MAX_IMAGES for gallery size)
     let mut images: Vec<PathBuf> = Vec::new();
     for entry in fs::read_dir(&input_dir).expect("cannot read input dir") {
         let entry = entry.unwrap();
         let path = entry.path();
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             match ext.to_lowercase().as_str() {
-                "jpg" | "jpeg" | "png" => images.push(path),
+                "jpg" | "jpeg" | "png" | "bmp" | "tiff" | "tif" => images.push(path),
                 _ => {}
             }
         }
     }
     images.sort();
+    images.truncate(MAX_IMAGES);
 
     if images.is_empty() {
-        eprintln!("No JPEG/PNG images found in {:?}", input_dir);
+        eprintln!("No images found in {:?}", input_dir);
         std::process::exit(1);
     }
 
     eprintln!(
-        "Found {} images, {} presets",
+        "Found {} images (using {}), {} presets",
         images.len(),
+        MAX_IMAGES.min(images.len()),
         FilmPreset::ALL.len()
     );
 
@@ -84,7 +98,12 @@ fn main() {
 
     for (img_idx, img_path) in images.iter().enumerate() {
         let stem = img_path.file_stem().unwrap().to_str().unwrap();
-        eprintln!("[{}/{}] Processing {}...", img_idx + 1, images.len(), stem);
+        eprintln!(
+            "[{}/{}] Processing {}...",
+            img_idx + 1,
+            images.len(),
+            stem
+        );
 
         // Decode and resize
         let img = match ImageReader::open(img_path)
