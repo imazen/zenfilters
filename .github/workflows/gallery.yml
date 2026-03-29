@@ -40,10 +40,10 @@ jobs:
             -e 's|, path = "\.\./whereat"||g' \
             -e 's|, path = "\.\./zensim/zensim"||g' \
             -e 's|, path = "\.\./zenresize"||g' \
-            -e 's|, path = "\.\./zennode/zennode"||g' \
             -e '/zencodecs/d' \
             -e '/zenraw/d' \
             -e '/zenbench/d' \
+            -e '/zennode/d' \
             -e '/\[patch.crates-io\]/,$d' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           rm -f Cargo.lock

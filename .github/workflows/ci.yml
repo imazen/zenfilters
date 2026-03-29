@@ -47,6 +47,7 @@ jobs:
             -e '/zencodecs/d' \
             -e '/zenraw/d' \
             -e '/zenbench/d' \
+            -e '/zennode/d' \
             -e '/\[patch.crates-io\]/,$d' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           rm -f Cargo.lock
@@ -85,6 +86,7 @@ jobs:
             -e '/zencodecs/d' \
             -e '/zenraw/d' \
             -e '/zenbench/d' \
+            -e '/zennode/d' \
             -e '/\[patch.crates-io\]/,$d' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           rm -f Cargo.lock
@@ -125,6 +127,7 @@ jobs:
             -e '/zencodecs/d' \
             -e '/zenraw/d' \
             -e '/zenbench/d' \
+            -e '/zennode/d' \
             -e '/\[patch.crates-io\]/,$d' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           rm -f Cargo.lock
