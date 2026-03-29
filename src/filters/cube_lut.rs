@@ -596,6 +596,102 @@ impl TensorLut {
     pub fn size_bytes(&self) -> usize {
         self.factors.len() * self.size * 3 * core::mem::size_of::<[f32; 3]>()
     }
+
+    /// Grid size per axis.
+    pub fn grid_size(&self) -> usize {
+        self.size
+    }
+
+    /// Serialize to a compact flat f32 array.
+    ///
+    /// Layout: `[rank: u32 as f32, size: u32 as f32, ...factors]`
+    /// where each factor is `[r_axis..., g_axis..., b_axis...]`
+    /// and each axis entry is `[ch0, ch1, ch2]`.
+    ///
+    /// Total floats: 2 + rank * size * 3 * 3.
+    pub fn to_bytes(&self) -> Vec<f32> {
+        let rank = self.factors.len();
+        let n = self.size;
+        let mut out = Vec::with_capacity(2 + rank * n * 9);
+        out.push(rank as f32);
+        out.push(n as f32);
+        for term in &self.factors {
+            for v in &term.r_axis {
+                out.extend_from_slice(v);
+            }
+            for v in &term.g_axis {
+                out.extend_from_slice(v);
+            }
+            for v in &term.b_axis {
+                out.extend_from_slice(v);
+            }
+        }
+        out
+    }
+
+    /// Deserialize from a flat f32 array produced by [`to_bytes`].
+    pub fn from_bytes(data: &[f32]) -> Result<Self, &'static str> {
+        if data.len() < 2 {
+            return Err("data too short");
+        }
+        let rank = data[0] as usize;
+        let size = data[1] as usize;
+        let expected = 2 + rank * size * 9;
+        if data.len() < expected {
+            return Err("data too short for declared rank/size");
+        }
+
+        let mut factors = Vec::with_capacity(rank);
+        let mut idx = 2;
+        for _ in 0..rank {
+            let mut r_axis = Vec::with_capacity(size);
+            for _ in 0..size {
+                r_axis.push([data[idx], data[idx + 1], data[idx + 2]]);
+                idx += 3;
+            }
+            let mut g_axis = Vec::with_capacity(size);
+            for _ in 0..size {
+                g_axis.push([data[idx], data[idx + 1], data[idx + 2]]);
+                idx += 3;
+            }
+            let mut b_axis = Vec::with_capacity(size);
+            for _ in 0..size {
+                b_axis.push([data[idx], data[idx + 1], data[idx + 2]]);
+                idx += 3;
+            }
+            factors.push(RankTerm {
+                r_axis,
+                g_axis,
+                b_axis,
+            });
+        }
+
+        Ok(Self { factors, size })
+    }
+}
+
+impl Filter for TensorLut {
+    fn channel_access(&self) -> ChannelAccess {
+        ChannelAccess::L_AND_CHROMA
+    }
+
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
+        let m1_inv = oklab::lms_to_rgb_matrix(zenpixels::ColorPrimaries::Bt709)
+            .expect("BT.709 always supported");
+        let m1 = oklab::rgb_to_lms_matrix(zenpixels::ColorPrimaries::Bt709)
+            .expect("BT.709 always supported");
+
+        let n = planes.pixel_count();
+        for i in 0..n {
+            let [r, g, b] = oklab::oklab_to_rgb(planes.l[i], planes.a[i], planes.b[i], &m1_inv);
+            let out = self.lookup([r.max(0.0), g.max(0.0), b.max(0.0)]);
+            let [l, oa, ob] =
+                oklab::rgb_to_oklab(out[0].max(0.0), out[1].max(0.0), out[2].max(0.0), &m1);
+            planes.l[i] = l;
+            planes.a[i] = oa;
+            planes.b[i] = ob;
+        }
+    }
 }
 
 /// A small MLP for approximating a 3D LUT.
@@ -1153,5 +1249,50 @@ DOMAIN_MAX 1.0 1.0 1.0
             "self-comparison avg should be zero: {}",
             acc.avg_diff
         );
+    }
+
+    #[test]
+    fn rank_sweep_33cube() {
+        let size = 33;
+        let mut lut = CubeLut::identity(size);
+        let scale = 1.0 / (size - 1) as f32;
+        for ri in 0..size {
+            for gi in 0..size {
+                for bi in 0..size {
+                    let r = ri as f32 * scale;
+                    let g = gi as f32 * scale;
+                    let b = bi as f32 * scale;
+                    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                    let s_lum = if lum < 0.5 {
+                        2.0 * lum * lum
+                    } else {
+                        1.0 - 2.0 * (1.0 - lum) * (1.0 - lum)
+                    };
+                    let lum_ratio = if lum > 0.001 { s_lum / lum } else { 1.0 };
+                    let warmth = 1.0 - lum;
+                    let r_out = (r * lum_ratio + warmth * 0.05).clamp(0.0, 1.0);
+                    let g_out = (g * lum_ratio).clamp(0.0, 1.0);
+                    let b_out = (b * lum_ratio - warmth * 0.03 + lum * 0.02).clamp(0.0, 1.0);
+                    let idx = ri * size * size + gi * size + bi;
+                    lut.data[idx] = [r_out, g_out, b_out];
+                }
+            }
+        }
+
+        std::eprintln!("Original 33³: {} bytes", lut.size_bytes());
+        for rank in [5, 8, 12, 16] {
+            let tensor = TensorLut::decompose(&lut, rank, 30);
+            let acc = lut.measure_accuracy(&|rgb| tensor.lookup(rgb), 65);
+            let max_8bit = (acc.max_diff * 255.0).ceil() as u32;
+            let max_10bit = (acc.max_diff * 1023.0).ceil() as u32;
+            std::eprintln!(
+                "rank={rank:2}: {bytes:>6} bytes | max={max:.6} ({max8:>2}@8bit, {max10:>3}@10bit) avg={avg:.6}",
+                bytes = tensor.size_bytes(),
+                max = acc.max_diff,
+                max8 = max_8bit,
+                max10 = max_10bit,
+                avg = acc.avg_diff,
+            );
+        }
     }
 }
