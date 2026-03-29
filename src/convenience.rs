@@ -6,8 +6,6 @@
 //! 3. Apply filter stack
 //! 4. Gather back to interleaved linear RGB
 //! 5. Optionally convert back to original format
-//!
-//! Requires the `buffer` feature.
 
 use alloc::borrow::Cow;
 use whereat::{At, ResultAtExt, at};
@@ -477,6 +475,7 @@ mod tests {
     use crate::PipelineConfig;
     use crate::filters;
     use crate::gamut_map::GamutMapping;
+    use crate::prelude::*;
 
     fn make_srgb_u8_buffer(width: u32, height: u32) -> PixelBuffer {
         let n = (width as usize) * (height as usize);
@@ -522,12 +521,7 @@ mod tests {
     #[test]
     fn srgb_u8_roundtrip_empty_pipeline() {
         let input = make_srgb_u8_buffer(32, 32);
-        let pipeline = Pipeline::new(PipelineConfig {
-            primaries: ColorPrimaries::Bt709,
-            reference_white: 1.0,
-            gamut_mapping: GamutMapping::Clip,
-        })
-        .unwrap();
+        let pipeline = Pipeline::new(PipelineConfig::default()).unwrap();
 
         let output = apply_to_buffer(&pipeline, &input, true, &mut FilterContext::new()).unwrap();
         assert_eq!(output.descriptor(), input.descriptor());
@@ -571,8 +565,7 @@ mod tests {
         let input = make_p3_f32_buffer(16, 16);
         let pipeline = Pipeline::new(PipelineConfig {
             primaries: ColorPrimaries::DisplayP3,
-            reference_white: 1.0,
-            gamut_mapping: GamutMapping::Clip,
+            ..PipelineConfig::default()
         })
         .unwrap();
 
@@ -684,7 +677,7 @@ mod tests {
         let pipeline = Pipeline::new(PipelineConfig {
             primaries: ColorPrimaries::Bt2020,
             reference_white: 203.0,
-            gamut_mapping: GamutMapping::Clip,
+            ..PipelineConfig::default()
         })
         .unwrap();
 

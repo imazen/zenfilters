@@ -11,10 +11,9 @@ categories = ["multimedia::images", "graphics"]
 
 [features]
 default = []
-buffer = []
 experimental = []
 serde = ["dep:serde", "dep:serde-big-array"]
-srgb-filters = ["buffer", "dep:rgb", "zenpixels/rgb"]
+srgb-filters = ["dep:rgb", "zenpixels/rgb"]
 zennode = ["dep:zennode"]
 
 [dependencies]
@@ -77,11 +76,9 @@ required-features = ["experimental"]
 
 [[test]]
 name = "reference_validation"
-required-features = ["buffer"]
 
 [[test]]
 name = "quality_validation"
-required-features = ["buffer"]
 
 [[bench]]
 name = "row_batch"

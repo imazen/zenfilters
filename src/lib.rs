@@ -98,7 +98,6 @@ pub mod segment;
 #[cfg(feature = "zennode")]
 pub mod zennode_defs;
 
-#[cfg(feature = "buffer")]
 mod convenience;
 #[cfg(feature = "srgb-filters")]
 #[allow(clippy::manual_clamp)]
@@ -117,7 +116,6 @@ pub mod blur_internals {
     };
 }
 pub use context::FilterContext;
-#[cfg(feature = "buffer")]
 pub use convenience::{ConvenienceError, PipelineBufferExt, apply_to_buffer};
 pub use filter::{Filter, ResizePhase};
 pub use fused_params::FusedAdjustParams;
