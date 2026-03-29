@@ -74,7 +74,7 @@ pub enum FilmPreset {
 
     // ── Motion picture ───────────────────────────────────────────
     /// 2383 print-inspired: warm shadows, soft shoulder rolloff.
-    /// The Hollywood print stock character.
+    /// Classic cinema print stock character.
     Print2383,
     /// 500T-inspired: tungsten-balanced cinema negative. Warm, cinematic.
     Tungsten500T,
@@ -86,6 +86,32 @@ pub enum FilmPreset {
     ClassicNeg,
     /// Cool chrome: slight blue-green cast, punchy contrast.
     CoolChrome,
+
+    // ── Cinematic moods ──────────────────────────────────────────
+    /// Cyberpunk neon: deep blacks, neon cyan/magenta highlights, warm skin.
+    CyberpunkNeon,
+    /// Desert crush: extreme teal shadows, orange highlights, crushed blacks, raw.
+    DesertCrush,
+    /// Green code: monochrome green tint, high contrast, digital rain.
+    GreenCode,
+    /// French whimsy: golden-green warmth, saturated reds, playful.
+    FrenchWhimsy,
+    /// Arctic light: cold, desaturated, natural, bleak wilderness.
+    ArcticLight,
+    /// Neon noir: deep blacks, neon accent bleed, stylized urban night.
+    NeonNoir,
+    /// Dusty americana: sepia-gold, desaturated, dry heat and open road.
+    DustyAmericana,
+    /// Moonlit blue: rich deep blues, warm skin tone contrast.
+    MoonlitBlue,
+    /// Cold case: blue-grey, heavily desaturated, clinical tension.
+    ColdCase,
+    /// Desert spice: yellow-green cast, warm, dry arid heat.
+    DesertSpice,
+    /// Candy pop: hyper-saturated pinks, bright, playful, whimsical.
+    CandyPop,
+    /// Blockbuster: clean subtle teal/orange, polished cinematic default.
+    Blockbuster,
 }
 
 impl FilmPreset {
@@ -118,6 +144,19 @@ impl FilmPreset {
         Self::ClassicChrome,
         Self::ClassicNeg,
         Self::CoolChrome,
+        // Cinematic moods
+        Self::CyberpunkNeon,
+        Self::DesertCrush,
+        Self::GreenCode,
+        Self::FrenchWhimsy,
+        Self::ArcticLight,
+        Self::NeonNoir,
+        Self::DustyAmericana,
+        Self::MoonlitBlue,
+        Self::ColdCase,
+        Self::DesertSpice,
+        Self::CandyPop,
+        Self::Blockbuster,
     ];
 
     /// Human-readable name.
@@ -145,6 +184,18 @@ impl FilmPreset {
             Self::ClassicChrome => "Classic Chrome",
             Self::ClassicNeg => "Classic Negative",
             Self::CoolChrome => "Cool Chrome",
+            Self::CyberpunkNeon => "Cyberpunk Neon",
+            Self::DesertCrush => "Desert Crush",
+            Self::GreenCode => "Green Code",
+            Self::FrenchWhimsy => "French Whimsy",
+            Self::ArcticLight => "Arctic Light",
+            Self::NeonNoir => "Neon Noir",
+            Self::DustyAmericana => "Dusty Americana",
+            Self::MoonlitBlue => "Moonlit Blue",
+            Self::ColdCase => "Cold Case",
+            Self::DesertSpice => "Desert Spice",
+            Self::CandyPop => "Candy Pop",
+            Self::Blockbuster => "Blockbuster",
         }
     }
 
@@ -173,6 +224,18 @@ impl FilmPreset {
             Self::ClassicChrome => "classic_chrome",
             Self::ClassicNeg => "classic_neg",
             Self::CoolChrome => "cool_chrome",
+            Self::CyberpunkNeon => "cyberpunk_neon",
+            Self::DesertCrush => "desert_crush",
+            Self::GreenCode => "green_code",
+            Self::FrenchWhimsy => "french_whimsy",
+            Self::ArcticLight => "arctic_light",
+            Self::NeonNoir => "neon_noir",
+            Self::DustyAmericana => "dusty_americana",
+            Self::MoonlitBlue => "moonlit_blue",
+            Self::ColdCase => "cold_case",
+            Self::DesertSpice => "desert_spice",
+            Self::CandyPop => "candy_pop",
+            Self::Blockbuster => "blockbuster",
         }
     }
 
@@ -351,6 +414,18 @@ fn generate_preset_lut(preset: FilmPreset) -> CubeLut {
                     FilmPreset::ClassicChrome => classic_chrome(r, g, b),
                     FilmPreset::ClassicNeg => classic_neg(r, g, b),
                     FilmPreset::CoolChrome => cool_chrome(r, g, b),
+                    FilmPreset::CyberpunkNeon => cyberpunk_neon(r, g, b),
+                    FilmPreset::DesertCrush => desert_crush(r, g, b),
+                    FilmPreset::GreenCode => green_code(r, g, b),
+                    FilmPreset::FrenchWhimsy => french_whimsy(r, g, b),
+                    FilmPreset::ArcticLight => arctic_light(r, g, b),
+                    FilmPreset::NeonNoir => neon_noir(r, g, b),
+                    FilmPreset::DustyAmericana => dusty_americana(r, g, b),
+                    FilmPreset::MoonlitBlue => moonlit_blue(r, g, b),
+                    FilmPreset::ColdCase => cold_case(r, g, b),
+                    FilmPreset::DesertSpice => desert_spice(r, g, b),
+                    FilmPreset::CandyPop => candy_pop(r, g, b),
+                    FilmPreset::Blockbuster => blockbuster(r, g, b),
                 };
             }
         }
@@ -700,8 +775,8 @@ fn ektachrome(r: f32, g: f32, b: f32) -> [f32; 3] {
 // ── Motion picture stocks ────────────────────────────────────────────
 
 fn print_2383(r: f32, g: f32, b: f32) -> [f32; 3] {
-    // THE Hollywood print stock. Warm shadows, soft highlight shoulder,
-    // flattering skin tones, ~13 stops of DR feeling.
+    // Cinema print stock character. Warm shadows, soft highlight shoulder,
+    // flattering skin tones, wide dynamic range feeling.
     let l = luma(r, g, b);
     let shadow = (1.0 - l * 2.0).max(0.0);
     let highlight = ((l - 0.5) * 2.0).max(0.0);
@@ -783,6 +858,239 @@ fn classic_neg(r: f32, g: f32, b: f32) -> [f32; 3] {
     let b_out = s_curve(b_out, 0.35);
     // Slight desaturation
     let [r_out, g_out, b_out] = desat(r_out, g_out, b_out, 0.15);
+    [
+        r_out.clamp(0.0, 1.0),
+        g_out.clamp(0.0, 1.0),
+        b_out.clamp(0.0, 1.0),
+    ]
+}
+
+// ── Cinematic mood generators ────────────────────────────────────────
+
+fn cyberpunk_neon(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Deep blacks, neon cyan/magenta pushed into highlights, warm skin
+    let l = luma(r, g, b);
+    let highlight = ((l - 0.4) * 2.5).max(0.0).min(1.0);
+    // Crush blacks hard
+    let r_out = (r - 0.03).max(0.0);
+    let g_out = (g - 0.03).max(0.0);
+    let b_out = (b - 0.03).max(0.0);
+    // Push neon: cyan in highlights, slight magenta mid
+    let r_out = r_out + highlight * 0.02;
+    let g_out = g_out + highlight * 0.06;
+    let b_out = b_out + highlight * 0.08;
+    // Strong contrast
+    [
+        s_curve(r_out, 0.5).clamp(0.0, 1.0),
+        s_curve(g_out, 0.45).clamp(0.0, 1.0),
+        s_curve(b_out, 0.45).clamp(0.0, 1.0),
+    ]
+}
+
+fn desert_crush(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Extreme teal shadows, orange highlights, crushed blacks, raw grit
+    let l = luma(r, g, b);
+    let shadow = (1.0 - l * 1.8).max(0.0);
+    let highlight = ((l - 0.4) * 2.0).max(0.0);
+    // Aggressive teal/orange split
+    let r_out = r - shadow * 0.08 + highlight * 0.06;
+    let g_out = g + shadow * 0.01 - highlight * 0.02;
+    let b_out = b + shadow * 0.07 - highlight * 0.07;
+    // Crush blacks, strong contrast
+    let r_out = s_curve((r_out - 0.02).max(0.0), 0.6);
+    let g_out = s_curve((g_out - 0.02).max(0.0), 0.55);
+    let b_out = s_curve((b_out - 0.02).max(0.0), 0.55);
+    // Saturate
+    let l2 = luma(r_out, g_out, b_out);
+    let boost = 0.15;
+    [
+        (r_out + boost * (r_out - l2)).clamp(0.0, 1.0),
+        (g_out + boost * (g_out - l2)).clamp(0.0, 1.0),
+        (b_out + boost * (b_out - l2)).clamp(0.0, 1.0),
+    ]
+}
+
+fn green_code(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Monochrome green tint, high contrast, digital rain aesthetic
+    let l = luma(r, g, b);
+    // Map everything through green with luminance variation
+    let l_curved = s_curve(l, 0.5);
+    // Strong green, trace amounts of other channels
+    [
+        (l_curved * 0.15).clamp(0.0, 1.0),
+        (l_curved * 0.85 + 0.02).clamp(0.0, 1.0),
+        (l_curved * 0.10).clamp(0.0, 1.0),
+    ]
+}
+
+fn french_whimsy(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Golden-green warmth, saturated reds, playful and romantic
+    let l = luma(r, g, b);
+    // Golden-green base shift
+    let r_out = r * 1.02 + 0.01;
+    let g_out = g * 1.04 + 0.015; // green push
+    let b_out = b * 0.88; // reduce blue for golden tone
+    // Boost reds specifically (saturate R away from luma)
+    let r_boost = (r_out - l).max(0.0) * 0.2;
+    let r_out = r_out + r_boost;
+    // Warm, soft contrast
+    [
+        s_curve(r_out, 0.2).clamp(0.0, 1.0),
+        s_curve(g_out, 0.15).clamp(0.0, 1.0),
+        s_curve(b_out, 0.15).clamp(0.0, 1.0),
+    ]
+}
+
+fn arctic_light(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Cold, desaturated, natural light, bleak wilderness
+    // Heavy desaturation
+    let [r, g, b] = desat(r, g, b, 0.45);
+    // Cool shift
+    let r_out = r * 0.95;
+    let g_out = g * 0.98;
+    let b_out = b * 1.04 + 0.01;
+    // Low contrast, slightly lifted shadows
+    let r_out = inv_s_curve(r_out, -0.1) + 0.02;
+    let g_out = inv_s_curve(g_out, -0.1) + 0.02;
+    let b_out = inv_s_curve(b_out, -0.1) + 0.02;
+    [
+        r_out.clamp(0.0, 1.0),
+        g_out.clamp(0.0, 1.0),
+        b_out.clamp(0.0, 1.0),
+    ]
+}
+
+fn neon_noir(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Deep blacks, neon accent bleed, stylized urban night
+    // Crush blacks very hard
+    let r_out = (r - 0.04).max(0.0);
+    let g_out = (g - 0.04).max(0.0);
+    let b_out = (b - 0.04).max(0.0);
+    // High contrast
+    let r_out = s_curve(r_out, 0.6);
+    let g_out = s_curve(g_out, 0.6);
+    let b_out = s_curve(b_out, 0.6);
+    // Neon bleed: boost saturated colors, leave neutrals dark
+    let chroma = ((r - g).abs() + (g - b).abs() + (r - b).abs()) / 3.0;
+    let neon = (chroma * 3.0).min(1.0);
+    let r_out = r_out + neon * 0.05;
+    let b_out = b_out + neon * 0.03;
+    [
+        r_out.clamp(0.0, 1.0),
+        g_out.clamp(0.0, 1.0),
+        b_out.clamp(0.0, 1.0),
+    ]
+}
+
+fn dusty_americana(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Sepia-gold, desaturated, dry heat, open road
+    let [r, g, b] = desat(r, g, b, 0.5);
+    // Sepia-gold shift
+    let r_out = r * 1.06 + 0.03;
+    let g_out = g * 1.0 + 0.015;
+    let b_out = b * 0.82;
+    // Soft, low contrast
+    let r_out = inv_s_curve(r_out, -0.1);
+    let g_out = inv_s_curve(g_out, -0.1);
+    let b_out = inv_s_curve(b_out, -0.1);
+    [
+        shoulder(r_out, 0.85).clamp(0.0, 1.0),
+        shoulder(g_out, 0.88).clamp(0.0, 1.0),
+        shoulder(b_out, 0.90).clamp(0.0, 1.0),
+    ]
+}
+
+fn moonlit_blue(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Rich deep blues, warm skin tone contrast
+    let l = luma(r, g, b);
+    let shadow = (1.0 - l * 2.0).max(0.0);
+    // Blue push in shadows and midtones
+    let r_out = r * 0.94;
+    let g_out = g * 0.96;
+    let b_out = b * 1.08 + shadow * 0.04;
+    // Preserve warm skin tones: if R > B, keep warmth
+    let warmth = (r - b).max(0.0) * 0.3;
+    let r_out = r_out + warmth * 0.04;
+    let b_out = b_out - warmth * 0.02;
+    // Moderate contrast
+    [
+        s_curve(r_out, 0.25).clamp(0.0, 1.0),
+        s_curve(g_out, 0.2).clamp(0.0, 1.0),
+        s_curve(b_out, 0.2).clamp(0.0, 1.0),
+    ]
+}
+
+fn cold_case(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Blue-grey, heavily desaturated, clinical tension
+    let [r, g, b] = desat(r, g, b, 0.55);
+    // Cool blue-grey shift
+    let r_out = r * 0.92;
+    let g_out = g * 0.96;
+    let b_out = b * 1.05 + 0.01;
+    // Moderate contrast, slightly crushed
+    let r_out = s_curve((r_out - 0.01).max(0.0), 0.3);
+    let g_out = s_curve((g_out - 0.01).max(0.0), 0.3);
+    let b_out = s_curve((b_out - 0.01).max(0.0), 0.3);
+    [
+        r_out.clamp(0.0, 1.0),
+        g_out.clamp(0.0, 1.0),
+        b_out.clamp(0.0, 1.0),
+    ]
+}
+
+fn desert_spice(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Yellow-green cast, warm, dry arid heat
+    let l = luma(r, g, b);
+    // Yellow-green shift
+    let r_out = r * 1.03 + 0.01;
+    let g_out = g * 1.04 + 0.01;
+    let b_out = b * 0.88;
+    // Warm midtones
+    let mid = (1.0 - (l - 0.5).abs() * 4.0).max(0.0);
+    let r_out = r_out + mid * 0.02;
+    // Moderate contrast
+    [
+        s_curve(r_out, 0.25).clamp(0.0, 1.0),
+        s_curve(g_out, 0.2).clamp(0.0, 1.0),
+        s_curve(b_out, 0.2).clamp(0.0, 1.0),
+    ]
+}
+
+fn candy_pop(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Hyper-saturated pinks, bright, playful, whimsical
+    let l = luma(r, g, b);
+    // Boost saturation aggressively
+    let boost = 0.35;
+    let r_out = r + boost * (r - l) + 0.02; // extra pink push
+    let g_out = g + boost * (g - l);
+    let b_out = b + boost * (b - l) + 0.01;
+    // Lift shadows, bright and airy
+    let r_out = (r_out + 0.03).min(1.0);
+    let g_out = (g_out + 0.03).min(1.0);
+    let b_out = (b_out + 0.03).min(1.0);
+    // Low contrast for bright feel
+    [
+        inv_s_curve(r_out, -0.15).clamp(0.0, 1.0),
+        inv_s_curve(g_out, -0.15).clamp(0.0, 1.0),
+        inv_s_curve(b_out, -0.15).clamp(0.0, 1.0),
+    ]
+}
+
+fn blockbuster(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // Clean subtle teal/orange, polished cinematic default
+    let l = luma(r, g, b);
+    let shadow = (1.0 - l * 2.5).max(0.0);
+    let highlight = ((l - 0.5) * 2.5).max(0.0);
+    // Subtle teal/orange split
+    let r_out = r - shadow * 0.02 + highlight * 0.02;
+    let g_out = g;
+    let b_out = b + shadow * 0.02 - highlight * 0.02;
+    // Clean moderate S-curve
+    let r_out = s_curve(r_out, 0.2);
+    let g_out = s_curve(g_out, 0.18);
+    let b_out = s_curve(b_out, 0.18);
+    // Very slight desaturation for polish
+    let [r_out, g_out, b_out] = desat(r_out, g_out, b_out, 0.08);
     [
         r_out.clamp(0.0, 1.0),
         g_out.clamp(0.0, 1.0),
@@ -893,7 +1201,7 @@ mod tests {
             total,
             total as f64 / 1024.0,
         );
-        // Should be well under 200 KB total for 22 presets (~5 KB each)
-        assert!(total < 200_000, "presets too large: {} bytes", total);
+        // Should be well under 250 KB total for 34 presets (~5 KB each)
+        assert!(total < 250_000, "presets too large: {} bytes", total);
     }
 }
