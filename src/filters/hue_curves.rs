@@ -1,3 +1,17 @@
+//! Hue-qualified curves for targeted per-hue and per-luminance color control.
+//!
+//! Four independent 1D curves operating in Oklab polar coordinates:
+//!
+//! - **Hue vs Saturation**: chroma multiplier per hue angle
+//! - **Hue vs Hue**: hue offset per hue angle
+//! - **Hue vs Luminance**: luminance offset per hue angle
+//! - **Luminance vs Saturation**: chroma multiplier per luminance level
+//!
+//! Oklab's perceptually uniform hue means a 30° window at "orange" stays
+//! at orange — no skew into adjacent hues like HSL-based implementations.
+//! Curves use monotone cubic Hermite interpolation with smooth wrapping
+//! at the 360°→0° boundary.
+
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::fast_math::{fast_atan2, fast_sincos};

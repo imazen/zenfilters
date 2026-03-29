@@ -1,3 +1,36 @@
+//! Film look presets using tensor-compressed 3D color LUTs.
+//!
+//! 34 built-in color transforms covering classic film stock emulations,
+//! cinematic moods, and creative grades. Each preset is a mathematical
+//! RGB→RGB function decomposed into a rank-8 tensor approximation at
+//! ~5 KB per look. The full set fits in 163 KB.
+//!
+//! Presets are generated on first use — no embedded binary blobs, no
+//! external files. The tensor decomposition reconstructs each look
+//! from separable 1D factors via trilinear interpolation.
+//!
+//! ## Accuracy
+//!
+//! Evaluated against the source LUT at 33³ sample points:
+//! - 22 of 34 presets: max error ≤ 1 level @8bit (imperceptible)
+//! - Worst case: 8 levels @8bit (Neon Noir — aggressive black crush)
+//! - Average error across all presets: < 0.3 levels @8bit
+//!
+//! ## Usage
+//!
+//! ```
+//! use zenfilters::filters::{FilmLook, FilmPreset};
+//! use zenfilters::{FilterContext, OklabPlanes};
+//! use zenfilters::Filter;
+//!
+//! let mut look = FilmLook::new(FilmPreset::Portra);
+//! look.strength = 0.7; // 70% blend
+//!
+//! let mut planes = OklabPlanes::new(64, 64);
+//! // ... populate planes ...
+//! look.apply(&mut planes, &mut FilterContext::new());
+//! ```
+
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;

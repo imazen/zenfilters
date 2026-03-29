@@ -1,3 +1,13 @@
+//! ASC CDL (Color Decision List) per-channel color correction.
+//!
+//! The industry-standard interchange format for primary color correction.
+//! Three operations applied per channel in sequence: slope (gain),
+//! offset (lift), power (gamma), plus a global saturation control.
+//!
+//! Operates in linear RGB with an Oklab round-trip. The CDL spec defines
+//! operations on scene-linear data, so the Oklab→RGB→CDL→Oklab path
+//! matches the intended behavior.
+
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
@@ -5,7 +15,7 @@ use crate::param_schema::*;
 use crate::planes::OklabPlanes;
 use zenpixels_convert::oklab;
 
-/// ASC CDL (American Society of Cinematographers Color Decision List).
+/// ASC CDL (Color Decision List) per-channel color correction.
 ///
 /// Industry-standard per-channel color correction with three operations
 /// applied in sequence: **slope** (gain), **offset** (lift), **power** (gamma).

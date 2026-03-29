@@ -88,6 +88,10 @@ name = "row_batch"
 harness = false
 required-features = ["srgb-filters"]
 
+[[bench]]
+name = "color_grading"
+harness = false
+
 [patch.crates-io]
 zensim = { path = "../zensim/zensim" }
 zencodecs = { path = "../zencodecs" }

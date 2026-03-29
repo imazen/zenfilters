@@ -1,3 +1,21 @@
+//! 3D color LUT loading, application, and compression.
+//!
+//! Three representations of 3D color transforms, from high-fidelity to compact:
+//!
+//! - [`CubeLut`]: Full 3D grid with trilinear interpolation. Parses the
+//!   industry-standard .cube format. 17³ = 59 KB, 33³ = 431 KB.
+//!
+//! - [`TensorLut`]: Rank-N tensor decomposition of a 3D LUT into separable
+//!   1D factors. A rank-8 decomposition of a 33³ LUT fits in 9.5 KB with
+//!   max error of 11 levels @8bit (avg < 1 level).
+//!
+//! - [`MlpLut`]: Neural network approximation (3→h→h→3 MLP with residual
+//!   skip). Infrastructure for torch-trained weights; the built-in SGD
+//!   trainer is a starting point, not production-quality.
+//!
+//! [`LutAccuracy`] measures max and average per-channel error between any
+//! approximation and a reference LUT.
+
 use crate::access::ChannelAccess;
 use crate::context::FilterContext;
 use crate::filter::Filter;
