@@ -38,8 +38,8 @@ zenraw = { version = "0.1", path = "../zenraw", features = ["rawler", "darktable
 enough = "0.4"
 zenbench = { version = "0.1.2", features = ["criterion-compat"] }
 libblur = { version = "0.23", default-features = true }
-zenresize = { version = "0.1", path = "../zenresize", default-features = false, features = ["std"] }
-zensim = { version = "0.2", path = "../zensim/zensim", default-features = false }
+zenresize = { version = "0.2", path = "../zenresize", default-features = false, features = ["std"] }
+zensim = { version = "0.2.3", default-features = false }
 zenpixels = { version = "0.2.1", features = ["planar", "rgb"] }
 zenpixels-convert = { version = "0.2.1", features = ["planar"] }
 
@@ -95,6 +95,5 @@ name = "color_grading"
 harness = false
 
 [patch.crates-io]
-zensim = { path = "../zensim/zensim" }
 zencodecs = { path = "../zencodecs" }
 zenresize = { path = "../zenresize" }
