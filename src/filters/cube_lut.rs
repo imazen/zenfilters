@@ -360,6 +360,11 @@ impl CubeLut {
         &self.data
     }
 
+    /// Mutable access to the raw LUT data for LUT generation.
+    pub fn data_mut(&mut self) -> &mut [[f32; 3]] {
+        &mut self.data
+    }
+
     /// Access domain bounds.
     pub fn domain(&self) -> ([f32; 3], [f32; 3]) {
         (self.domain_min, self.domain_max)
