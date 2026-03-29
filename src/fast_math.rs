@@ -64,8 +64,7 @@ pub(crate) fn fast_sincos(x: f32) -> (f32, f32) {
     let r2 = r * r;
 
     let sin_val = r * (1.0 - r2 * (1.0 / 6.0 - r2 * (1.0 / 120.0 - r2 * (1.0 / 5040.0))));
-    let cos_val =
-        cos_sign * (1.0 - r2 * (0.5 - r2 * (1.0 / 24.0 - r2 * (1.0 / 720.0))));
+    let cos_val = cos_sign * (1.0 - r2 * (0.5 - r2 * (1.0 / 24.0 - r2 * (1.0 / 720.0))));
 
     (sin_val, cos_val)
 }
@@ -307,7 +306,9 @@ mod tests {
 
     #[test]
     fn fast_powf_accuracy() {
-        let bases: [f32; 12] = [0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1.0, 1.5, 2.0, 5.0, 10.0];
+        let bases: [f32; 12] = [
+            0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1.0, 1.5, 2.0, 5.0, 10.0,
+        ];
         let exponents: [f32; 8] = [0.5, 1.0, 1.5, 2.0, 2.4, 0.1, 0.01, 3.0];
         let mut max_rel_err: f32 = 0.0;
         for &base in &bases {

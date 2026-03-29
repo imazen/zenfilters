@@ -1,11 +1,8 @@
-# zenfilters
-
-[![CI](https://img.shields.io/github/actions/workflow/status/imazen/zenfilters/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/imazen/zenfilters/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-AGPL--3.0%20OR%20Commercial-blue?style=for-the-badge)](LICENSE-AGPL3)
+# zenfilters ![CI](https://img.shields.io/github/actions/workflow/status/imazen/zenfilters/ci.yml?style=for-the-badge) ![MSRV](https://img.shields.io/badge/MSRV-1.93-blue?style=for-the-badge) ![License](https://img.shields.io/badge/license-AGPL--3.0--only%20OR%20Commercial-blue?style=for-the-badge)
 
 Photo filter pipeline in Oklab perceptual color space with SIMD acceleration via [archmage](https://github.com/imazen/archmage).
 
-60+ filters covering Lightroom/darktable parity for tone, color, detail, and effects. 34 built-in film look presets using tensor-compressed 3D LUTs (163 KB total). ASC CDL, .cube LUT loading, hue-qualified curves. Self-describing parameter schemas for automatic UI generation.
+55+ filters with broad coverage of Lightroom and darktable adjustments for tone, color, detail, and effects. 34 built-in film look presets using tensor-compressed 3D LUTs (163 KB total). ASC CDL, .cube LUT loading, hue-qualified curves. Self-describing parameter schemas for automatic UI generation.
 
 `#![forbid(unsafe_code)]` — entirely safe Rust.
 
@@ -217,9 +214,9 @@ let (pre, post) = pipe.split_for_resize();
 
 Three methods, composable: `scale_to_width()`, `split_for_resize()`, `split_scaled()`. Presets, autotune, and user edits all work through the same system.
 
-## Filters (51)
+## Filters (49)
 
-### Tone & Exposure (17)
+### Tone & Exposure (16)
 
 | Filter | Description |
 |--------|-------------|
@@ -238,7 +235,6 @@ Three methods, composable: `scale_to_width()`, `split_for_resize()`, `split_scal
 | `Levels` | Input/output range remap with gamma |
 | `Sigmoid` | Generalized sigmoid with chroma compression |
 | `BasecurveToneMap` | Camera-specific tone curves (14 cameras + 16 makers) |
-| `DtSigmoid` | darktable-compatible log-logistic sigmoid |
 | `ToneEqualizer` | 9-zone guided-filter luminance adjustment (darktable equivalent) |
 | `LocalToneMap` | Base/detail decomposition with pivoted gamma |
 
@@ -263,7 +259,7 @@ Three methods, composable: `scale_to_width()`, `split_for_resize()`, `split_scal
 | `Blur` | Gaussian blur (SIMD stackblur for σ≥6, FIR for small σ) |
 | `MedianBlur` | Neighborhood median for salt-and-pepper noise; L-only or all channels |
 
-### Color (12)
+### Color (11)
 
 | Filter | Description |
 |--------|-------------|
@@ -276,7 +272,6 @@ Three methods, composable: `scale_to_width()`, `split_for_resize()`, `split_scal
 | `ColorGrading` | Shadow/midtone/highlight split-toning |
 | `CameraCalibration` | R/G/B primary hue+sat shifts, shadow tint |
 | `ColorMatrix` | 5×5 affine transform in linear RGB |
-| `Cat16` | Chromatic adaptation (CAT16) |
 | `GamutExpand` | Hue-selective P3 chroma expansion |
 | `BwMixer` | Chroma-aware B&W channel mixer (8 weights) |
 
@@ -311,6 +306,8 @@ Three methods, composable: `scale_to_width()`, `split_for_resize()`, `split_scal
 | Filter | Description |
 |--------|-------------|
 | `Warp` | 3×3 projective matrix transform (rotation, deskew, affine, perspective); bilinear / Catmull-Rom / Lanczos-3 |
+
+Additionally, `dt_sigmoid` and `cat16` modules provide free functions for darktable-compatible sigmoid tone mapping and CAT16 chromatic adaptation.
 
 ## Performance
 

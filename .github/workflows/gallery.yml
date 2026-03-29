@@ -51,27 +51,10 @@ jobs:
       - name: Build gallery tool
         run: cargo build --release --features experimental --example film_look_gallery
 
-      - name: Download sample images
-        run: |
-          mkdir -p /tmp/samples
-          URLS=(
-            "https://data.vision.ee.ethz.ch/cvl/clic/professional_valid/46015ab1f51bbca0cdc97d9d58fcee23.png"
-            "https://data.vision.ee.ethz.ch/cvl/clic/professional_valid/a2aa38c9f3c17f6821c0fa39a3ae2cf3.png"
-            "https://data.vision.ee.ethz.ch/cvl/clic/professional_valid/c4e0db22bbd31f35c4bfcdbf17a2bfe5.png"
-            "https://data.vision.ee.ethz.ch/cvl/clic/professional_valid/d3f6dad0f7e5f54e476ed9e6c5fef74b.png"
-            "https://data.vision.ee.ethz.ch/cvl/clic/professional_valid/f4df3d2ed2d81e09f119b1478eb0c038.png"
-          )
-          for url in "${URLS[@]}"; do
-            name=$(basename "$url")
-            echo "Downloading $name..."
-            curl -sfL "$url" -o "/tmp/samples/$name" || echo "Warning: failed $url"
-          done
-          ls -la /tmp/samples/
-
       - name: Generate gallery
         run: |
           mkdir -p _site/gallery
-          ./target/release/examples/film_look_gallery /tmp/samples _site/gallery
+          ./target/release/examples/film_look_gallery _site/gallery CID22/CID22-512
 
       - name: Copy site files
         run: cp site/index.html _site/

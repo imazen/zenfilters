@@ -45,6 +45,7 @@ zenpixels-convert = { version = "0.2.0", features = ["planar"] }
 
 # Keep image only for tests that still need it (reference_validation, quality_validation)
 image = "0.25"
+codec-corpus = "1.0.3"
 
 [[example]]
 name = "blur_bench"
