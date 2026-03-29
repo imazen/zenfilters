@@ -55,19 +55,49 @@ body {
 #img-wrap {
   flex: 1; display: flex; align-items: center; justify-content: center;
   min-width: 0; min-height: 0; overflow: hidden;
-  position: relative;
 }
-#the-image {
-  max-width: calc(100vw - 100px); max-height: calc(100dvh - 200px);
-  object-fit: contain; display: block;
+/* Tight wrapper that shrinks to the base image's rendered size */
+#img-box {
+  position: relative; display: inline-block; line-height: 0;
+  max-width: calc(100vw - 88px);
+  max-height: calc(100dvh - 200px);
 }
+/* Base image (original) — sizes the container */
+#img-original {
+  display: block; width: auto; height: auto;
+  max-width: calc(100vw - 88px);
+  max-height: calc(100dvh - 200px);
+}
+/* Filtered image — fills same box, with corner cutout */
+#img-filtered {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 15% 100%, 0 85%);
+}
+#img-filtered.full { clip-path: none; }
+#img-filtered.hide { display: none; }
+
+/* Filter name overlay — anchored to image box */
 #img-overlay {
-  position: absolute; bottom: 8px; right: 8px;
-  background: rgba(0,0,0,0.7); color: #fff;
-  padding: 4px 10px; border-radius: 4px;
-  font-size: 13px; font-weight: 600;
-  pointer-events: none; z-index: 2;
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  position: absolute; bottom: 10px; right: 10px; z-index: 3;
+  background: rgba(0,0,0,0.75); color: #fff;
+  padding: 6px 14px; border-radius: 6px;
+  font-size: 15px; font-weight: 600;
+  pointer-events: none;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+@media (min-width: 768px) {
+  #img-overlay { font-size: 18px; padding: 8px 18px; }
+}
+
+/* "Original" label in triangle corner */
+#peel-label {
+  position: absolute; bottom: 10px; left: 10px; z-index: 3;
+  color: rgba(255,255,255,0.5); font-size: 10px;
+  pointer-events: none;
+}
+@media (min-width: 768px) {
+  #peel-label { font-size: 12px; }
 }
 
 /* ── A/B toggle (in top bar) ── */
@@ -130,8 +160,12 @@ body {
 <div id="main">
   <button class="side-btn" id="btn-prev-filter">&#9664;</button>
   <div id="img-wrap">
-    <img id="the-image" alt="">
-    <div id="img-overlay"></div>
+    <div id="img-box">
+      <img id="img-original" alt="">
+      <img id="img-filtered" alt="">
+      <div id="img-overlay"></div>
+      <div id="peel-label">original</div>
+    </div>
   </div>
   <button class="side-btn" id="btn-next-filter">&#9654;</button>
 </div>
@@ -148,8 +182,10 @@ let imageIdx = 0;
 let presetIdx = -1; // -1 = original
 let showOriginal = false; // temporarily show original via A/B
 
-const img = document.getElementById('the-image');
+const imgOrig = document.getElementById('img-original');
+const imgFilt = document.getElementById('img-filtered');
 const imgOverlay = document.getElementById('img-overlay');
+const peelLabel = document.getElementById('peel-label');
 const filterName = document.getElementById('filter-name');
 const photoLabel = document.getElementById('photo-label');
 const abToggle = document.getElementById('ab-toggle');
@@ -224,14 +260,24 @@ function updateView() {
   const name = manifest.images[imageIdx];
   const preset = presetIdx >= 0 ? manifest.presets[presetIdx] : null;
 
+  // Original always visible (base layer, or through triangle cutout)
+  imgOrig.src = imagePath(name, null);
+
   if (preset && !showOriginal) {
-    img.src = imagePath(name, preset.id);
+    imgFilt.src = imagePath(name, preset.id);
+    imgFilt.classList.remove('hide', 'full');
     imgOverlay.textContent = preset.name;
     imgOverlay.style.display = '';
+    peelLabel.style.display = '';
+  } else if (preset && showOriginal) {
+    imgFilt.classList.add('hide');
+    imgOverlay.textContent = 'Original';
+    imgOverlay.style.display = '';
+    peelLabel.style.display = 'none';
   } else {
-    img.src = imagePath(name, null);
-    imgOverlay.textContent = preset ? 'Original' : '';
-    imgOverlay.style.display = preset ? '' : 'none';
+    imgFilt.classList.add('hide');
+    imgOverlay.style.display = 'none';
+    peelLabel.style.display = 'none';
   }
 
   filterName.textContent = preset
@@ -293,7 +339,7 @@ function setupControls() {
   abToggle.addEventListener('click', toggleAB);
 
   // Tap image = A/B toggle
-  img.addEventListener('click', toggleAB);
+  document.getElementById('img-box').addEventListener('click', toggleAB);
 
   // Touch: swipe left/right = filter, up/down = photo
   let sx = 0, sy = 0;
