@@ -7,8 +7,8 @@
 //! Usage:
 //!   cargo run --release --features experimental --example film_look_gallery -- <output_dir> [dataset]
 //!
-//! dataset defaults to "clic2025/professional_valid" (5 images used).
-//! Other options: "CID22/CID22-512", "kodak".
+//! dataset defaults to "gb82" (25 photographic images, 576x576).
+//! Other options: "CID22/CID22-512/validation", "clic2025/training".
 //!
 //! The output directory will contain:
 //!   originals/    — resized input images (max 1024px long edge)
@@ -41,7 +41,7 @@ fn main() {
     }
 
     let output_dir = PathBuf::from(&args[1]);
-    let dataset = args.get(2).map(|s| s.as_str()).unwrap_or("CID22/CID22-512");
+    let dataset = args.get(2).map(|s| s.as_str()).unwrap_or("gb82");
 
     // Get images via codec-corpus
     let corpus = codec_corpus::Corpus::new().expect("failed to init codec-corpus");
