@@ -1299,6 +1299,102 @@ impl Default for ColorMatrix {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// GEOMETRY (requires "experimental" feature)
+// ═══════════════════════════════════════════════════════════════════
+
+/// Rotation by arbitrary angle with automatic cardinal fast-path.
+///
+/// Cardinal angles (0°, 90°, 180°, 270°) use pixel-perfect remapping
+/// with zero interpolation. All other angles use sub-pixel rotation
+/// via a 3×3 affine matrix with configurable interpolation quality.
+#[cfg(feature = "experimental")]
+#[derive(Node, Clone, Debug, Default)]
+#[node(id = "zenfilters.rotate", group = Geometry, role = Filter)]
+#[node(label = "Rotate")]
+#[node(format(preferred = OklabF32, alpha = Process))]
+#[node(changes_dimensions)]
+#[node(tags("rotate", "geometry", "transform"))]
+pub struct RotateNode {
+    /// Rotation angle in degrees. Positive = counterclockwise.
+    /// 90, 180, 270 use pixel-perfect fast path (no interpolation).
+    #[param(range(-360.0..=360.0), default = 0.0, identity = 0.0, step = 0.1)]
+    #[param(unit = "°", section = "Main", slider = Linear)]
+    pub angle: f32,
+
+    /// Background mode for out-of-bounds pixels (non-cardinal only).
+    /// 0 = Clamp (default, photos), 1 = Black (documents).
+    #[param(range(0..=1), default = 0, identity = 0, step = 1)]
+    #[param(section = "Options")]
+    pub background: i32,
+
+    /// Interpolation quality (non-cardinal only).
+    /// 0 = Bilinear (fast), 1 = Bicubic (default), 2 = Lanczos3 (max quality).
+    #[param(range(0..=2), default = 1, identity = 1, step = 1)]
+    #[param(section = "Options")]
+    pub interpolation: i32,
+}
+
+/// Document deskew: rotation with black background and Lanczos3 interpolation.
+///
+/// Convenience node for straightening scanned documents. Equivalent to
+/// Rotate with background=Black and interpolation=Lanczos3, but with a
+/// tighter angle range and finer step size for precision alignment.
+#[cfg(feature = "experimental")]
+#[derive(Node, Clone, Debug, Default)]
+#[node(id = "zenfilters.deskew", group = Geometry, role = Filter)]
+#[node(label = "Deskew")]
+#[node(format(preferred = OklabF32, alpha = Process))]
+#[node(tags("deskew", "document", "geometry", "straighten"))]
+pub struct DeskewNode {
+    /// Skew angle in degrees. Positive = counterclockwise correction.
+    /// Typical range for document correction is -5° to +5°.
+    #[param(range(-15.0..=15.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "°", section = "Main", slider = Linear)]
+    pub angle: f32,
+}
+
+/// Arbitrary geometric transform via 3×3 projective matrix.
+///
+/// For advanced use: affine transforms (rotation + scale + shear) and
+/// perspective correction (homography). Most users should prefer the
+/// Rotate or Deskew nodes for rotation.
+#[cfg(feature = "experimental")]
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.warp", group = Geometry, role = Filter)]
+#[node(label = "Warp")]
+#[node(format(preferred = OklabF32, alpha = Process))]
+#[node(changes_dimensions)]
+#[node(tags("warp", "affine", "perspective", "homography", "geometry", "transform"))]
+pub struct WarpNode {
+    /// 3×3 transform matrix in row-major order (9 floats).
+    /// Maps output coordinates to source coordinates (inverse mapping).
+    #[param(range(-1000.0..=1000.0), default = 0.0, identity = 0.0, step = 0.01)]
+    #[param(unit = "", section = "Main", slider = NotSlider)]
+    pub matrix: [f32; 9],
+
+    /// Background mode: 0 = Clamp, 1 = Black.
+    #[param(range(0..=1), default = 0, identity = 0, step = 1)]
+    #[param(section = "Options")]
+    pub background: i32,
+
+    /// Interpolation: 0 = Bilinear, 1 = Bicubic, 2 = Lanczos3.
+    #[param(range(0..=2), default = 1, identity = 1, step = 1)]
+    #[param(section = "Options")]
+    pub interpolation: i32,
+}
+
+#[cfg(feature = "experimental")]
+impl Default for WarpNode {
+    fn default() -> Self {
+        Self {
+            matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            background: 0,
+            interpolation: 1,
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Registry helper
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1349,6 +1445,12 @@ pub fn register_all(registry: &mut NodeRegistry) {
     registry.register(&INVERT_NODE);
     registry.register(&ALPHA_NODE);
     registry.register(&COLOR_MATRIX_NODE);
+    #[cfg(feature = "experimental")]
+    {
+        registry.register(&ROTATE_NODE_NODE);
+        registry.register(&DESKEW_NODE_NODE);
+        registry.register(&WARP_NODE_NODE);
+    }
 }
 
 /// All zenfilters node definitions.
@@ -1392,6 +1494,10 @@ pub static ALL: &[&dyn NodeDef] = &[
     &ALPHA_NODE,
     &COLOR_MATRIX_NODE,
 ];
+
+/// Geometry node definitions (requires `experimental` feature).
+#[cfg(feature = "experimental")]
+pub static GEOMETRY: &[&dyn NodeDef] = &[&ROTATE_NODE_NODE, &DESKEW_NODE_NODE, &WARP_NODE_NODE];
 
 // ═══════════════════════════════════════════════════════════════════
 // NodeInstance → Filter bridge
@@ -1498,6 +1604,86 @@ pub fn node_to_filter(
             Some(alloc::boxed::Box::new(crate::filters::ColorMatrix {
                 matrix,
             }))
+        }
+        // Geometry (experimental)
+        #[cfg(feature = "experimental")]
+        "zenfilters.rotate" => {
+            let angle = f32_param(node, "angle");
+            let bg = match node
+                .get_param("background")
+                .and_then(|p| match p {
+                    ParamValue::I32(v) => Some(v),
+                    _ => None,
+                })
+                .unwrap_or(0)
+            {
+                1 => WarpBackground::Black,
+                _ => WarpBackground::Clamp,
+            };
+            let interp = match node
+                .get_param("interpolation")
+                .and_then(|p| match p {
+                    ParamValue::I32(v) => Some(v),
+                    _ => None,
+                })
+                .unwrap_or(1)
+            {
+                0 => WarpInterpolation::Bilinear,
+                2 => WarpInterpolation::Lanczos3,
+                _ => WarpInterpolation::Bicubic,
+            };
+            Some(alloc::boxed::Box::new(crate::filters::Rotate {
+                angle_degrees: angle,
+                background: bg,
+                interpolation: interp,
+            }))
+        }
+        #[cfg(feature = "experimental")]
+        "zenfilters.deskew" => {
+            let angle = f32_param(node, "angle");
+            Some(alloc::boxed::Box::new(crate::filters::Rotate::deskew(
+                angle,
+            )))
+        }
+        #[cfg(feature = "experimental")]
+        "zenfilters.warp" => {
+            let matrix = match node.get_param("matrix") {
+                Some(ParamValue::F32Array(arr)) if arr.len() == 9 => {
+                    let mut m = [0.0f32; 9];
+                    m.copy_from_slice(&arr);
+                    m
+                }
+                _ => [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            };
+            let bg = match node
+                .get_param("background")
+                .and_then(|p| match p {
+                    ParamValue::I32(v) => Some(v),
+                    _ => None,
+                })
+                .unwrap_or(0)
+            {
+                1 => WarpBackground::Black,
+                _ => WarpBackground::Clamp,
+            };
+            let interp = match node
+                .get_param("interpolation")
+                .and_then(|p| match p {
+                    ParamValue::I32(v) => Some(v),
+                    _ => None,
+                })
+                .unwrap_or(1)
+            {
+                0 => WarpInterpolation::Bilinear,
+                2 => WarpInterpolation::Lanczos3,
+                _ => WarpInterpolation::Bicubic,
+            };
+            {
+                let mut warp = crate::filters::Warp::projective(matrix);
+                warp.background = bg;
+                warp.interpolation = interp;
+                Some(alloc::boxed::Box::new(warp))
+            }
         }
         _ => None,
     }

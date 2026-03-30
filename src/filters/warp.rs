@@ -83,6 +83,129 @@ pub struct Warp {
     cardinal: Option<u8>,
 }
 
+/// Rotation by an arbitrary angle in degrees.
+///
+/// Automatically selects the fastest path:
+/// - **0°** — identity (no-op, zero cost)
+/// - **90°, 180°, 270°** — pixel-perfect cardinal rotation (no interpolation)
+/// - **All other angles** — sub-pixel rotation via [`Warp`] matrix
+///
+/// This is the recommended API for rotation. Use [`Warp`] directly only when
+/// you need affine/projective transforms or custom center points.
+///
+/// # Example
+///
+/// ```ignore
+/// use zenfilters::{Rotate, WarpInterpolation};
+///
+/// // Auto-selects cardinal fast path
+/// let r90 = Rotate::new(90.0);
+///
+/// // Arbitrary angle with default bicubic interpolation
+/// let tilt = Rotate::new(3.5);
+///
+/// // Document deskew: black background + max quality
+/// let deskew = Rotate::deskew(1.2);
+/// ```
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Rotate {
+    /// Rotation angle in degrees. Positive = counterclockwise.
+    pub angle_degrees: f32,
+    /// How to handle out-of-bounds pixels (non-cardinal only).
+    pub background: WarpBackground,
+    /// Interpolation quality (non-cardinal only).
+    pub interpolation: WarpInterpolation,
+}
+
+impl Rotate {
+    /// Create a rotation by the given angle in degrees.
+    ///
+    /// Positive = counterclockwise. Cardinal angles (0, 90, 180, 270)
+    /// are detected automatically and use pixel-perfect fast paths.
+    pub fn new(angle_degrees: f32) -> Self {
+        Self {
+            angle_degrees,
+            background: WarpBackground::Clamp,
+            interpolation: WarpInterpolation::Bicubic,
+        }
+    }
+
+    /// Create a deskew rotation (black background + Lanczos3).
+    ///
+    /// Optimized for document text: clean borders and maximum sharpness.
+    pub fn deskew(angle_degrees: f32) -> Self {
+        Self {
+            angle_degrees,
+            background: WarpBackground::Black,
+            interpolation: WarpInterpolation::Lanczos3,
+        }
+    }
+
+    /// Normalize angle to [0, 360) and check for exact cardinal.
+    /// Returns Some(quarter_turns) for 0/90/180/270, None otherwise.
+    fn cardinal_quarter_turns(&self) -> Option<u8> {
+        let norm = self.angle_degrees.rem_euclid(360.0);
+        if (norm - 0.0).abs() < 0.01 {
+            Some(0) // identity
+        } else if (norm - 90.0).abs() < 0.01 {
+            Some(1)
+        } else if (norm - 180.0).abs() < 0.01 {
+            Some(2)
+        } else if (norm - 270.0).abs() < 0.01 {
+            Some(3)
+        } else {
+            None
+        }
+    }
+
+    /// Convert to a [`Warp`] filter for the given image dimensions.
+    ///
+    /// Cardinal angles produce pixel-perfect warps (no interpolation).
+    /// Non-cardinal angles produce matrix-based warps.
+    pub fn to_warp(&self, width: u32, height: u32) -> Warp {
+        match self.cardinal_quarter_turns() {
+            Some(0) => Warp::default(), // identity
+            Some(n) => Warp::exact_cardinal(n, width, height),
+            None => {
+                let mut warp = Warp::rotation(self.angle_degrees, width, height);
+                warp.background = self.background;
+                warp.interpolation = self.interpolation;
+                warp
+            }
+        }
+    }
+}
+
+impl Filter for Rotate {
+    fn channel_access(&self) -> ChannelAccess {
+        ChannelAccess::ALL
+    }
+
+    fn is_neighborhood(&self) -> bool {
+        // Cardinal rotations are pixel-perfect remaps, not neighborhood.
+        // Non-cardinal need neighborhood access for interpolation.
+        self.cardinal_quarter_turns().is_none()
+    }
+
+    fn neighborhood_radius(&self, width: u32, height: u32) -> u32 {
+        if self.cardinal_quarter_turns().is_some() {
+            0
+        } else {
+            width.max(height)
+        }
+    }
+
+    fn tag(&self) -> crate::filter_compat::FilterTag {
+        crate::filter_compat::FilterTag::Other
+    }
+
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
+        let warp = self.to_warp(planes.width, planes.height);
+        warp.apply(planes, ctx);
+    }
+}
+
 impl Default for Warp {
     fn default() -> Self {
         Self {
