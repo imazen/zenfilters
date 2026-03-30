@@ -15,7 +15,12 @@
 
 use crate::prelude::*;
 
+use archmage::prelude::*;
+
 use crate::filters::warp::{WarpBackground, WarpInterpolation};
+
+/// Generic f32x8 — polyfills as 2×f32x4 on NEON/WASM, native on AVX2.
+use magetypes::simd::generic::f32x8 as GenericF32x8;
 
 // ─── Robidoux kernel constants ──────────────────────────────────────
 //
@@ -81,7 +86,7 @@ pub fn warp_plane_simd_planar(
     // Dispatch through archmage
     archmage::incant!(
         warp_plane_simd_planar_dispatch(src, dst, width, height, m, background),
-        [v3, scalar]
+        [v3, neon, wasm128, scalar]
     );
 }
 
@@ -96,6 +101,32 @@ fn warp_plane_simd_planar_dispatch_v3(
     background: WarpBackground,
 ) {
     warp_plane_v3(token, src, dst, width, height, m, background);
+}
+
+// NEON/WASM128: fall through to scalar for single-plane (alpha only).
+// The fused 3-plane path handles the hot path on all architectures.
+fn warp_plane_simd_planar_dispatch_neon(
+    _token: archmage::NeonToken,
+    src: &[f32],
+    dst: &mut [f32],
+    width: u32,
+    height: u32,
+    m: &[f32; 9],
+    background: WarpBackground,
+) {
+    warp_plane_scalar_inner(src, dst, width, height, m, background);
+}
+
+fn warp_plane_simd_planar_dispatch_wasm128(
+    _token: archmage::Wasm128Token,
+    src: &[f32],
+    dst: &mut [f32],
+    width: u32,
+    height: u32,
+    m: &[f32; 9],
+    background: WarpBackground,
+) {
+    warp_plane_scalar_inner(src, dst, width, height, m, background);
 }
 
 fn warp_plane_simd_planar_dispatch_scalar(
@@ -599,7 +630,7 @@ pub fn warp_plane_simd_rowgather(
 ) {
     archmage::incant!(
         warp_plane_rowgather_dispatch(src, dst, width, height, m, background),
-        [v3, scalar]
+        [v3, neon, wasm128, scalar]
     );
 }
 
@@ -614,6 +645,30 @@ fn warp_plane_rowgather_dispatch_v3(
     background: WarpBackground,
 ) {
     warp_plane_rowgather_v3(token, src, dst, width, height, m, background);
+}
+
+fn warp_plane_rowgather_dispatch_neon(
+    _token: archmage::NeonToken,
+    src: &[f32],
+    dst: &mut [f32],
+    width: u32,
+    height: u32,
+    m: &[f32; 9],
+    background: WarpBackground,
+) {
+    warp_plane_scalar_inner(src, dst, width, height, m, background);
+}
+
+fn warp_plane_rowgather_dispatch_wasm128(
+    _token: archmage::Wasm128Token,
+    src: &[f32],
+    dst: &mut [f32],
+    width: u32,
+    height: u32,
+    m: &[f32; 9],
+    background: WarpBackground,
+) {
+    warp_plane_scalar_inner(src, dst, width, height, m, background);
 }
 
 fn warp_plane_rowgather_dispatch_scalar(
@@ -1206,7 +1261,7 @@ pub fn warp_3plane_fused_simd(
             bg_b,
             is_color_bg
         ),
-        [v3, scalar]
+        [v3, neon, wasm128, scalar]
     );
 }
 
@@ -1228,7 +1283,79 @@ fn warp_3plane_fused_simd_dispatch_v3(
     bg_b: f32,
     is_color_bg: bool,
 ) {
-    warp_3plane_fused_v3(
+    warp_3plane_fused_inner_v3(
+        token,
+        src_l,
+        src_a,
+        src_b,
+        dst_l,
+        dst_a,
+        dst_b,
+        width,
+        height,
+        m,
+        bg_l,
+        bg_a,
+        bg_b,
+        is_color_bg,
+    );
+}
+
+#[archmage::arcane]
+#[allow(clippy::too_many_arguments)]
+fn warp_3plane_fused_simd_dispatch_neon(
+    token: archmage::NeonToken,
+    src_l: &[f32],
+    src_a: &[f32],
+    src_b: &[f32],
+    dst_l: &mut [f32],
+    dst_a: &mut [f32],
+    dst_b: &mut [f32],
+    width: u32,
+    height: u32,
+    m: &[f32; 9],
+    bg_l: f32,
+    bg_a: f32,
+    bg_b: f32,
+    is_color_bg: bool,
+) {
+    warp_3plane_fused_inner_neon(
+        token,
+        src_l,
+        src_a,
+        src_b,
+        dst_l,
+        dst_a,
+        dst_b,
+        width,
+        height,
+        m,
+        bg_l,
+        bg_a,
+        bg_b,
+        is_color_bg,
+    );
+}
+
+#[archmage::arcane]
+#[allow(clippy::too_many_arguments)]
+fn warp_3plane_fused_simd_dispatch_wasm128(
+    token: archmage::Wasm128Token,
+    src_l: &[f32],
+    src_a: &[f32],
+    src_b: &[f32],
+    dst_l: &mut [f32],
+    dst_a: &mut [f32],
+    dst_b: &mut [f32],
+    width: u32,
+    height: u32,
+    m: &[f32; 9],
+    bg_l: f32,
+    bg_a: f32,
+    bg_b: f32,
+    is_color_bg: bool,
+) {
+    warp_3plane_fused_inner_wasm128(
         token,
         src_l,
         src_a,
@@ -1280,10 +1407,14 @@ fn warp_3plane_fused_simd_dispatch_scalar(
     );
 }
 
-#[archmage::rite]
+/// Fused 3-plane warp inner loop — multi-arch via GenericF32x8.
+///
+/// `#[magetypes(neon, wasm128)]` generates `_neon` and `_wasm128` variants.
+/// The v3 (AVX2) dispatch calls this too since GenericF32x8<X64V3Token> = native f32x8.
+#[magetypes(v3, neon, wasm128)]
 #[allow(clippy::too_many_arguments)]
-fn warp_3plane_fused_v3(
-    token: archmage::X64V3Token,
+fn warp_3plane_fused_inner(
+    token: Token,
     src_l: &[f32],
     src_a: &[f32],
     src_b: &[f32],
@@ -1298,7 +1429,8 @@ fn warp_3plane_fused_v3(
     bg_b: f32,
     is_color_bg: bool,
 ) {
-    use magetypes::simd::f32x8;
+    #[allow(non_camel_case_types)]
+    type f32x8 = GenericF32x8<Token>;
 
     let w = width as usize;
     let h = height as usize;
@@ -1359,29 +1491,17 @@ fn warp_3plane_fused_v3(
     let step8_sx = f32x8::splat(token, 8.0 * m0);
     let step8_sy = f32x8::splat(token, 8.0 * m3);
 
-    #[inline(always)]
-    fn robidoux_v(
-        t: magetypes::simd::f32x8,
-        a3: magetypes::simd::f32x8,
-        a2: magetypes::simd::f32x8,
-        a0: magetypes::simd::f32x8,
-        b3: magetypes::simd::f32x8,
-        b2: magetypes::simd::f32x8,
-        b1: magetypes::simd::f32x8,
-        b0: magetypes::simd::f32x8,
-        one: magetypes::simd::f32x8,
-        two: magetypes::simd::f32x8,
-        zero: magetypes::simd::f32x8,
-    ) -> magetypes::simd::f32x8 {
-        let inner = t.mul_add(a3, a2).mul_add(t, zero).mul_add(t, a0);
-        let outer = t.mul_add(b3, b2).mul_add(t, b1).mul_add(t, b0);
-        let is_inner = t.simd_lt(one);
-        let is_valid = t.simd_lt(two);
-        magetypes::simd::f32x8::blend(
-            is_inner,
-            inner,
-            magetypes::simd::f32x8::blend(is_valid, outer, zero),
-        )
+    // Robidoux kernel in SIMD — inline macro to avoid inner fn type issues
+    // with #[magetypes] token replacement.
+    macro_rules! robidoux_v {
+        ($t:expr) => {{
+            let t = $t;
+            let inner = t.mul_add(a3_v, a2_v).mul_add(t, zero_v).mul_add(t, a0_v);
+            let outer = t.mul_add(b3_v, b2_v).mul_add(t, b1_v).mul_add(t, b0_v);
+            let is_inner = t.simd_lt(one_v);
+            let is_valid = t.simd_lt(two_v);
+            f32x8::blend(is_inner, inner, f32x8::blend(is_valid, outer, zero_v))
+        }};
     }
 
     for dy in 0..h {
@@ -1439,91 +1559,15 @@ fn warp_3plane_fused_v3(
             let iy_arr = sy_fl.to_i32x8().to_array();
 
             // Kernel weights (SIMD)
-            let wx0 = robidoux_v(
-                (neg1_v - fx).abs(),
-                a3_v,
-                a2_v,
-                a0_v,
-                b3_v,
-                b2_v,
-                b1_v,
-                b0_v,
-                one_v,
-                two_v,
-                zero_v,
-            );
-            let wx1 = robidoux_v(
-                fx, a3_v, a2_v, a0_v, b3_v, b2_v, b1_v, b0_v, one_v, two_v, zero_v,
-            );
-            let wx2 = robidoux_v(
-                (one_v - fx).abs(),
-                a3_v,
-                a2_v,
-                a0_v,
-                b3_v,
-                b2_v,
-                b1_v,
-                b0_v,
-                one_v,
-                two_v,
-                zero_v,
-            );
-            let wx3 = robidoux_v(
-                (pos2_v - fx).abs(),
-                a3_v,
-                a2_v,
-                a0_v,
-                b3_v,
-                b2_v,
-                b1_v,
-                b0_v,
-                one_v,
-                two_v,
-                zero_v,
-            );
+            let wx0 = robidoux_v!((neg1_v - fx).abs());
+            let wx1 = robidoux_v!(fx);
+            let wx2 = robidoux_v!((one_v - fx).abs());
+            let wx3 = robidoux_v!((pos2_v - fx).abs());
 
-            let wy0 = robidoux_v(
-                (neg1_v - fy).abs(),
-                a3_v,
-                a2_v,
-                a0_v,
-                b3_v,
-                b2_v,
-                b1_v,
-                b0_v,
-                one_v,
-                two_v,
-                zero_v,
-            );
-            let wy1 = robidoux_v(
-                fy, a3_v, a2_v, a0_v, b3_v, b2_v, b1_v, b0_v, one_v, two_v, zero_v,
-            );
-            let wy2 = robidoux_v(
-                (one_v - fy).abs(),
-                a3_v,
-                a2_v,
-                a0_v,
-                b3_v,
-                b2_v,
-                b1_v,
-                b0_v,
-                one_v,
-                two_v,
-                zero_v,
-            );
-            let wy3 = robidoux_v(
-                (pos2_v - fy).abs(),
-                a3_v,
-                a2_v,
-                a0_v,
-                b3_v,
-                b2_v,
-                b1_v,
-                b0_v,
-                one_v,
-                two_v,
-                zero_v,
-            );
+            let wy0 = robidoux_v!((neg1_v - fy).abs());
+            let wy1 = robidoux_v!(fy);
+            let wy2 = robidoux_v!((one_v - fy).abs());
+            let wy3 = robidoux_v!((pos2_v - fy).abs());
 
             // Normalize
             let inv_wx = ((wx0 + wx1) + (wx2 + wx3)).recip();
