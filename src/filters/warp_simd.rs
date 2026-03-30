@@ -1896,6 +1896,8 @@ fn warp_rgba_u8_dispatch_scalar(
     warp_rgba_u8(src, dst, width, height, m, bg_rgba);
 }
 
+#[archmage::rite]
+#[allow(clippy::too_many_arguments)]
 fn warp_rgba_u8_inner_v3(
     token: archmage::X64V3Token,
     src: &[u8],
