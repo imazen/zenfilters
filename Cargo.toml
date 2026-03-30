@@ -76,6 +76,10 @@ name = "perf_probe"
 required-features = ["experimental"]
 
 [[example]]
+name = "warp_bench"
+required-features = ["experimental"]
+
+[[example]]
 name = "film_look_gallery"
 required-features = ["experimental"]
 
