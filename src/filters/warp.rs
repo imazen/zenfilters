@@ -540,6 +540,64 @@ impl Warp {
             && (m[8] - 1.0).abs() < 1e-7
     }
 
+    /// Scalar fallback for perspective transforms or when SIMD is unavailable.
+    #[allow(clippy::too_many_arguments)]
+    fn apply_scalar(
+        &self,
+        planes: &OklabPlanes,
+        dst_l: &mut [f32],
+        dst_a: &mut [f32],
+        dst_b: &mut [f32],
+        dst_alpha: &mut Vec<f32>,
+        has_alpha: bool,
+    ) {
+        let w = planes.width;
+        let h = planes.height;
+        let m = &self.matrix;
+        let interp = self.interpolation;
+        let bg = self.background;
+        let is_affine = self.is_affine();
+
+        for dy in 0..h {
+            for dx in 0..w {
+                let dxf = dx as f32;
+                let dyf = dy as f32;
+
+                let (sx, sy) = if is_affine {
+                    (
+                        m[0] * dxf + m[1] * dyf + m[2],
+                        m[3] * dxf + m[4] * dyf + m[5],
+                    )
+                } else {
+                    let sx_w = m[0] * dxf + m[1] * dyf + m[2];
+                    let sy_w = m[3] * dxf + m[4] * dyf + m[5];
+                    let w_w = m[6] * dxf + m[7] * dyf + m[8];
+                    let inv_w = if w_w.abs() > 1e-10 { 1.0 / w_w } else { 1.0 };
+                    (sx_w * inv_w, sy_w * inv_w)
+                };
+
+                let out_idx = (dy as usize) * (w as usize) + (dx as usize);
+                sample_all_planes(
+                    &planes.l,
+                    &planes.a,
+                    &planes.b,
+                    planes.alpha.as_deref(),
+                    w,
+                    h,
+                    sx,
+                    sy,
+                    bg,
+                    interp,
+                    dst_l,
+                    dst_a,
+                    dst_b,
+                    if has_alpha { Some(dst_alpha) } else { None },
+                    out_idx,
+                );
+            }
+        }
+    }
+
     /// Check if this is a pure affine transform (no perspective).
     fn is_affine(&self) -> bool {
         self.matrix[6].abs() < 1e-7
@@ -582,7 +640,6 @@ impl Filter for Warp {
         let h = planes.height;
         let n = (w as usize) * (h as usize);
         let m = &self.matrix;
-        let interp = self.interpolation;
         let bg = self.background;
 
         // Allocate output planes
@@ -597,49 +654,52 @@ impl Filter for Warp {
             alloc::vec::Vec::new()
         };
 
-        let is_affine = self.is_affine();
-
-        for dy in 0..h {
-            for dx in 0..w {
-                let dxf = dx as f32;
-                let dyf = dy as f32;
-
-                let (sx, sy) = if is_affine {
-                    (
-                        m[0] * dxf + m[1] * dyf + m[2],
-                        m[3] * dxf + m[4] * dyf + m[5],
-                    )
-                } else {
-                    let sx_w = m[0] * dxf + m[1] * dyf + m[2];
-                    let sy_w = m[3] * dxf + m[4] * dyf + m[5];
-                    let w_w = m[6] * dxf + m[7] * dyf + m[8];
-                    let inv_w = if w_w.abs() > 1e-10 { 1.0 / w_w } else { 1.0 };
-                    (sx_w * inv_w, sy_w * inv_w)
-                };
-
-                let out_idx = (dy as usize) * (w as usize) + (dx as usize);
-                sample_all_planes(
+        // Use fused SIMD path for affine transforms (the common case).
+        // Falls back to scalar for perspective (non-affine) transforms.
+        if self.is_affine() {
+            #[cfg(feature = "experimental")]
+            {
+                super::warp_simd::warp_planes_fused(
                     &planes.l,
                     &planes.a,
                     &planes.b,
                     planes.alpha.as_deref(),
-                    w,
-                    h,
-                    sx,
-                    sy,
-                    bg,
-                    interp,
                     &mut dst_l,
                     &mut dst_a,
                     &mut dst_b,
                     if has_alpha {
-                        Some(&mut dst_alpha)
+                        Some(dst_alpha.as_mut_slice())
                     } else {
                         None
                     },
-                    out_idx,
+                    w,
+                    h,
+                    m,
+                    bg,
                 );
             }
+
+            #[cfg(not(feature = "experimental"))]
+            {
+                self.apply_scalar(
+                    planes,
+                    &mut dst_l,
+                    &mut dst_a,
+                    &mut dst_b,
+                    &mut dst_alpha,
+                    has_alpha,
+                );
+            }
+        } else {
+            // Perspective: scalar per-pixel with perspective division
+            self.apply_scalar(
+                planes,
+                &mut dst_l,
+                &mut dst_a,
+                &mut dst_b,
+                &mut dst_alpha,
+                has_alpha,
+            );
         }
 
         // Replace planes with warped result

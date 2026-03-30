@@ -1702,6 +1702,81 @@ fn warp_3plane_fused_v3(
     }
 }
 
+// ─── High-level entry point for Warp::apply ───────────────────────
+
+/// Warp all planes (L/a/b + optional alpha) using the fused SIMD path.
+///
+/// Uses `warp_3plane_fused_simd` for L/a/b (shared gather addresses,
+/// 222 Mpix/s at 1080p), then a separate `warp_plane_simd_planar` pass
+/// for alpha if present.
+#[allow(clippy::too_many_arguments)]
+pub fn warp_planes_fused(
+    src_l: &[f32],
+    src_a: &[f32],
+    src_b: &[f32],
+    src_alpha: Option<&[f32]>,
+    dst_l: &mut [f32],
+    dst_a: &mut [f32],
+    dst_b: &mut [f32],
+    dst_alpha: Option<&mut [f32]>,
+    width: u32,
+    height: u32,
+    m: &[f32; 9],
+    background: WarpBackground,
+) {
+    let (bg_l, bg_a, bg_b) = match background {
+        WarpBackground::Clamp => (0.0, 0.0, 0.0),
+        WarpBackground::Color { l, a, b } => (l, a, b),
+    };
+    let is_color_bg = matches!(background, WarpBackground::Color { .. });
+
+    // Fused 3-plane SIMD for L/a/b
+    warp_3plane_fused_simd(
+        src_l,
+        src_a,
+        src_b,
+        dst_l,
+        dst_a,
+        dst_b,
+        width,
+        height,
+        m,
+        bg_l,
+        bg_a,
+        bg_b,
+        is_color_bg,
+    );
+
+    // Separate pass for alpha (still SIMD, just not fused)
+    if let (Some(sa), Some(da)) = (src_alpha, dst_alpha) {
+        let alpha_bg = if is_color_bg {
+            // For non-black fills, alpha = 1.0 (opaque fill).
+            // For black (L=a=b=0), alpha = 0.0 (transparent fill).
+            let alpha_val = if bg_l == 0.0 && bg_a == 0.0 && bg_b == 0.0 {
+                0.0
+            } else {
+                1.0
+            };
+            WarpBackground::Color {
+                l: alpha_val,
+                a: 0.0,
+                b: 0.0,
+            }
+        } else {
+            WarpBackground::Clamp
+        };
+        warp_plane_simd_planar(
+            sa,
+            da,
+            width,
+            height,
+            m,
+            alpha_bg,
+            WarpInterpolation::Robidoux,
+        );
+    }
+}
+
 // ─── Dead end: interleaved RGBA u8 warp ────────────────────────────
 //
 // We prototyped and benchmarked interleaved RGBA u8 warp (scalar and
