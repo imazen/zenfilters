@@ -1309,7 +1309,7 @@ impl Default for ColorMatrix {
 /// via a 3×3 affine matrix with configurable interpolation quality.
 ///
 /// Default mode is **Crop** — the result is cropped to the largest clean
-/// rectangle with no borders. Use mode=1 (FillClamp) or mode=2 (FillBlack)
+/// rectangle with no borders. Use mode=1 (FillClamp) or mode=2 (FillWhite)
 /// to keep original dimensions with filled borders.
 #[cfg(feature = "experimental")]
 #[derive(Node, Clone, Debug, Default)]
@@ -1326,7 +1326,7 @@ pub struct RotateNode {
     pub angle: f32,
 
     /// Border mode (non-cardinal only).
-    /// 0 = Crop (default, clean rectangle), 1 = FillClamp, 2 = FillBlack.
+    /// 0 = Crop (default, clean rectangle), 1 = FillClamp, 2 = FillWhite.
     #[param(range(0..=2), default = 0, identity = 0, step = 1)]
     #[param(section = "Options")]
     pub mode: i32,
@@ -1341,7 +1341,7 @@ pub struct RotateNode {
 /// Document deskew: rotation with black background and Lanczos3 interpolation.
 ///
 /// Convenience node for straightening scanned documents. Equivalent to
-/// Rotate with background=Black and interpolation=Lanczos3, but with a
+/// Rotate with white fill and interpolation=Lanczos3, but with a
 /// tighter angle range and finer step size for precision alignment.
 #[cfg(feature = "experimental")]
 #[derive(Node, Clone, Debug, Default)]
@@ -1622,7 +1622,7 @@ pub fn node_to_filter(
                 .unwrap_or(0)
             {
                 1 => RotateMode::FillClamp,
-                2 => RotateMode::FillBlack,
+                2 => RotateMode::white(),
                 _ => RotateMode::Crop,
             };
             let interp = match node
@@ -1669,7 +1669,7 @@ pub fn node_to_filter(
                 })
                 .unwrap_or(0)
             {
-                1 => WarpBackground::Black,
+                1 => WarpBackground::black(),
                 _ => WarpBackground::Clamp,
             };
             let interp = match node

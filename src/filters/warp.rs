@@ -12,9 +12,37 @@ use crate::planes::OklabPlanes;
 pub enum WarpBackground {
     /// Clamp to nearest edge pixel (default, best for photos).
     Clamp,
-    /// Set out-of-bounds pixels to black (L=0, a=0, b=0).
-    /// Useful for documents where borders should be clean.
-    Black,
+    /// Fill out-of-bounds with a solid Oklab color.
+    /// Use [`WarpBackground::black()`] or [`WarpBackground::white()`] for
+    /// common presets, or specify arbitrary L/a/b values.
+    Color {
+        /// Oklab L (lightness): 0.0 = black, 1.0 = white.
+        l: f32,
+        /// Oklab a (green-red): 0.0 = neutral.
+        a: f32,
+        /// Oklab b (blue-yellow): 0.0 = neutral.
+        b: f32,
+    },
+}
+
+impl WarpBackground {
+    /// Black fill (L=0, a=0, b=0).
+    pub const fn black() -> Self {
+        Self::Color {
+            l: 0.0,
+            a: 0.0,
+            b: 0.0,
+        }
+    }
+
+    /// White fill (L=1, a=0, b=0 in Oklab).
+    pub const fn white() -> Self {
+        Self::Color {
+            l: 1.0,
+            a: 0.0,
+            b: 0.0,
+        }
+    }
 }
 
 /// Interpolation method for pixel resampling during transforms.
@@ -91,7 +119,7 @@ pub struct Warp {
 }
 
 /// How to handle the border region created by non-cardinal rotation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RotateMode {
     /// Crop to the largest inscribed rectangle with the original aspect ratio.
@@ -100,8 +128,40 @@ pub enum RotateMode {
     Crop,
     /// Fill out-of-bounds with clamped edge pixels.
     FillClamp,
-    /// Fill out-of-bounds with black.
-    FillBlack,
+    /// Fill out-of-bounds with a solid Oklab color.
+    Fill {
+        /// Oklab L (lightness): 0.0 = black, 1.0 = white.
+        l: f32,
+        /// Oklab a: 0.0 = neutral.
+        a: f32,
+        /// Oklab b: 0.0 = neutral.
+        b: f32,
+    },
+}
+
+impl RotateMode {
+    /// Fill with black (L=0, a=0, b=0).
+    pub const fn black() -> Self {
+        Self::Fill {
+            l: 0.0,
+            a: 0.0,
+            b: 0.0,
+        }
+    }
+
+    /// Fill with white (L=1, a=0, b=0 in Oklab).
+    pub const fn white() -> Self {
+        Self::Fill {
+            l: 1.0,
+            a: 0.0,
+            b: 0.0,
+        }
+    }
+
+    /// Fill with a custom Oklab color.
+    pub const fn color(l: f32, a: f32, b: f32) -> Self {
+        Self::Fill { l, a, b }
+    }
 }
 
 /// Rotation by an arbitrary angle in degrees.
@@ -168,7 +228,7 @@ impl Rotate {
     pub fn deskew(angle_degrees: f32) -> Self {
         Self {
             angle_degrees,
-            mode: RotateMode::FillBlack,
+            mode: RotateMode::white(),
             interpolation: WarpInterpolation::Lanczos3,
         }
     }
@@ -209,7 +269,7 @@ impl Rotate {
     pub fn to_warp(&self, width: u32, height: u32) -> Warp {
         let bg = match self.mode {
             RotateMode::Crop | RotateMode::FillClamp => WarpBackground::Clamp,
-            RotateMode::FillBlack => WarpBackground::Black,
+            RotateMode::Fill { l, a, b } => WarpBackground::Color { l, a, b },
         };
         match self.cardinal_quarter_turns() {
             Some(0) => Warp::default(), // identity
@@ -377,7 +437,7 @@ impl Warp {
     /// (clean borders and maximum sharpness for text).
     pub fn deskew(angle_degrees: f32, width: u32, height: u32) -> Self {
         let mut warp = Self::rotation(angle_degrees, width, height);
-        warp.background = WarpBackground::Black;
+        warp.background = WarpBackground::white();
         warp.interpolation = WarpInterpolation::Lanczos3;
         warp
     }
@@ -713,15 +773,18 @@ fn sample_all_planes(
     let wf = w as f32;
     let hf = h as f32;
 
-    // Out-of-bounds check for Black background mode.
-    // The boundary depends on kernel radius to avoid partial-kernel artifacts.
-    if background == WarpBackground::Black {
+    // Out-of-bounds check for solid color fill.
+    if let WarpBackground::Color { l, a, b } = background {
         if sx < -0.5 || sx >= wf - 0.5 || sy < -0.5 || sy >= hf - 0.5 {
-            dst_l[out_idx] = 0.0;
-            dst_a[out_idx] = 0.0;
-            dst_b[out_idx] = 0.0;
+            dst_l[out_idx] = l;
+            dst_a[out_idx] = a;
+            dst_b[out_idx] = b;
             if let Some(da) = dst_alpha {
-                da[out_idx] = 0.0;
+                da[out_idx] = if l == 0.0 && a == 0.0 && b == 0.0 {
+                    0.0
+                } else {
+                    1.0
+                };
             }
             return;
         }
@@ -1069,7 +1132,7 @@ mod tests {
     #[test]
     fn deskew_uses_black_and_lanczos() {
         let warp = Warp::deskew(10.0, 100, 100);
-        assert_eq!(warp.background, WarpBackground::Black);
+        assert_eq!(warp.background, WarpBackground::white());
         assert_eq!(warp.interpolation, WarpInterpolation::Lanczos3);
     }
 
