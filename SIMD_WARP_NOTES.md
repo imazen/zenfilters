@@ -103,21 +103,24 @@ All approaches verified against the scalar reference:
 - Zero pixels exceeding the 1e-5 threshold
 - Tested with both Clamp and Color background modes
 
-## Recommendations
+## Current state
 
-1. **For 3-plane Oklab workloads**: Use Approach D (fused SIMD). 4x speedup,
-   27.9 ms for 1080p rotation. This should bring the 56 ms/plane figure from
-   the task description down to ~9 ms/plane equivalent.
+- **Approach D (fused 3-plane SIMD)** is wired into `Warp::apply` and
+  `Rotate::apply` via `warp_planes_fused()`. Always uses Robidoux kernel.
+- **Multi-arch dispatch** via `#[magetypes(v3, neon, wasm128)]` — the fused
+  3-plane inner loop generates NEON and WASM128 variants automatically.
+  Single-plane alpha uses scalar fallback on non-x86 (future: add SIMD).
+- **SIMD path always uses Robidoux** regardless of `WarpInterpolation` setting.
+  Other kernels are only supported by the scalar fallback (perspective
+  transforms, or builds without `experimental` feature).
 
-2. **For single-plane workloads**: Use Approach A (planar SIMD). 1.8x speedup.
+## Future work
 
-3. **Next optimization**: Add Bilinear SIMD path (2x2 instead of 4x4).
-   For real-time preview at 60fps, bilinear is ~4x cheaper (4 loads vs 16).
-   Combined with SIMD, expect 7-8x total speedup for preview quality.
-
-4. **Future AVX-512**: With safe gather wrappers, the gather bottleneck
-   could be reduced. AVX-512 `vpgatherdd` with 16-wide would also double
-   throughput vs AVX2 8-wide.
+1. **Fuse alpha as 4th channel** in the fused SIMD loop — currently runs
+   as a separate single-plane pass (~7ms overhead at 1080p).
+2. **Add bilinear SIMD** for real-time preview (2×2 = 4 loads vs 4×4 = 16).
+3. **AVX-512 gather**: `vpgatherdd` with 16-wide could reduce the gather
+   bottleneck. Requires safe wrappers in archmage/magetypes.
 
 ## Dead end: interleaved RGBA u8
 
@@ -139,6 +142,8 @@ implementation.
 
 ## Files
 
-- `src/filters/warp_simd.rs` — Planar SIMD approaches A-D + tests
+- `src/filters/warp_simd.rs` — Planar SIMD approaches A-D + tests (`pub(crate)`)
+- `src/filters/warp.rs` — `Rotate`, `Warp`, `RotateMode`, `WarpBackground` public API
+- `src/zennode_defs.rs` — `RotateDef`, `WarpDef` node definitions (feature-gated)
 - `examples/warp_bench.rs` — Benchmark harness
-- `src/filters/mod.rs` — Module registration (feature-gated on `experimental`)
+- All gated behind `feature = "experimental"`

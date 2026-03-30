@@ -212,7 +212,14 @@ impl Rotate {
     /// Positive = counterclockwise. Cardinal angles (0, 90, 180, 270)
     /// are detected automatically and use pixel-perfect fast paths.
     /// Non-cardinal rotations crop to the largest clean rectangle.
+    /// # Panics
+    ///
+    /// Panics if `angle_degrees` is NaN or infinite.
     pub fn new(angle_degrees: f32) -> Self {
+        assert!(
+            angle_degrees.is_finite(),
+            "Rotate angle must be finite, got {angle_degrees}"
+        );
         Self {
             angle_degrees,
             mode: RotateMode::Crop,
@@ -247,15 +254,15 @@ impl Rotate {
     /// Cardinal angles produce pixel-perfect warps (no interpolation).
     /// Non-cardinal angles produce Robidoux-interpolated warps.
     pub fn to_warp(&self, width: u32, height: u32) -> Warp {
-        let bg = match self.mode {
-            RotateMode::Crop | RotateMode::FillClamp => WarpBackground::Clamp,
-            RotateMode::Deskew => WarpBackground::white(),
-            RotateMode::Fill(bg) => bg,
-        };
         match self.cardinal_quarter_turns() {
-            Some(0) => Warp::default(), // identity
+            Some(0) => Warp::default(),
             Some(n) => Warp::exact_cardinal(n, width, height),
             None => {
+                let bg = match self.mode {
+                    RotateMode::Crop | RotateMode::FillClamp => WarpBackground::Clamp,
+                    RotateMode::Deskew => WarpBackground::white(),
+                    RotateMode::Fill(bg) => bg,
+                };
                 let mut warp = Warp::rotation(self.angle_degrees, width, height);
                 warp.background = bg;
                 warp.interpolation = WarpInterpolation::Robidoux;
@@ -741,23 +748,38 @@ fn catmull_rom(t: f32) -> f32 {
 /// significantly sharper for geometric transforms. ImageMagick's default
 /// for `-distort SRT`.
 #[inline]
+/// Robidoux kernel — uses precomputed constants from warp_simd.
+#[cfg(feature = "experimental")]
+#[inline]
 fn robidoux(t: f32) -> f32 {
-    // Mitchell-Netravali with B=0.37821575509399867, C=0.31089212245300067
-    // f(t) = (1/6)*((12-9B-6C)|t|³ + (-18+12B+6C)|t|² + (6-2B))    for |t| < 1
-    //      = (1/6)*((-B-6C)|t|³ + (6B+30C)|t|² + (-12B-48C)|t| + (8B+24C))  for 1 ≤ |t| < 2
-    const B: f32 = 0.37821575509399867;
-    const C: f32 = 0.31089212245300067;
+    use super::warp_simd::{A0, A2, A3, B0, B1, B2, B3};
     let t = t.abs();
     if t < 1.0 {
-        let a3 = (12.0 - 9.0 * B - 6.0 * C) / 6.0;
-        let a2 = (-18.0 + 12.0 * B + 6.0 * C) / 6.0;
-        let a0 = (6.0 - 2.0 * B) / 6.0;
+        ((A3 * t + A2) * t) * t + A0
+    } else if t < 2.0 {
+        (((B3 * t + B2) * t) + B1) * t + B0
+    } else {
+        0.0
+    }
+}
+
+/// Robidoux kernel — inline constants (no warp_simd dependency).
+#[cfg(not(feature = "experimental"))]
+#[inline]
+fn robidoux(t: f32) -> f32 {
+    const RB: f32 = 0.37821576;
+    const RC: f32 = 0.31089213;
+    let t = t.abs();
+    if t < 1.0 {
+        let a3 = (12.0 - 9.0 * RB - 6.0 * RC) / 6.0;
+        let a2 = (-18.0 + 12.0 * RB + 6.0 * RC) / 6.0;
+        let a0 = (6.0 - 2.0 * RB) / 6.0;
         ((a3 * t + a2) * t) * t + a0
     } else if t < 2.0 {
-        let b3 = (-B - 6.0 * C) / 6.0;
-        let b2 = (6.0 * B + 30.0 * C) / 6.0;
-        let b1 = (-12.0 * B - 48.0 * C) / 6.0;
-        let b0 = (8.0 * B + 24.0 * C) / 6.0;
+        let b3 = (-RB - 6.0 * RC) / 6.0;
+        let b2 = (6.0 * RB + 30.0 * RC) / 6.0;
+        let b1 = (-12.0 * RB - 48.0 * RC) / 6.0;
+        let b0 = (8.0 * RB + 24.0 * RC) / 6.0;
         (((b3 * t + b2) * t) + b1) * t + b0
     } else {
         0.0
@@ -1013,16 +1035,16 @@ fn apply_cardinal(planes: &mut OklabPlanes, quarter_turns: u8, ctx: &mut FilterC
 static WARP_SCHEMA: FilterSchema = FilterSchema {
     name: "warp",
     label: "Warp",
-    description: "Geometric transform (rotation, deskew, affine, perspective) with bicubic/Lanczos interpolation",
-    group: FilterGroup::Effects,
+    description: "Geometric transform (rotation, deskew, affine, perspective) with Robidoux interpolation",
+    group: FilterGroup::Geometry,
     params: &[
         ParamDesc {
             name: "angle",
             label: "Rotation Angle",
-            description: "Rotation in degrees (positive = counterclockwise). Use rotation() or deskew() constructors.",
+            description: "Rotation in degrees (positive = counterclockwise). Only meaningful for pure rotation matrices.",
             kind: ParamKind::Float {
-                min: -180.0,
-                max: 180.0,
+                min: -360.0,
+                max: 360.0,
                 default: 0.0,
                 identity: 0.0,
                 step: 0.1,
@@ -1037,8 +1059,8 @@ static WARP_SCHEMA: FilterSchema = FilterSchema {
             description: "0 = Bilinear, 1 = Bicubic, 2 = Robidoux (default), 3 = Lanczos3",
             kind: ParamKind::Int {
                 min: 0,
-                max: 2,
-                default: 1,
+                max: 3,
+                default: 2,
             },
             unit: "",
             section: "Main",
@@ -1073,11 +1095,48 @@ impl Describe for Warp {
 
     fn set_param(&mut self, name: &str, value: ParamValue) -> bool {
         match name {
+            "angle" => {
+                if let Some(deg) = value.as_f32() {
+                    if deg.is_finite() {
+                        // Reconstruct rotation matrix for the new angle,
+                        // preserving existing center (estimated from current matrix).
+                        let angle_rad = deg * core::f32::consts::PI / 180.0;
+                        let cos_a = angle_rad.cos();
+                        let sin_a = angle_rad.sin();
+                        // Estimate center from current translation terms
+                        let cx = (self.matrix[2]
+                            + self.matrix[0] * self.matrix[2]
+                            + self.matrix[1] * self.matrix[5])
+                            / 2.0;
+                        let cy = (self.matrix[5]
+                            + self.matrix[3] * self.matrix[2]
+                            + self.matrix[4] * self.matrix[5])
+                            / 2.0;
+                        self.matrix = [
+                            cos_a,
+                            sin_a,
+                            cx - cx * cos_a - cy * sin_a,
+                            -sin_a,
+                            cos_a,
+                            cy + cx * sin_a - cy * cos_a,
+                            0.0,
+                            0.0,
+                            1.0,
+                        ];
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
             "interpolation" => {
                 if let Some(v) = value.as_i32() {
                     self.interpolation = match v {
                         0 => WarpInterpolation::Bilinear,
                         1 => WarpInterpolation::Bicubic,
+                        2 => WarpInterpolation::Robidoux,
                         3 => WarpInterpolation::Lanczos3,
                         _ => WarpInterpolation::Robidoux,
                     };
@@ -1128,7 +1187,7 @@ mod tests {
     }
 
     #[test]
-    fn rotation_360_is_near_identity() {
+    fn four_90deg_interpolated_rotations_near_identity() {
         let mut planes = OklabPlanes::new(32, 32);
         for y in 0..32u32 {
             for x in 0..32u32 {

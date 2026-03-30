@@ -1346,7 +1346,7 @@ impl Default for ColorMatrix {
 #[node(format(preferred = OklabF32, alpha = Process))]
 #[node(changes_dimensions)]
 #[node(tags("rotate", "geometry", "transform", "deskew", "straighten"))]
-pub struct RotateNode {
+pub struct RotateDef {
     /// Rotation angle in degrees. Positive = counterclockwise.
     /// 90, 180, 270 use pixel-perfect fast path (no interpolation).
     #[param(range(-360.0..=360.0), default = 0.0, identity = 0.0, step = 0.1)]
@@ -1372,7 +1372,7 @@ pub struct RotateNode {
 #[node(format(preferred = OklabF32, alpha = Process))]
 #[node(changes_dimensions)]
 #[node(tags("warp", "affine", "perspective", "homography", "geometry", "transform"))]
-pub struct WarpNode {
+pub struct WarpDef {
     /// 3×3 transform matrix in row-major order (9 floats).
     /// Maps output coordinates to source coordinates (inverse mapping).
     #[param(range(-1000.0..=1000.0), default = 0.0, identity = 0.0, step = 0.01)]
@@ -1391,7 +1391,7 @@ pub struct WarpNode {
 }
 
 #[cfg(feature = "experimental")]
-impl Default for WarpNode {
+impl Default for WarpDef {
     fn default() -> Self {
         Self {
             matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
@@ -1454,9 +1454,9 @@ pub fn register_all(registry: &mut NodeRegistry) {
     registry.register(&COLOR_MATRIX_NODE);
     #[cfg(feature = "experimental")]
     {
-        registry.register(&ROTATE_NODE_NODE);
+        registry.register(&ROTATE_DEF_NODE);
 
-        registry.register(&WARP_NODE_NODE);
+        registry.register(&WARP_DEF_NODE);
     }
 }
 
@@ -1504,7 +1504,7 @@ pub static ALL: &[&dyn NodeDef] = &[
 
 /// Geometry node definitions (requires `experimental` feature).
 #[cfg(feature = "experimental")]
-pub static GEOMETRY: &[&dyn NodeDef] = &[&ROTATE_NODE_NODE, &WARP_NODE_NODE];
+pub static GEOMETRY: &[&dyn NodeDef] = &[&ROTATE_DEF_NODE, &WARP_DEF_NODE];
 
 // ═══════════════════════════════════════════════════════════════════
 // NodeInstance → Filter bridge
@@ -1665,6 +1665,7 @@ pub fn node_to_filter(
             {
                 0 => WarpInterpolation::Bilinear,
                 1 => WarpInterpolation::Bicubic,
+                2 => WarpInterpolation::Robidoux,
                 3 => WarpInterpolation::Lanczos3,
                 _ => WarpInterpolation::Robidoux,
             };

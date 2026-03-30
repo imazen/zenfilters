@@ -40,14 +40,14 @@ use magetypes::simd::generic::f32x8 as GenericF32x8;
 const B: f64 = 0.37821575509399867;
 const C: f64 = 0.31089212245300067;
 
-const A3: f32 = ((12.0 - 9.0 * B - 6.0 * C) / 6.0) as f32;
-const A2: f32 = ((-18.0 + 12.0 * B + 6.0 * C) / 6.0) as f32;
-const A0: f32 = ((6.0 - 2.0 * B) / 6.0) as f32;
+pub(super) const A3: f32 = ((12.0 - 9.0 * B - 6.0 * C) / 6.0) as f32;
+pub(super) const A2: f32 = ((-18.0 + 12.0 * B + 6.0 * C) / 6.0) as f32;
+pub(super) const A0: f32 = ((6.0 - 2.0 * B) / 6.0) as f32;
 
-const B3: f32 = ((-B - 6.0 * C) / 6.0) as f32;
-const B2: f32 = ((6.0 * B + 30.0 * C) / 6.0) as f32;
-const B1: f32 = ((-12.0 * B - 48.0 * C) / 6.0) as f32;
-const B0: f32 = ((8.0 * B + 24.0 * C) / 6.0) as f32;
+pub(super) const B3: f32 = ((-B - 6.0 * C) / 6.0) as f32;
+pub(super) const B2: f32 = ((6.0 * B + 30.0 * C) / 6.0) as f32;
+pub(super) const B1: f32 = ((-12.0 * B - 48.0 * C) / 6.0) as f32;
+pub(super) const B0: f32 = ((8.0 * B + 24.0 * C) / 6.0) as f32;
 
 /// Scalar Robidoux for reference / tail handling.
 #[inline]

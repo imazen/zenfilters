@@ -38,6 +38,8 @@ pub enum FilterGroup {
     Effects,
     /// Sigmoid, basecurve, DtSigmoid (scene→display conversion)
     ToneMap,
+    /// Rotation, warp, affine, perspective transforms
+    Geometry,
     /// Auto exposure, auto tune
     Auto,
 }
