@@ -1332,8 +1332,8 @@ pub struct RotateNode {
     pub mode: i32,
 
     /// Interpolation quality (non-cardinal only).
-    /// 0 = Bilinear (fast), 1 = Bicubic (default), 2 = Lanczos3 (max quality).
-    #[param(range(0..=2), default = 1, identity = 1, step = 1)]
+    /// 0 = Bilinear, 1 = Bicubic, 2 = Robidoux (default), 3 = Lanczos3.
+    #[param(range(0..=3), default = 2, identity = 2, step = 1)]
     #[param(section = "Options")]
     pub interpolation: i32,
 }
@@ -1381,8 +1381,8 @@ pub struct WarpNode {
     #[param(section = "Options")]
     pub background: i32,
 
-    /// Interpolation: 0 = Bilinear, 1 = Bicubic, 2 = Lanczos3.
-    #[param(range(0..=2), default = 1, identity = 1, step = 1)]
+    /// Interpolation: 0 = Bilinear, 1 = Bicubic, 2 = Robidoux (default), 3 = Lanczos3.
+    #[param(range(0..=3), default = 2, identity = 2, step = 1)]
     #[param(section = "Options")]
     pub interpolation: i32,
 }
@@ -1634,8 +1634,9 @@ pub fn node_to_filter(
                 .unwrap_or(1)
             {
                 0 => WarpInterpolation::Bilinear,
-                2 => WarpInterpolation::Lanczos3,
-                _ => WarpInterpolation::Bicubic,
+                1 => WarpInterpolation::Bicubic,
+                3 => WarpInterpolation::Lanczos3,
+                _ => WarpInterpolation::Robidoux,
             };
             Some(alloc::boxed::Box::new(crate::filters::Rotate {
                 angle_degrees: angle,
@@ -1680,8 +1681,9 @@ pub fn node_to_filter(
                 .unwrap_or(1)
             {
                 0 => WarpInterpolation::Bilinear,
-                2 => WarpInterpolation::Lanczos3,
-                _ => WarpInterpolation::Bicubic,
+                1 => WarpInterpolation::Bicubic,
+                3 => WarpInterpolation::Lanczos3,
+                _ => WarpInterpolation::Robidoux,
             };
             {
                 let mut warp = crate::filters::Warp::projective(matrix);

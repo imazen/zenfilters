@@ -64,9 +64,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "almost-enough"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20bd2aa12cb483fa294d7ce77c62faeb5daca051199d34e5152f70ecfa32688c"
+checksum = "8c8f3e651142e773f3eab1b8314ade013d5a3eef6dc2cd2af6dad9b0ede58f23"
 dependencies = [
  "enough",
 ]
@@ -153,9 +153,9 @@ checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
 name = "archmage"
-version = "0.9.14"
+version = "0.9.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c62208fadf5c29826211a799472057dd164956fe3ae3ce63f62c267ca7cd123"
+checksum = "4f603b4bae8aa53923ec4c221610fec3bb16a3cba8e002a750323a30abd25f8f"
 dependencies = [
  "archmage-macros",
  "safe_unaligned_simd",
@@ -163,9 +163,9 @@ dependencies = [
 
 [[package]]
 name = "archmage-macros"
-version = "0.9.14"
+version = "0.9.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2673bdcd233efb45ba8f8bd8e915acdb2fa413140a01a18296e4b198ff6eae1f"
+checksum = "237913c29ffeb6cda1ddc6e3a4ff21c2d2e5523e050dce04fa5889a3e8dabb99"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -345,9 +345,9 @@ checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
 
 [[package]]
 name = "cc"
-version = "1.2.57"
+version = "1.2.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a0dd1ca384932ff3641c8718a02769f1698e7563dc6974ffd03346116310423"
+checksum = "e1e928d4b69e3077709075a938a05ffbedfa53a84c8f766efbf8220bb1ff60e1"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -537,9 +537,9 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "enough"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b1c403c8f831754063050c270711041a002743142338831c0212d287ddddcfa"
+checksum = "521236efef7dcf4a95af2976e34b5b10780e8747eb78fa4742aa65b2ee189222"
 
 [[package]]
 name = "enumn"
@@ -931,9 +931,9 @@ dependencies = [
 
 [[package]]
 name = "js-sys"
-version = "0.3.91"
+version = "0.3.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b49715b7073f385ba4bc528e5747d02e66cb39c6146efb66b781f131f0fb399c"
+checksum = "cc4c90f45aa2e6eacbe8645f77fdea542ac97a494bcd117a67df9ff4d611f995"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
@@ -1146,9 +1146,9 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "libblur"
-version = "0.23.2"
+version = "0.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db2809bb783ff422bc472a868e659a664c2500443defbd412340f753bc563437"
+checksum = "57fda0f48231f6b8082f9ecb674a37d44b4c83e6d76ee6912ba914d43c07e414"
 dependencies = [
  "novtb",
  "num-complex",
@@ -1214,9 +1214,9 @@ dependencies = [
 
 [[package]]
 name = "linear-srgb"
-version = "0.6.5"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4b75067bc1e8c2c28413cab5777c0fe8473499e55f2e09076b9076f344ce9d5"
+checksum = "fc735204d942021e5f869a7fbe13593ccd480121131b2938efe410ad80aee984"
 dependencies = [
  "archmage",
  "bytemuck",
@@ -1247,9 +1247,9 @@ dependencies = [
 
 [[package]]
 name = "magetypes"
-version = "0.9.14"
+version = "0.9.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b54a7a335556356f4dfccf45cbd29f66385a8ee35d5d6f3f084ed9ad6793608"
+checksum = "0ce9b26ae600f31a427d5b6a29ce33f0825683dfe5fff0b11277fa3da890e52b"
 dependencies = [
  "archmage",
 ]
@@ -1985,9 +1985,9 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "simd-adler32"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
+checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
 
 [[package]]
 name = "simd_helpers"
@@ -2249,9 +2249,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.22.0"
+version = "1.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a68d3c8f01c0cfa54a75291d83601161799e4a89a39e0929f4b0354d88757a37"
+checksum = "5ac8b6f42ead25368cf5b098aeb3dc8a1a2c05a3eee8a9a1a68c640edbfc79d9"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
@@ -2296,9 +2296,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.114"
+version = "0.2.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6532f9a5c1ece3798cb1c2cfdba640b9b3ba884f5db45973a6f442510a87d38e"
+checksum = "6523d69017b7633e396a89c5efab138161ed5aafcbc8d3e5c5a42ae38f50495a"
 dependencies = [
  "cfg-if",
  "once_cell",
@@ -2309,9 +2309,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.114"
+version = "0.2.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18a2d50fcf105fb33bb15f00e7a77b772945a2ee45dcf454961fd843e74c18e6"
+checksum = "4e3a6c758eb2f701ed3d052ff5737f5bfe6614326ea7f3bbac7156192dc32e67"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -2319,9 +2319,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.114"
+version = "0.2.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03ce4caeaac547cdf713d280eda22a730824dd11e6b8c3ca9e42247b25c631e3"
+checksum = "921de2737904886b52bcbb237301552d05969a6f9c40d261eb0533c8b055fedf"
 dependencies = [
  "bumpalo",
  "proc-macro2",
@@ -2332,9 +2332,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.114"
+version = "0.2.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75a326b8c223ee17883a4251907455a2431acc2791c98c26279376490c378c16"
+checksum = "a93e946af942b58934c604527337bad9ae33ba1d5c6900bbb41c2c07c2364a93"
 dependencies = [
  "unicode-ident",
 ]
@@ -2381,9 +2381,9 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "whereat"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b90a7ad6cf187c316a60a9cb75fc7106cabd934094678b9f695ca4adca26cf08"
+checksum = "ab90f361db038ba3135da12c938c328fb43a012992101879e3d6ebccb4d7eba8"
 
 [[package]]
 name = "wide"
@@ -2769,19 +2769,9 @@ dependencies = [
 
 [[package]]
 name = "zencodec"
-version = "0.1.9"
-dependencies = [
- "almost-enough",
- "enough",
- "whereat",
- "zenpixels",
-]
-
-[[package]]
-name = "zencodec"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d055b475f345ab30e82f582cc1e54be97fcdf8a2ab6d427106a4195c2b899f2"
+checksum = "ce7dbfca05c2c9f7b45d6b19012602260a3809e904177a2cb9ec7e4ffbe63fe5"
 dependencies = [
  "almost-enough",
  "enough",
@@ -2800,7 +2790,7 @@ dependencies = [
  "rgb",
  "thiserror",
  "whereat",
- "zencodec 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zencodec",
  "zenjpeg",
  "zenpixels",
  "zenpixels-convert",
@@ -2837,9 +2827,9 @@ dependencies = [
 
 [[package]]
 name = "zenflate"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3ab3b331bb33391f2ac0a0716b5a5a06c634c3726f7a69b68d3052dbd2602f8"
+checksum = "e91d745f9ba4056eff9d3a88bb97f58c73d29f03459b1fc13cfd27545a6ffe0d"
 dependencies = [
  "archmage",
  "enough",
@@ -2864,15 +2854,18 @@ dependencies = [
  "whereat",
  "wide",
  "yuv",
- "zencodec 0.1.9",
+ "zencodec",
  "zenpixels",
 ]
 
 [[package]]
 name = "zenlayout"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e136195598f6c1dc769200888ad1f9071f99d54ac3a91b80be6ba0b164e6b5b"
+checksum = "ad06dbff2936f03a0c9838bb7c1d96962b252598e9a70befd4c6f9b4bd1aa848"
+dependencies = [
+ "whereat",
+]
 
 [[package]]
 name = "zennode"
@@ -2931,7 +2924,7 @@ dependencies = [
  "safe_unaligned_simd",
  "thiserror",
  "whereat",
- "zencodec 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zencodec",
  "zenflate",
  "zenpixels",
  "zenpixels-convert",
@@ -2940,9 +2933,9 @@ dependencies = [
 
 [[package]]
 name = "zenquant"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88a5766f917b4a5e3321e7e64401fa3158e6db006996f83fb511b40f39b405cd"
+checksum = "524b631d0e34ab1317a31379e27cf10cef3bb7d90234d3b52c71bc28263b6907"
 dependencies = [
  "archmage",
  "imgref",
@@ -2989,9 +2982,9 @@ dependencies = [
 
 [[package]]
 name = "zensim"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c2cfe0d24afe29012b75eb79cb151a10e7ce6460232682422ec92751985cb1b"
+checksum = "7808c21d59f7658993c961a1e84008bdf55f61cd5fb7c08c62b4cce4d475c71c"
 dependencies = [
  "archmage",
  "bytemuck",
@@ -3003,18 +2996,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.47"
+version = "0.8.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efbb2a062be311f2ba113ce66f697a4dc589f85e78a4aea276200804cea0ed87"
+checksum = "eed437bf9d6692032087e337407a86f04cd8d6a16a37199ed57949d415bd68e9"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.47"
+version = "0.8.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e8bc7269b54418e7aeeef514aa68f8690b8c0489a06b0136e5f57c4c5ccab89"
+checksum = "70e3cd084b1788766f53af483dd21f93881ff30d7320490ec3ef7526d203bad4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3044,9 +3037,9 @@ dependencies = [
 
 [[package]]
 name = "zune-jpeg"
-version = "0.5.14"
+version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b7a1c0af6e5d8d1363f4994b7a091ccf963d8b694f7da5b0b9cceb82da2c0a6"
+checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
 ]
