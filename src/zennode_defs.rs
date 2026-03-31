@@ -1328,6 +1328,463 @@ impl Default for ColorMatrix {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// AUTO
+// ═══════════════════════════════════════════════════════════════════
+
+/// Automatic exposure correction by normalizing to a target middle grey.
+///
+/// Measures the geometric mean of L (log-average luminance) and applies
+/// exposure correction to bring it to the target. The geometric mean is
+/// robust against small bright areas that would bias an arithmetic mean.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.auto_exposure", group = Auto, role = Filter)]
+#[node(label = "Auto Exposure")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("auto", "exposure", "normalize"))]
+pub struct AutoExposureDef {
+    /// Correction strength (0 = off, 1 = full correction to target)
+    #[param(range(0.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub strength: f32,
+
+    /// Target middle grey in Oklab L
+    #[param(range(0.2..=0.8), default = 0.5, identity = 0.5, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub target: f32,
+
+    /// Maximum correction in stops (prevents extreme adjustments)
+    #[param(range(0.5..=5.0), default = 2.0, identity = 2.0, step = 0.5)]
+    #[param(unit = "EV", section = "Advanced", slider = Linear)]
+    pub max_correction: f32,
+}
+
+impl Default for AutoExposureDef {
+    fn default() -> Self {
+        Self {
+            strength: 0.0,
+            target: 0.5,
+            max_correction: 2.0,
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ADDITIONAL DETAIL
+// ═══════════════════════════════════════════════════════════════════
+
+/// Edge-preserving smoothing via guided filter.
+///
+/// Uses a guided filter (He et al., TPAMI 2013) with L as the guide image.
+/// O(1) per pixel regardless of radius. Produces locally-linear output that
+/// preserves edges from the luminance channel while smoothing noise in all
+/// three channels.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.bilateral", group = Detail, role = Filter)]
+#[node(label = "Bilateral Filter")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(neighborhood)]
+#[node(tags("smooth", "denoise", "edge-preserving"))]
+pub struct BilateralDef {
+    /// Smoothing window size (spatial sigma)
+    #[param(range(0.5..=20.0), default = 2.0, identity = 2.0, step = 0.5)]
+    #[param(unit = "px", section = "Main", slider = Linear)]
+    pub spatial_sigma: f32,
+
+    /// Edge preservation parameter (smaller = sharper edges)
+    #[param(range(0.001..=0.5), default = 0.1, identity = 0.1, step = 0.01)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub range_sigma: f32,
+
+    /// Blend strength (0 = off, 1 = full smoothing)
+    #[param(range(0.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub strength: f32,
+}
+
+impl Default for BilateralDef {
+    fn default() -> Self {
+        Self {
+            spatial_sigma: 2.0,
+            range_sigma: 0.1,
+            strength: 0.0,
+        }
+    }
+}
+
+/// Full-image Gaussian blur across all Oklab channels.
+///
+/// Unlike the L-only blur used internally by clarity/sharpen, this blurs
+/// the entire image (L, a, b, and alpha). Blurring in Oklab avoids the
+/// darkening artifacts that sRGB gamma-space blurs produce at color boundaries.
+#[derive(Node, Clone, Debug, Default)]
+#[node(id = "zenfilters.blur", group = Detail, role = Filter)]
+#[node(label = "Blur")]
+#[node(format(preferred = OklabF32, alpha = Process))]
+#[node(neighborhood)]
+#[node(tags("blur", "smooth", "gaussian"))]
+pub struct BlurDef {
+    /// Gaussian sigma in pixels (larger = more blur)
+    #[param(range(0.0..=100.0), default = 0.0, identity = 0.0, step = 0.5)]
+    #[param(unit = "\u{3c3}", section = "Main", slider = Linear)]
+    pub sigma: f32,
+}
+
+/// Per-channel tone curves applied independently to R, G, B in sRGB space.
+///
+/// Unlike ToneCurve which operates on Oklab L (preserving color ratios),
+/// ChannelCurves enables independent tonal correction of each color channel.
+/// Each channel has its own 256-entry LUT mapping sRGB [0,1] to [0,1].
+///
+/// The node accepts control points as comma-separated "x:y" pairs per channel.
+/// Default is identity: "0:0,1:1".
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.channel_curves", group = Color, role = Filter)]
+#[node(label = "Channel Curves")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("color", "curves", "channel", "rgb"))]
+pub struct ChannelCurvesDef {
+    /// Red channel control points as "x:y" pairs, comma-separated
+    #[param(default = "0:0,1:1")]
+    #[param(section = "Red", label = "Red Curve", slider = NotSlider)]
+    pub red_points: String,
+
+    /// Green channel control points as "x:y" pairs, comma-separated
+    #[param(default = "0:0,1:1")]
+    #[param(section = "Green", label = "Green Curve", slider = NotSlider)]
+    pub green_points: String,
+
+    /// Blue channel control points as "x:y" pairs, comma-separated
+    #[param(default = "0:0,1:1")]
+    #[param(section = "Blue", label = "Blue Curve", slider = NotSlider)]
+    pub blue_points: String,
+}
+
+impl Default for ChannelCurvesDef {
+    fn default() -> Self {
+        Self {
+            red_points: String::from("0:0,1:1"),
+            green_points: String::from("0:0,1:1"),
+            blue_points: String::from("0:0,1:1"),
+        }
+    }
+}
+
+/// Lateral chromatic aberration correction.
+///
+/// Corrects color fringing at image edges caused by lens dispersion.
+/// In Oklab, CA manifests as radial displacement of the a (green-red)
+/// and b (blue-yellow) planes relative to L. Shifts chroma planes
+/// radially to re-align them with luminance.
+#[derive(Node, Clone, Debug, Default)]
+#[node(id = "zenfilters.chromatic_aberration", group = Effects, role = Filter)]
+#[node(label = "Chromatic Aberration")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("lens", "correction", "fringing"))]
+pub struct ChromaticAberrationDef {
+    /// Radial shift for the a (green-red) channel
+    #[param(range(-0.02..=0.02), default = 0.0, identity = 0.0, step = 0.001)]
+    #[param(unit = "", section = "Main", label = "Green-Red Shift", slider = Linear)]
+    pub shift_a: f32,
+
+    /// Radial shift for the b (blue-yellow) channel
+    #[param(range(-0.02..=0.02), default = 0.0, identity = 0.0, step = 0.001)]
+    #[param(unit = "", section = "Main", label = "Blue-Yellow Shift", slider = Linear)]
+    pub shift_b: f32,
+}
+
+/// Lens vignetting correction (devignette).
+///
+/// Compensates for the natural light falloff at the edges of a lens.
+/// Applies a radial brightness correction that increases toward the corners,
+/// based on the cos^4 law of illumination falloff.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.devignette", group = Effects, role = Filter)]
+#[node(label = "Devignette")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("lens", "correction", "vignette"))]
+pub struct DevignetteDef {
+    /// Correction strength (1 = full cos^4 compensation)
+    #[param(range(0.0..=2.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub strength: f32,
+
+    /// Falloff exponent (4 = cos^4 law, higher = corners only)
+    #[param(range(1.0..=8.0), default = 4.0, identity = 4.0, step = 0.5)]
+    #[param(unit = "", section = "Advanced", slider = Linear)]
+    pub exponent: f32,
+}
+
+impl Default for DevignetteDef {
+    fn default() -> Self {
+        Self {
+            strength: 0.0,
+            exponent: 4.0,
+        }
+    }
+}
+
+/// Edge detection on the L (lightness) channel.
+///
+/// Replaces L with gradient magnitude (Sobel/Laplacian) or binary edges (Canny),
+/// normalized to [0, 1]. Chroma channels are zeroed to produce a grayscale
+/// edge map.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.edge_detect", group = Detail, role = Filter)]
+#[node(label = "Edge Detect")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(neighborhood)]
+#[node(tags("edge", "detect", "sobel", "canny"))]
+pub struct EdgeDetectDef {
+    /// Detection mode (0 = Sobel, 1 = Laplacian, 2 = Canny)
+    #[param(range(0..=2), default = 0)]
+    #[param(unit = "", section = "Main", slider = NotSlider)]
+    pub mode: i32,
+
+    /// Sobel/Laplacian: output scaling. Canny: Gaussian blur sigma.
+    #[param(range(0.1..=5.0), default = 1.0, identity = 1.0, step = 0.1)]
+    #[param(unit = "\u{d7}", section = "Main", slider = Linear)]
+    pub strength: f32,
+}
+
+impl Default for EdgeDetectDef {
+    fn default() -> Self {
+        Self {
+            mode: 0,
+            strength: 1.0,
+        }
+    }
+}
+
+/// Fused per-pixel adjustment: applies all per-pixel operations in a single
+/// pass over the data, avoiding repeated plane traversal.
+///
+/// Equivalent to chaining Exposure + Contrast + BlackPoint + WhitePoint +
+/// Saturation + Temperature + Tint + HighlightsShadows + Dehaze + Vibrance,
+/// but runs ~3x faster because it only scans the planes once.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.fused_adjust", group = Tone, role = Filter)]
+#[node(label = "Fused Adjust")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(coalesce = "fused_adjust")]
+#[node(tags("fused", "adjust", "exposure", "contrast", "saturation"))]
+pub struct FusedAdjustDef {
+    /// Exposure in stops
+    #[param(range(-5.0..=5.0), default = 0.0, identity = 0.0, step = 0.1)]
+    #[param(unit = "EV", section = "Tone", slider = Linear)]
+    pub exposure: f32,
+
+    /// Contrast (-1 to 1)
+    #[param(range(-1.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Tone", slider = Linear)]
+    pub contrast: f32,
+
+    /// Highlights recovery
+    #[param(range(-1.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Tone", slider = Linear)]
+    pub highlights: f32,
+
+    /// Shadows recovery
+    #[param(range(-1.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Tone", slider = Linear)]
+    pub shadows: f32,
+
+    /// Vibrance (smart saturation)
+    #[param(range(-1.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Color", slider = Linear)]
+    pub vibrance: f32,
+
+    /// Vibrance protection exponent
+    #[param(range(0.5..=4.0), default = 2.0, identity = 2.0, step = 0.1)]
+    #[param(unit = "", section = "Advanced", slider = Linear)]
+    pub vibrance_protection: f32,
+
+    /// Linear saturation factor
+    #[param(range(0.0..=2.0), default = 1.0, identity = 1.0, step = 0.05)]
+    #[param(unit = "\u{d7}", section = "Color", slider = FactorCentered)]
+    pub saturation: f32,
+
+    /// Temperature shift (negative = cool, positive = warm)
+    #[param(range(-1.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Color", slider = Linear)]
+    pub temperature: f32,
+
+    /// Tint shift (negative = green, positive = magenta)
+    #[param(range(-1.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Color", slider = Linear)]
+    pub tint: f32,
+
+    /// Dehaze strength
+    #[param(range(0.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Tone", slider = SquareFromSlider)]
+    pub dehaze: f32,
+
+    /// Black point level (0 = no change)
+    #[param(range(0.0..=0.5), default = 0.0, identity = 0.0, step = 0.01)]
+    #[param(unit = "", section = "Tone", slider = Linear)]
+    pub black_point: f32,
+
+    /// White point level (1 = no change)
+    #[param(range(0.5..=2.0), default = 1.0, identity = 1.0, step = 0.05)]
+    #[param(unit = "", section = "Tone", slider = Linear)]
+    pub white_point: f32,
+}
+
+impl Default for FusedAdjustDef {
+    fn default() -> Self {
+        Self {
+            exposure: 0.0,
+            contrast: 0.0,
+            highlights: 0.0,
+            shadows: 0.0,
+            vibrance: 0.0,
+            vibrance_protection: 2.0,
+            saturation: 1.0,
+            temperature: 0.0,
+            tint: 0.0,
+            dehaze: 0.0,
+            black_point: 0.0,
+            white_point: 1.0,
+        }
+    }
+}
+
+/// Hue-selective chroma boost simulating wider color gamuts (P3).
+///
+/// Selectively boosts chroma in hue regions where Display P3 extends
+/// beyond sRGB, producing vivid reds, richer greens, and punchier oranges.
+/// Already-saturated colors get less boost (vibrance-style protection).
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.gamut_expand", group = Color, role = Filter)]
+#[node(label = "Gamut Expand")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("color", "gamut", "p3", "wide"))]
+pub struct GamutExpandDef {
+    /// Expansion strength (0 = sRGB, 1 = full P3-like expansion)
+    #[param(range(0.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub strength: f32,
+}
+
+impl Default for GamutExpandDef {
+    fn default() -> Self {
+        Self { strength: 0.0 }
+    }
+}
+
+/// Local tone mapping: compresses dynamic range while preserving local contrast.
+///
+/// Separates the image into a base layer (large-scale luminance) and detail
+/// layer (local texture), compresses the base, and recombines. Core of
+/// faux HDR processing from a single exposure.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.local_tone_map", group = ToneRange, role = Filter)]
+#[node(label = "Local Tone Map")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(neighborhood)]
+#[node(tags("tonemap", "hdr", "local", "dynamic range"))]
+pub struct LocalToneMapDef {
+    /// Dynamic range compression strength
+    #[param(range(0.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = SquareFromSlider)]
+    pub compression: f32,
+
+    /// Local detail enhancement factor
+    #[param(range(0.5..=3.0), default = 1.0, identity = 1.0, step = 0.1)]
+    #[param(unit = "\u{d7}", section = "Main", slider = Linear)]
+    pub detail_boost: f32,
+
+    /// Base layer extraction sigma (larger = coarser separation)
+    #[param(range(5.0..=100.0), default = 30.0, identity = 30.0, step = 5.0)]
+    #[param(unit = "px", section = "Advanced", slider = Linear)]
+    pub sigma: f32,
+}
+
+impl Default for LocalToneMapDef {
+    fn default() -> Self {
+        Self {
+            compression: 0.0,
+            detail_boost: 1.0,
+            sigma: 30.0,
+        }
+    }
+}
+
+/// Median filter for impulse noise removal (preserves edges).
+///
+/// Replaces each pixel with the median of its neighborhood. Unlike Gaussian
+/// blur, the median filter preserves edges while removing salt-and-pepper noise.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.median_blur", group = Detail, role = Filter)]
+#[node(label = "Median Blur")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(neighborhood)]
+#[node(tags("median", "denoise", "impulse", "edge-preserving"))]
+pub struct MedianBlurDef {
+    /// Neighborhood radius (1 = 3x3, 2 = 5x5, 3 = 7x7)
+    #[param(range(1..=5), default = 1)]
+    #[param(unit = "px", section = "Main", slider = Linear)]
+    pub radius: i32,
+
+    /// Also apply median to color channels (a, b)
+    #[param(default = false)]
+    #[param(section = "Main", label = "Filter Chroma")]
+    pub filter_chroma: bool,
+}
+
+impl Default for MedianBlurDef {
+    fn default() -> Self {
+        Self {
+            radius: 1,
+            filter_chroma: false,
+        }
+    }
+}
+
+/// Zone-based luminance adjustment with edge-aware masking.
+///
+/// Divides the luminance range into 9 zones (one per photographic stop
+/// from -8 EV to 0 EV) and applies independent exposure compensation
+/// to each. A guided filter creates an edge-preserving mask so adjustments
+/// don't cause halos at high-contrast boundaries.
+///
+/// Equivalent to darktable's Tone Equalizer module.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.tone_equalizer", group = ToneRange, role = Filter)]
+#[node(label = "Tone Equalizer")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(neighborhood)]
+#[node(tags("tone", "zone", "equalizer", "local"))]
+pub struct ToneEqualizerDef {
+    /// Exposure compensation per zone in stops (9 zones, dark to bright)
+    #[param(range(-4.0..=4.0), default = 0.0, identity = 0.0, step = 0.1)]
+    #[param(unit = "EV", section = "Zones", slider = NotSlider)]
+    #[param(labels(
+        "-8 EV", "-7 EV", "-6 EV", "-5 EV", "-4 EV", "-3 EV", "-2 EV", "-1 EV", "0 EV"
+    ))]
+    pub zones: [f32; 9],
+
+    /// Guided filter sigma (0 = auto-size from image)
+    #[param(range(0.0..=100.0), default = 0.0, identity = 0.0, step = 1.0)]
+    #[param(unit = "px", section = "Advanced", slider = Linear)]
+    pub smoothing: f32,
+
+    /// Guided filter eps (smaller = sharper edges in mask)
+    #[param(range(0.001..=0.1), default = 0.01, identity = 0.01, step = 0.005)]
+    #[param(unit = "", section = "Advanced", slider = Linear)]
+    pub edge_preservation: f32,
+}
+
+impl Default for ToneEqualizerDef {
+    fn default() -> Self {
+        Self {
+            zones: [0.0; 9],
+            smoothing: 0.0,
+            edge_preservation: 0.01,
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // GEOMETRY (requires "experimental" feature)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1452,6 +1909,18 @@ pub fn register_all(registry: &mut NodeRegistry) {
     registry.register(&INVERT_NODE);
     registry.register(&ALPHA_NODE);
     registry.register(&COLOR_MATRIX_NODE);
+    registry.register(&AUTO_EXPOSURE_DEF_NODE);
+    registry.register(&BILATERAL_DEF_NODE);
+    registry.register(&BLUR_DEF_NODE);
+    registry.register(&CHANNEL_CURVES_DEF_NODE);
+    registry.register(&CHROMATIC_ABERRATION_DEF_NODE);
+    registry.register(&DEVIGNETTE_DEF_NODE);
+    registry.register(&EDGE_DETECT_DEF_NODE);
+    registry.register(&FUSED_ADJUST_DEF_NODE);
+    registry.register(&GAMUT_EXPAND_DEF_NODE);
+    registry.register(&LOCAL_TONE_MAP_DEF_NODE);
+    registry.register(&MEDIAN_BLUR_DEF_NODE);
+    registry.register(&TONE_EQUALIZER_DEF_NODE);
     #[cfg(feature = "experimental")]
     {
         registry.register(&ROTATE_DEF_NODE);
@@ -1500,6 +1969,18 @@ pub static ALL: &[&dyn NodeDef] = &[
     &INVERT_NODE,
     &ALPHA_NODE,
     &COLOR_MATRIX_NODE,
+    &AUTO_EXPOSURE_DEF_NODE,
+    &BILATERAL_DEF_NODE,
+    &BLUR_DEF_NODE,
+    &CHANNEL_CURVES_DEF_NODE,
+    &CHROMATIC_ABERRATION_DEF_NODE,
+    &DEVIGNETTE_DEF_NODE,
+    &EDGE_DETECT_DEF_NODE,
+    &FUSED_ADJUST_DEF_NODE,
+    &GAMUT_EXPAND_DEF_NODE,
+    &LOCAL_TONE_MAP_DEF_NODE,
+    &MEDIAN_BLUR_DEF_NODE,
+    &TONE_EQUALIZER_DEF_NODE,
 ];
 
 /// Geometry node definitions (requires `experimental` feature).
@@ -1610,6 +2091,147 @@ pub fn node_to_filter(
             };
             Some(alloc::boxed::Box::new(crate::filters::ColorMatrix {
                 matrix,
+            }))
+        }
+        // Auto
+        "zenfilters.auto_exposure" => Some(alloc::boxed::Box::new(AutoExposure {
+            strength: f32_param(node, "strength"),
+            target: f32_param(node, "target"),
+            max_correction: f32_param(node, "max_correction"),
+        })),
+        // Additional Detail
+        "zenfilters.bilateral" => Some(alloc::boxed::Box::new(Bilateral {
+            spatial_sigma: f32_param(node, "spatial_sigma"),
+            range_sigma: f32_param(node, "range_sigma"),
+            strength: f32_param(node, "strength"),
+        })),
+        "zenfilters.blur" => Some(alloc::boxed::Box::new(Blur {
+            sigma: f32_param(node, "sigma"),
+        })),
+        "zenfilters.channel_curves" => {
+            fn parse_curve_points(s: &str) -> alloc::vec::Vec<(f32, f32)> {
+                s.split(',')
+                    .filter_map(|pair| {
+                        let mut parts = pair.trim().split(':');
+                        let x = parts.next()?.trim().parse::<f32>().ok()?;
+                        let y = parts.next()?.trim().parse::<f32>().ok()?;
+                        Some((x, y))
+                    })
+                    .collect()
+            }
+            fn str_param(node: &dyn zennode::traits::NodeInstance, name: &str) -> alloc::string::String {
+                node.get_param(name)
+                    .and_then(|p| match p {
+                        ParamValue::Str(s) => Some(s),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| alloc::string::String::from("0:0,1:1"))
+            }
+            let r_pts = parse_curve_points(&str_param(node, "red_points"));
+            let g_pts = parse_curve_points(&str_param(node, "green_points"));
+            let b_pts = parse_curve_points(&str_param(node, "blue_points"));
+            if r_pts.len() >= 2 && g_pts.len() >= 2 && b_pts.len() >= 2 {
+                Some(alloc::boxed::Box::new(ChannelCurves::from_points(&r_pts, &g_pts, &b_pts)))
+            } else {
+                Some(alloc::boxed::Box::new(ChannelCurves::default()))
+            }
+        }
+        "zenfilters.chromatic_aberration" => Some(alloc::boxed::Box::new(ChromaticAberration {
+            shift_a: f32_param(node, "shift_a"),
+            shift_b: f32_param(node, "shift_b"),
+        })),
+        "zenfilters.devignette" => Some(alloc::boxed::Box::new(Devignette {
+            strength: f32_param(node, "strength"),
+            exponent: {
+                let v = f32_param(node, "exponent");
+                if v > 0.0 { v } else { 4.0 }
+            },
+        })),
+        "zenfilters.edge_detect" => {
+            let mode_int = node.get_param("mode")
+                .and_then(|p| match p {
+                    ParamValue::I32(v) => Some(v),
+                    _ => None,
+                })
+                .unwrap_or(0);
+            let mode = match mode_int {
+                1 => EdgeMode::Laplacian,
+                2 => EdgeMode::Canny,
+                _ => EdgeMode::Sobel,
+            };
+            Some(alloc::boxed::Box::new(EdgeDetect {
+                mode,
+                strength: f32_param(node, "strength"),
+            }))
+        }
+        "zenfilters.fused_adjust" => Some(alloc::boxed::Box::new(FusedAdjust {
+            exposure: f32_param(node, "exposure"),
+            contrast: f32_param(node, "contrast"),
+            highlights: f32_param(node, "highlights"),
+            shadows: f32_param(node, "shadows"),
+            vibrance: f32_param(node, "vibrance"),
+            vibrance_protection: {
+                let v = f32_param(node, "vibrance_protection");
+                if v > 0.0 { v } else { 2.0 }
+            },
+            saturation: {
+                let v = f32_param(node, "saturation");
+                if v > 0.0 { v } else { 1.0 }
+            },
+            temperature: f32_param(node, "temperature"),
+            tint: f32_param(node, "tint"),
+            dehaze: f32_param(node, "dehaze"),
+            black_point: f32_param(node, "black_point"),
+            white_point: {
+                let v = f32_param(node, "white_point");
+                if v > 0.0 { v } else { 1.0 }
+            },
+        })),
+        "zenfilters.gamut_expand" => Some(alloc::boxed::Box::new(GamutExpand {
+            strength: f32_param(node, "strength"),
+        })),
+        "zenfilters.local_tone_map" => Some(alloc::boxed::Box::new(LocalToneMap {
+            compression: f32_param(node, "compression"),
+            detail_boost: {
+                let v = f32_param(node, "detail_boost");
+                if v > 0.0 { v } else { 1.0 }
+            },
+            sigma: {
+                let v = f32_param(node, "sigma");
+                if v > 0.0 { v } else { 30.0 }
+            },
+        })),
+        "zenfilters.median_blur" => {
+            let radius = node.get_param("radius")
+                .and_then(|p| match p {
+                    ParamValue::I32(v) => Some(v as u32),
+                    _ => None,
+                })
+                .unwrap_or(1);
+            let filter_chroma = node.get_param("filter_chroma")
+                .and_then(|p| match p {
+                    ParamValue::Bool(v) => Some(v),
+                    _ => None,
+                })
+                .unwrap_or(false);
+            Some(alloc::boxed::Box::new(MedianBlur { radius, filter_chroma }))
+        }
+        "zenfilters.tone_equalizer" => {
+            let zones = match node.get_param("zones") {
+                Some(ParamValue::F32Array(arr)) if arr.len() == 9 => {
+                    let mut z = [0.0f32; 9];
+                    z.copy_from_slice(&arr);
+                    z
+                }
+                _ => [0.0; 9],
+            };
+            Some(alloc::boxed::Box::new(ToneEqualizer {
+                zones,
+                smoothing: f32_param(node, "smoothing"),
+                edge_preservation: {
+                    let v = f32_param(node, "edge_preservation");
+                    if v > 0.0 { v } else { 0.01 }
+                },
             }))
         }
         // Geometry (experimental)
@@ -1804,10 +2426,10 @@ mod tests {
     fn register_all_populates_registry() {
         let mut registry = NodeRegistry::new();
         register_all(&mut registry);
-        // We register 35 nodes
+        // We register 47 nodes (35 original + 12 new)
         assert!(
-            registry.all().len() >= 35,
-            "expected at least 35 nodes, got {}",
+            registry.all().len() >= 47,
+            "expected at least 47 nodes, got {}",
             registry.all().len()
         );
         // Spot-check lookups
