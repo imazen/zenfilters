@@ -747,7 +747,6 @@ fn catmull_rom(t: f32) -> f32 {
 /// cylindrical (rotation) resampling. Same 4×4 support as Catmull-Rom but
 /// significantly sharper for geometric transforms. ImageMagick's default
 /// for `-distort SRT`.
-#[inline]
 /// Robidoux kernel — uses precomputed constants from warp_simd.
 #[cfg(feature = "experimental")]
 #[inline]

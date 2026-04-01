@@ -9,6 +9,10 @@ repository = "https://github.com/imazen/zenfilters"
 keywords = ["image", "filter", "oklab", "simd", "photo"]
 categories = ["multimedia::images", "graphics"]
 
+[lints.rust]
+# CI strips some features — allow their cfg references to remain
+unexpected_cfgs = { level = "allow" }
+
 [features]
 default = []
 experimental = []

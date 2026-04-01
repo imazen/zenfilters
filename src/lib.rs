@@ -1,5 +1,20 @@
 #![no_std]
 #![forbid(unsafe_code)]
+#![allow(
+    clippy::needless_range_loop,
+    clippy::too_many_arguments,
+    clippy::collapsible_if,
+    clippy::assign_op_pattern,
+    clippy::manual_range_contains,
+    clippy::manual_memcpy,
+    clippy::doc_lazy_continuation,
+    clippy::excessive_precision,
+    clippy::unnecessary_cast,
+    clippy::duplicated_attributes,
+    clippy::field_reassign_with_default,
+    clippy::type_complexity
+)]
+#![cfg_attr(test, allow(unused_imports))]
 //! Photo filter operations on planar Oklab f32 data with SIMD acceleration.
 //!
 //! zenfilters provides a pipeline for applying photo adjustments (exposure,

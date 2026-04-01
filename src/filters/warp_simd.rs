@@ -1988,6 +1988,7 @@ mod tests {
             l: 0.5,
             a: 0.0,
             b: 0.0,
+            alpha: 1.0,
         };
 
         let mut dst_scalar = vec![0.0f32; n];

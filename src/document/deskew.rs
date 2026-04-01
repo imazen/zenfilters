@@ -57,7 +57,7 @@ pub fn detect_skew_angle(
     let mut best_angle = 0.0f32;
     let mut best_variance = 0.0f64;
 
-    let n_text: usize = binary.iter().filter(|&&v| v > 0.5).count();
+    let _n_text: usize = binary.iter().filter(|&&v| v > 0.5).count();
     let _n_total = w * h;
 
     let mut angle = -max_angle;

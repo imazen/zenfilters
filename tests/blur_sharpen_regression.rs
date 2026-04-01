@@ -1,3 +1,4 @@
+#![allow(clippy::manual_range_contains)]
 //! Regression tests for blur and sharpen filters.
 //!
 //! These tests exercise behavior not covered by the inline unit tests

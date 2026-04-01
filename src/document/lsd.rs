@@ -128,7 +128,7 @@ pub fn detect_line_segments(
         let mut sum_x = 0.0f64;
         let mut sum_y = 0.0f64;
         let mut sum_mag = 0.0f64;
-        let mut region_angle = seed_angle;
+        let region_angle = seed_angle;
 
         while let Some(curr) = queue.pop() {
             let cx = (curr % w) as usize;

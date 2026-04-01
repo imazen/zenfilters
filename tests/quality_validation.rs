@@ -1,3 +1,9 @@
+#![allow(
+    clippy::field_reassign_with_default,
+    clippy::type_complexity,
+    clippy::collapsible_if,
+    unused_imports
+)]
 //! Quality validation tests against libvips reference implementations.
 //!
 //! Runs the same conceptual operation (exposure, contrast, blur, sharpen,
