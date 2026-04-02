@@ -153,9 +153,9 @@ checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
 name = "archmage"
-version = "0.9.15"
+version = "0.9.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f603b4bae8aa53923ec4c221610fec3bb16a3cba8e002a750323a30abd25f8f"
+checksum = "906d90739870dc217c19bac4b3d11541817679e875bc3ae03e66458f44ccac6b"
 dependencies = [
  "archmage-macros",
  "safe_unaligned_simd",
@@ -163,9 +163,9 @@ dependencies = [
 
 [[package]]
 name = "archmage-macros"
-version = "0.9.15"
+version = "0.9.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "237913c29ffeb6cda1ddc6e3a4ff21c2d2e5523e050dce04fa5889a3e8dabb99"
+checksum = "e2377968d27d15b6e6117b60026a12a76de7e79a40e1ac664158e2bc562d6d95"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1214,9 +1214,9 @@ dependencies = [
 
 [[package]]
 name = "linear-srgb"
-version = "0.6.6"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc735204d942021e5f869a7fbe13593ccd480121131b2938efe410ad80aee984"
+checksum = "89fff1763e96ac82dbe8462fb1a9eff462477a87caaf8f14d808900486d72829"
 dependencies = [
  "archmage",
  "bytemuck",
@@ -1247,9 +1247,9 @@ dependencies = [
 
 [[package]]
 name = "magetypes"
-version = "0.9.15"
+version = "0.9.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ce9b26ae600f31a427d5b6a29ce33f0825683dfe5fff0b11277fa3da890e52b"
+checksum = "397ac3d7c230570d454406a00bcb74e7b21551eadfa44242463030581631877e"
 dependencies = [
  "archmage",
 ]
@@ -2207,20 +2207,23 @@ dependencies = [
 
 [[package]]
 name = "ultrahdr-core"
-version = "0.2.0"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d47f85993013e9469567e63d006d61076474aa55c52743472d5115cdafef1e3"
+checksum = "c9d7e2e6a6ca5d57125411cbca12972536b1a741634d2acaa31e70c2347168a1"
 dependencies = [
  "bytemuck",
  "enough",
  "half",
+ "linear-srgb",
  "thiserror",
  "wide",
 ]
 
 [[package]]
 name = "ultrahdr-core"
-version = "0.3.0"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01015be39d1868f1582778471668616c421a417375dc0f78b1bc60bf2852f410"
 dependencies = [
  "bytemuck",
  "enough",
@@ -2759,7 +2762,9 @@ dependencies = [
 
 [[package]]
 name = "zenblend"
-version = "0.1.1"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f495c5d65335f189f977cb2ecb25528d6e4e8b0cc0303e853f3ceb633e71187a"
 dependencies = [
  "archmage",
  "magetypes",
@@ -2768,9 +2773,9 @@ dependencies = [
 
 [[package]]
 name = "zencodec"
-version = "0.1.11"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09ab2de1b46bc21099a7d6c7faa94131fbafe96b2314746ca08b207ee9d55a8e"
+checksum = "44b6c541d0acd8e6b58f0650c6005daab795140a4d022fa425de4052f85a9372"
 dependencies = [
  "almost-enough",
  "enough",
@@ -2826,9 +2831,9 @@ dependencies = [
 
 [[package]]
 name = "zenflate"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e91d745f9ba4056eff9d3a88bb97f58c73d29f03459b1fc13cfd27545a6ffe0d"
+checksum = "ab0a8ba1d69f2af0676750013d4c7a26a246682d6129a0be478da9f0cf1183a7"
 dependencies = [
  "archmage",
  "enough",
@@ -2837,7 +2842,9 @@ dependencies = [
 
 [[package]]
 name = "zenjpeg"
-version = "0.7.1"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "281e81fe88094c37d8ea4e8b2272af7416460ebc9309c6949c619bbd5d908df2"
 dependencies = [
  "aligned-vec",
  "archmage",
@@ -2850,7 +2857,7 @@ dependencies = [
  "safe_unaligned_simd",
  "thiserror",
  "tinyvec",
- "ultrahdr-core 0.3.0",
+ "ultrahdr-core 0.4.0",
  "whereat",
  "wide",
  "yuv",
@@ -2869,14 +2876,18 @@ dependencies = [
 
 [[package]]
 name = "zennode"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dcc424bffae73ddd8028e6814b460dd0093237612ef4f5600cf361102d894e1"
 dependencies = [
  "zennode-derive",
 ]
 
 [[package]]
 name = "zennode-derive"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03368510f85d61fc1a43e158c04137b7156e65a54bde8db9bf5b3b2e87241341"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2885,9 +2896,9 @@ dependencies = [
 
 [[package]]
 name = "zenpixels"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4705187b555bc476109a2113ca007282fdf327bcc9edb4c692ae1e4d489bc9b2"
+checksum = "e6671ce2ea4d3110e2aef9514cc48267291f50fab7b7eead43b36e7c887fb740"
 dependencies = [
  "bytemuck",
  "imgref",
@@ -2897,9 +2908,9 @@ dependencies = [
 
 [[package]]
 name = "zenpixels-convert"
-version = "0.2.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45c79098f78c1ea6bb065f28c633f7ad42c93c0a58e1a2d1c3bcdeeac444d360"
+checksum = "5911551643060351e83acacedd2fd4e85f8ca5df8ee9baee5cf2f728c0412b3b"
 dependencies = [
  "archmage",
  "bytemuck",
@@ -2912,7 +2923,9 @@ dependencies = [
 
 [[package]]
 name = "zenpng"
-version = "0.1.0"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ef91ed8ccf2d487fd6cb7be36b319aaca3f3ae0c0ab2074457de1febb035503"
 dependencies = [
  "almost-enough",
  "archmage",
@@ -2948,7 +2961,9 @@ dependencies = [
 
 [[package]]
 name = "zenraw"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39f7c67f147cda0a1cbbf2cc5d8e010fd0f6f8de3d666280ebbcf632b3546c7a"
 dependencies = [
  "archmage",
  "bytemuck",
@@ -2958,7 +2973,7 @@ dependencies = [
  "rawler",
  "rawloader",
  "thiserror",
- "ultrahdr-core 0.2.0",
+ "ultrahdr-core 0.3.4",
  "whereat",
  "zenpixels",
 ]
@@ -2966,6 +2981,8 @@ dependencies = [
 [[package]]
 name = "zenresize"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52ad4a4323713328fb5d2ddb88a7d29295460a1de63c59b11da71e3f6a5b5737"
 dependencies = [
  "archmage",
  "imgref",
