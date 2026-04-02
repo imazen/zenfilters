@@ -2388,6 +2388,192 @@ pub fn node_to_filter(
                 Some(alloc::boxed::Box::new(warp))
             }
         }
+        // Tone
+        "zenfilters.whites_blacks" => Some(alloc::boxed::Box::new(WhitesBlacks {
+            whites: f32_param(node, "whites"),
+            blacks: f32_param(node, "blacks"),
+        })),
+        "zenfilters.parametric_curve" => {
+            let split_shadows = {
+                let v = f32_param(node, "split_shadows");
+                if v > 0.0 { v } else { 0.25 }
+            };
+            let split_midtones = {
+                let v = f32_param(node, "split_midtones");
+                if v > 0.0 { v } else { 0.50 }
+            };
+            let split_highlights = {
+                let v = f32_param(node, "split_highlights");
+                if v > 0.0 { v } else { 0.75 }
+            };
+            Some(alloc::boxed::Box::new(ParametricCurve::new(
+                f32_param(node, "shadows"),
+                f32_param(node, "darks"),
+                f32_param(node, "lights"),
+                f32_param(node, "highlights"),
+                split_shadows,
+                split_midtones,
+                split_highlights,
+            )))
+        }
+        // ToneMap
+        "zenfilters.basecurve_tonemap" => {
+            let chroma_compression = {
+                let v = f32_param(node, "chroma_compression");
+                if v > 0.0 { v } else { 0.4 }
+            };
+            Some(alloc::boxed::Box::new(BasecurveToneMap::from_preset(
+                &NEUTRAL_CURVE,
+                chroma_compression,
+            )))
+        }
+        // NOTE: zenfilters.dt_sigmoid node exists but DtSigmoid does not
+        // implement Filter yet (it only provides DtSigmoidParams + apply fn).
+        // Bridge will be added once a Filter wrapper is created.
+        "zenfilters.levels" => Some(alloc::boxed::Box::new(Levels {
+            in_black: f32_param(node, "in_black"),
+            in_white: {
+                let v = f32_param(node, "in_white");
+                if v > 0.0 { v } else { 1.0 }
+            },
+            gamma: {
+                let v = f32_param(node, "gamma");
+                if v > 0.0 { v } else { 1.0 }
+            },
+            out_black: f32_param(node, "out_black"),
+            out_white: {
+                let v = f32_param(node, "out_white");
+                if v > 0.0 { v } else { 1.0 }
+            },
+        })),
+        // ToneRange
+        "zenfilters.highlights_shadows" => Some(alloc::boxed::Box::new(HighlightsShadows {
+            highlights: f32_param(node, "highlights"),
+            shadows: f32_param(node, "shadows"),
+            shadow_threshold: {
+                let v = f32_param(node, "shadow_threshold");
+                if v > 0.0 { v } else { 0.3 }
+            },
+            highlight_threshold: {
+                let v = f32_param(node, "highlight_threshold");
+                if v > 0.0 { v } else { 0.7 }
+            },
+        })),
+        "zenfilters.shadow_lift" => Some(alloc::boxed::Box::new(ShadowLift {
+            strength: f32_param(node, "strength"),
+        })),
+        "zenfilters.highlight_recovery" => Some(alloc::boxed::Box::new(HighlightRecovery {
+            strength: f32_param(node, "strength"),
+        })),
+        // Color
+        "zenfilters.brilliance" => Some(alloc::boxed::Box::new(Brilliance {
+            sigma: {
+                let v = f32_param(node, "sigma");
+                if v > 0.0 { v } else { 10.0 }
+            },
+            amount: f32_param(node, "amount"),
+            shadow_strength: {
+                let v = f32_param(node, "shadow_strength");
+                if v > 0.0 { v } else { 0.6 }
+            },
+            highlight_strength: {
+                let v = f32_param(node, "highlight_strength");
+                if v > 0.0 { v } else { 0.4 }
+            },
+        })),
+        "zenfilters.color_grading" => Some(alloc::boxed::Box::new(ColorGrading {
+            shadow_a: f32_param(node, "shadow_a"),
+            shadow_b: f32_param(node, "shadow_b"),
+            midtone_a: f32_param(node, "midtone_a"),
+            midtone_b: f32_param(node, "midtone_b"),
+            highlight_a: f32_param(node, "highlight_a"),
+            highlight_b: f32_param(node, "highlight_b"),
+            balance: f32_param(node, "balance"),
+        })),
+        "zenfilters.camera_calibration" => Some(alloc::boxed::Box::new(CameraCalibration {
+            red_hue: f32_param(node, "red_hue"),
+            red_saturation: {
+                let v = f32_param(node, "red_saturation");
+                if v > 0.0 { v } else { 1.0 }
+            },
+            green_hue: f32_param(node, "green_hue"),
+            green_saturation: {
+                let v = f32_param(node, "green_saturation");
+                if v > 0.0 { v } else { 1.0 }
+            },
+            blue_hue: f32_param(node, "blue_hue"),
+            blue_saturation: {
+                let v = f32_param(node, "blue_saturation");
+                if v > 0.0 { v } else { 1.0 }
+            },
+            shadow_tint: f32_param(node, "shadow_tint"),
+        })),
+        // Detail
+        "zenfilters.adaptive_sharpen" => Some(alloc::boxed::Box::new(AdaptiveSharpen {
+            amount: f32_param(node, "amount"),
+            sigma: {
+                let v = f32_param(node, "sigma");
+                if v > 0.0 { v } else { 1.0 }
+            },
+            noise_floor: {
+                let v = f32_param(node, "noise_floor");
+                if v > 0.0 { v } else { 0.005 }
+            },
+            detail: {
+                let v = f32_param(node, "detail");
+                if v > 0.0 { v } else { 0.5 }
+            },
+            masking: f32_param(node, "masking"),
+        })),
+        "zenfilters.noise_reduction" => {
+            let scales = node
+                .get_param("scales")
+                .and_then(|p| match p {
+                    ParamValue::I32(v) => Some(v as u32),
+                    _ => None,
+                })
+                .unwrap_or(4);
+            Some(alloc::boxed::Box::new(NoiseReduction {
+                luminance: f32_param(node, "luminance"),
+                chroma: f32_param(node, "chroma"),
+                detail: {
+                    let v = f32_param(node, "detail");
+                    if v > 0.0 { v } else { 0.5 }
+                },
+                luminance_contrast: {
+                    let v = f32_param(node, "luminance_contrast");
+                    if v > 0.0 { v } else { 0.5 }
+                },
+                chroma_detail: {
+                    let v = f32_param(node, "chroma_detail");
+                    if v > 0.0 { v } else { 0.5 }
+                },
+                scales,
+            }))
+        }
+        "zenfilters.texture" => Some(alloc::boxed::Box::new(Texture {
+            sigma: {
+                let v = f32_param(node, "sigma");
+                if v > 0.0 { v } else { 1.5 }
+            },
+            amount: f32_param(node, "amount"),
+        })),
+        // Effects
+        "zenfilters.vignette" => Some(alloc::boxed::Box::new(Vignette {
+            strength: f32_param(node, "strength"),
+            midpoint: {
+                let v = f32_param(node, "midpoint");
+                if v > 0.0 { v } else { 0.5 }
+            },
+            feather: {
+                let v = f32_param(node, "feather");
+                if v > 0.0 { v } else { 0.5 }
+            },
+            roundness: {
+                let v = f32_param(node, "roundness");
+                if v > 0.0 { v } else { 1.0 }
+            },
+        })),
         _ => None,
     }
 }
