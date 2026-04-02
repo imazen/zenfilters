@@ -272,7 +272,7 @@ pub struct ParametricCurve {
 /// module. Operates per-channel in linear RGB space (not Oklab).
 #[derive(Node, Clone, Debug)]
 #[node(id = "zenfilters.dt_sigmoid", group = ToneMap, role = Filter)]
-#[node(label = "DtSigmoid")]
+#[node(label = "Filmic Sigmoid")]
 #[node(format(preferred = LinearF32, alpha = Skip))]
 pub struct DtSigmoid {
     /// Middle-grey contrast
@@ -566,32 +566,32 @@ impl Default for HslAdjust {
 pub struct ColorGrading {
     /// Shadow tint: Oklab a offset (green-magenta)
     #[param(range(-0.1..=0.1), default = 0.0, identity = 0.0, step = 0.005)]
-    #[param(unit = "", section = "Shadows", slider = Linear)]
+    #[param(label = "Green-Magenta", unit = "", section = "Shadows", slider = Linear)]
     pub shadow_a: f32,
 
     /// Shadow tint: Oklab b offset (blue-yellow)
     #[param(range(-0.1..=0.1), default = 0.0, identity = 0.0, step = 0.005)]
-    #[param(unit = "", section = "Shadows", slider = Linear)]
+    #[param(label = "Blue-Yellow", unit = "", section = "Shadows", slider = Linear)]
     pub shadow_b: f32,
 
     /// Midtone tint: Oklab a offset
     #[param(range(-0.1..=0.1), default = 0.0, identity = 0.0, step = 0.005)]
-    #[param(unit = "", section = "Midtones", slider = Linear)]
+    #[param(label = "Green-Magenta", unit = "", section = "Midtones", slider = Linear)]
     pub midtone_a: f32,
 
     /// Midtone tint: Oklab b offset
     #[param(range(-0.1..=0.1), default = 0.0, identity = 0.0, step = 0.005)]
-    #[param(unit = "", section = "Midtones", slider = Linear)]
+    #[param(label = "Blue-Yellow", unit = "", section = "Midtones", slider = Linear)]
     pub midtone_b: f32,
 
     /// Highlight tint: Oklab a offset
     #[param(range(-0.1..=0.1), default = 0.0, identity = 0.0, step = 0.005)]
-    #[param(unit = "", section = "Highlights", slider = Linear)]
+    #[param(label = "Green-Magenta", unit = "", section = "Highlights", slider = Linear)]
     pub highlight_a: f32,
 
     /// Highlight tint: Oklab b offset
     #[param(range(-0.1..=0.1), default = 0.0, identity = 0.0, step = 0.005)]
-    #[param(unit = "", section = "Highlights", slider = Linear)]
+    #[param(label = "Blue-Yellow", unit = "", section = "Highlights", slider = Linear)]
     pub highlight_b: f32,
 
     /// Balance: shifts the shadow/highlight boundary
