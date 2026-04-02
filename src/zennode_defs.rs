@@ -2574,6 +2574,24 @@ pub fn node_to_filter(
                 if v > 0.0 { v } else { 1.0 }
             },
         })),
+        // Film Looks
+        "zenfilters.film_look" => {
+            let preset_id = node
+                .get_param("preset")
+                .and_then(|p| match p {
+                    ParamValue::Str(s) => Some(s),
+                    _ => None,
+                })
+                .unwrap_or_else(|| alloc::string::String::from("faded_film"));
+            let preset = crate::filters::FilmPreset::from_id(&preset_id)
+                .unwrap_or(crate::filters::FilmPreset::FadedFilm);
+            let mut look = crate::filters::FilmLook::new(preset);
+            look.strength = f32_param(node, "strength");
+            if look.strength <= 0.0 {
+                look.strength = 1.0;
+            }
+            Some(alloc::boxed::Box::new(look))
+        }
         _ => None,
     }
 }
