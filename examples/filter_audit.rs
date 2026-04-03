@@ -331,6 +331,23 @@ fn audit_configs() -> Vec<AuditConfig> {
     add!("AutoLevels", "moderate", "strength=0.7", mk!(AutoLevels, strength = 0.7));
     add!("AutoLevels", "extreme", "strength=1.0", mk!(AutoLevels, strength = 1.0));
 
+    // ── New Auto Filters ─────────────────────────────────────────────
+    add!("AutoTone", "subtle", "strength=0.25, pi=0.3", mk!(AutoTone, strength = 0.25, preserve_intent = 0.3));
+    add!("AutoTone", "moderate", "strength=0.5, pi=0.3", mk!(AutoTone, strength = 0.5, preserve_intent = 0.3));
+    add!("AutoTone", "extreme", "strength=1.0, pi=0.0", mk!(AutoTone, strength = 1.0, preserve_intent = 0.0));
+
+    add!("AutoWhiteBalance", "subtle", "strength=0.3", mk!(AutoWhiteBalance, strength = 0.3));
+    add!("AutoWhiteBalance", "moderate", "strength=0.7", mk!(AutoWhiteBalance, strength = 0.7));
+    add!("AutoWhiteBalance", "extreme", "strength=1.0", mk!(AutoWhiteBalance, strength = 1.0));
+
+    add!("AutoContrast", "subtle", "strength=0.3", mk!(AutoContrast, strength = 0.3));
+    add!("AutoContrast", "moderate", "strength=0.7", mk!(AutoContrast, strength = 0.7));
+    add!("AutoContrast", "extreme", "strength=1.0", mk!(AutoContrast, strength = 1.0));
+
+    add!("AutoVibrance", "subtle", "strength=0.3", mk!(AutoVibrance, strength = 0.3));
+    add!("AutoVibrance", "moderate", "strength=0.7", mk!(AutoVibrance, strength = 0.7));
+    add!("AutoVibrance", "extreme", "strength=1.0", mk!(AutoVibrance, strength = 1.0));
+
     c
 }
 
