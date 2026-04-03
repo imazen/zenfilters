@@ -84,6 +84,7 @@ pub(crate) const LUT_SIZE: usize = 1024;
 pub(crate) const LUT_MAX: usize = LUT_SIZE - 1;
 
 mod access;
+pub mod analysis;
 mod blur;
 mod context;
 pub(crate) mod fast_math;
@@ -130,6 +131,7 @@ pub mod blur_internals {
         gaussian_blur_plane_scalar, kernel_sigma, sigma_to_stackblur_radius, stackblur_plane,
     };
 }
+pub use analysis::ImageAnalysis;
 pub use context::FilterContext;
 pub use convenience::{ConvenienceError, PipelineBufferExt, apply_to_buffer};
 pub use filter::{Filter, ResizePhase};

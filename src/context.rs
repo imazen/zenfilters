@@ -30,10 +30,14 @@
 ///
 /// The context also provides [`take_u8`](FilterContext::take_u8) for
 /// byte buffers used in format conversion paths.
+use crate::analysis::ImageAnalysis;
+use crate::planes::OklabPlanes;
 use crate::prelude::*;
+
 pub struct FilterContext {
     f32_pool: Vec<Vec<f32>>,
     u8_pool: Vec<Vec<u8>>,
+    analysis_cache: Option<ImageAnalysis>,
 }
 
 impl FilterContext {
@@ -42,6 +46,7 @@ impl FilterContext {
         Self {
             f32_pool: Vec::new(),
             u8_pool: Vec::new(),
+            analysis_cache: None,
         }
     }
 
@@ -92,10 +97,32 @@ impl FilterContext {
         self.u8_pool.len()
     }
 
-    /// Drop all pooled vectors, freeing memory.
+    /// Get or compute image analysis for the given planes.
+    ///
+    /// The result is cached and reused by subsequent auto filters in the
+    /// same pipeline run. Call [`invalidate_analysis`] if the planes are
+    /// modified between auto-filter groups.
+    pub fn analyze(&mut self, planes: &OklabPlanes) -> &ImageAnalysis {
+        if self.analysis_cache.is_none() {
+            self.analysis_cache = Some(ImageAnalysis::compute(planes));
+        }
+        self.analysis_cache.as_ref().unwrap()
+    }
+
+    /// Invalidate cached image analysis.
+    ///
+    /// Call this after filters that significantly change the luminance
+    /// distribution (e.g., auto exposure) so subsequent auto filters
+    /// see fresh statistics.
+    pub fn invalidate_analysis(&mut self) {
+        self.analysis_cache = None;
+    }
+
+    /// Drop all pooled vectors and cached analysis, freeing memory.
     pub fn clear(&mut self) {
         self.f32_pool.clear();
         self.u8_pool.clear();
+        self.analysis_cache = None;
     }
 }
 
