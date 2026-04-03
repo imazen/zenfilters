@@ -87,6 +87,10 @@ required-features = ["experimental"]
 name = "film_look_gallery"
 required-features = ["experimental"]
 
+[[example]]
+name = "filter_audit"
+required-features = ["experimental"]
+
 [[test]]
 name = "reference_validation"
 
