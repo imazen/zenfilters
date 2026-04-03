@@ -35,6 +35,10 @@ pub struct Bilateral {
     pub range_sigma: f32,
     /// Blend strength. 0.0 = no effect, 1.0 = full smoothing.
     pub strength: f32,
+    /// Auto-set range_sigma from noise estimate.
+    /// When true, estimates noise level from high-frequency detail and
+    /// sets range_sigma = noise² * 3.0 for optimal edge preservation.
+    pub auto_range: bool,
 }
 
 impl Default for Bilateral {
@@ -43,6 +47,7 @@ impl Default for Bilateral {
             spatial_sigma: 2.0,
             range_sigma: 0.1,
             strength: 0.0,
+            auto_range: false,
         }
     }
 }
@@ -78,8 +83,29 @@ impl Filter for Bilateral {
         let h = planes.height;
         let n = (w as usize) * (h as usize);
 
+        // Auto range: estimate noise from high-frequency detail
+        let range_sigma = if self.auto_range {
+            // Quick noise estimate: MAD of L differences between adjacent pixels
+            // (approximates high-frequency noise level)
+            let w_usize = w as usize;
+            let mut diffs = alloc::vec::Vec::with_capacity(planes.l.len());
+            for y in 0..h as usize {
+                for x in 1..w_usize {
+                    let i = y * w_usize + x;
+                    diffs.push((planes.l[i] - planes.l[i - 1]).abs());
+                }
+            }
+            diffs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+            let mad = diffs[diffs.len() / 2]; // median absolute difference
+            let noise_est = mad * 1.4826; // MAD to sigma conversion
+            // Set range_sigma = 3× noise estimate, clamped to sane range
+            (noise_est * 3.0).clamp(0.005, 0.3)
+        } else {
+            self.range_sigma
+        };
+
         // eps = range_sigma² (maps traditional bilateral range parameter to guided filter eps)
-        let eps = self.range_sigma * self.range_sigma;
+        let eps = range_sigma * range_sigma;
         let strength = self.strength;
 
         // Guided filter each channel with L as guide
@@ -236,6 +262,7 @@ mod tests {
             spatial_sigma: 2.0,
             range_sigma: 0.1,
             strength: 0.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
@@ -252,6 +279,7 @@ mod tests {
             spatial_sigma: 2.0,
             range_sigma: 0.1,
             strength: 1.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         let after_var = variance(&planes.l);
@@ -275,6 +303,7 @@ mod tests {
             spatial_sigma: 3.0,
             range_sigma: 0.05,
             strength: 1.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
 

@@ -34,6 +34,10 @@ pub struct Clarity {
     /// Enhancement amount. Positive = enhance texture, negative = soften.
     /// Typical: 0.3-1.0 for natural results.
     pub amount: f32,
+    /// Variance-gated adaptive mode. When true, applies more clarity in
+    /// smooth/flat regions (which benefit from local contrast) and less in
+    /// already-textured regions (which have enough detail).
+    pub adaptive: bool,
 }
 
 impl Default for Clarity {
@@ -41,6 +45,7 @@ impl Default for Clarity {
         Self {
             sigma: 4.0,
             amount: 0.0,
+            adaptive: false,
         }
     }
 }
@@ -96,9 +101,36 @@ impl Filter for Clarity {
         // Simpler: just compute it directly with scale+offset.
         let amount = self.amount;
         let mut dst = ctx.take_f32(pc);
-        for i in 0..pc {
-            let mid = blurred_fine[i] - blurred_coarse[i];
-            dst[i] = (planes.l[i] + amount * mid).max(0.0);
+
+        if self.adaptive {
+            // Variance-gated: compute local detail energy from mid-band,
+            // then scale clarity amount inversely with local energy.
+            // Flat areas (low energy) get full clarity; textured areas get less.
+            let mut energy = ctx.take_f32(pc);
+            for i in 0..pc {
+                let mid = blurred_fine[i] - blurred_coarse[i];
+                energy[i] = mid * mid;
+            }
+            // Blur the energy to get a smooth local estimate
+            let kernel_energy = GaussianKernel::new(self.sigma * 2.0);
+            let mut smooth_energy = ctx.take_f32(pc);
+            gaussian_blur_plane(&energy, &mut smooth_energy, w, h, &kernel_energy, ctx);
+            ctx.return_f32(energy);
+
+            // Gate: scale = 1 / (1 + energy / threshold)
+            // Low energy → scale ≈ 1 (full clarity), high energy → scale → 0
+            let threshold = 0.002; // tuned for typical photo mid-band energy
+            for i in 0..pc {
+                let mid = blurred_fine[i] - blurred_coarse[i];
+                let gate = 1.0 / (1.0 + smooth_energy[i] / threshold);
+                dst[i] = (planes.l[i] + amount * mid * gate).max(0.0);
+            }
+            ctx.return_f32(smooth_energy);
+        } else {
+            for i in 0..pc {
+                let mid = blurred_fine[i] - blurred_coarse[i];
+                dst[i] = (planes.l[i] + amount * mid).max(0.0);
+            }
         }
 
         ctx.return_f32(blurred_fine);
@@ -189,6 +221,7 @@ mod tests {
         Clarity {
             sigma: 4.0,
             amount: 0.0,
+            adaptive: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, original);
@@ -208,6 +241,7 @@ mod tests {
         Clarity {
             sigma: 3.0,
             amount: 0.5,
+            adaptive: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         let after_std = std_dev(&planes.l);
@@ -230,6 +264,7 @@ mod tests {
         Clarity {
             sigma: 3.0,
             amount: 0.5,
+            adaptive: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.a, a_orig);
@@ -247,6 +282,7 @@ mod tests {
         Clarity {
             sigma: 4.0,
             amount: 1.0,
+            adaptive: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         for (a, b) in planes.l.iter().zip(original.iter()) {
@@ -270,6 +306,7 @@ mod tests {
         Clarity {
             sigma: 3.0,
             amount: -0.5,
+            adaptive: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         let after_std = std_dev(&planes.l);

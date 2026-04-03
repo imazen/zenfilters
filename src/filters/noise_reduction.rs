@@ -43,6 +43,10 @@ pub struct NoiseReduction {
     /// Number of wavelet scales. More scales = smoother result.
     /// Default: 4. Range: 1–6.
     pub scales: u32,
+    /// Content-aware mode. When true, reduces NR strength in textured
+    /// regions to preserve detail, while applying full strength in smooth
+    /// areas. Uses edge/gradient magnitude as a spatial mask.
+    pub content_aware: bool,
 }
 
 impl Default for NoiseReduction {
@@ -54,6 +58,7 @@ impl Default for NoiseReduction {
             luminance_contrast: 0.5,
             chroma_detail: 0.5,
             scales: 4,
+            content_aware: false,
         }
     }
 }
@@ -465,6 +470,15 @@ impl Filter for NoiseReduction {
         let h = planes.height as usize;
 
         if self.luminance > 1e-6 {
+            // Save original L for content-aware blending
+            let original_l = if self.content_aware {
+                let mut orig = ctx.take_f32(w * h);
+                orig.copy_from_slice(&planes.l);
+                Some(orig)
+            } else {
+                None
+            };
+
             let params = DenoiseParams {
                 strength: self.luminance,
                 detail_preserve: self.detail,
@@ -472,6 +486,23 @@ impl Filter for NoiseReduction {
                 num_scales: self.scales,
             };
             denoise_plane(&mut planes.l, w, h, &params, ctx);
+
+            // Content-aware: blend back original in textured regions
+            if let Some(orig) = original_l {
+                // Edge mask from L gradient magnitude
+                for y in 1..h - 1 {
+                    for x in 1..w - 1 {
+                        let i = y * w + x;
+                        let dx = orig[i + 1] - orig[i - 1];
+                        let dy = orig[i + w] - orig[i - w];
+                        let grad = (dx * dx + dy * dy).sqrt();
+                        // Blend: high gradient → keep more of original
+                        let preserve = (grad * 15.0).min(1.0) * 0.6; // max 60% original
+                        planes.l[i] = planes.l[i] * (1.0 - preserve) + orig[i] * preserve;
+                    }
+                }
+                ctx.return_f32(orig);
+            }
         }
 
         if self.chroma > 1e-6 {

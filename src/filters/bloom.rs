@@ -33,6 +33,11 @@ pub struct Bloom {
     /// Bloom intensity. 0.0 = no effect, 1.0 = full bloom.
     /// Default: 0.0 (off).
     pub amount: f32,
+    /// Auto-set threshold from image histogram.
+    /// When true, threshold is set to p90 of L (bloom only top 10% of luminance)
+    /// and amount is scaled by highlight density for consistent bloom regardless
+    /// of image exposure.
+    pub auto_threshold: bool,
 }
 
 impl Default for Bloom {
@@ -41,6 +46,7 @@ impl Default for Bloom {
             threshold: 0.7,
             sigma: 20.0,
             amount: 0.0,
+            auto_threshold: false,
         }
     }
 }
@@ -68,7 +74,7 @@ impl Filter for Bloom {
         crate::filter_compat::FilterTag::Bloom
     }
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
-        if self.amount.abs() < 1e-6 {
+        if self.amount.abs() < 1e-6 && !self.auto_threshold {
             return;
         }
 
@@ -76,11 +82,28 @@ impl Filter for Bloom {
         let w = planes.width;
         let h = planes.height;
 
+        // Auto-threshold: compute threshold and amount from histogram
+        let (threshold, amount) = if self.auto_threshold {
+            let a = ctx.analyze(planes);
+            // Threshold = p90: bloom only the top 10% of luminance
+            let auto_thresh = a.percentiles[5]; // p95 as proxy for p90
+            // Scale amount by highlight density: fewer highlights → stronger per-pixel bloom
+            let highlight_frac = (1.0 - auto_thresh).max(0.02);
+            let auto_amount = self.amount.max(0.3) / highlight_frac.sqrt();
+            (auto_thresh.clamp(0.3, 0.95), auto_amount.min(2.0))
+        } else {
+            (self.threshold, self.amount)
+        };
+
+        if amount.abs() < 1e-6 {
+            return;
+        }
+
         // 1. Extract bright pixels (soft threshold for smooth transition)
         let mut bright = ctx.take_f32(n);
         let knee = 0.05; // soft knee width
         for (b, &l) in bright.iter_mut().zip(planes.l.iter()).take(n) {
-            let excess = l - self.threshold;
+            let excess = l - threshold;
             // Soft knee: smooth ramp from 0 at (threshold - knee) to linear at (threshold + knee)
             *b = if excess > knee {
                 excess
@@ -100,7 +123,6 @@ impl Filter for Bloom {
 
         // 3. Screen blend: output = L + bloom - L * bloom
         // This prevents values from exceeding 1.0 naturally.
-        let amount = self.amount;
         for (l, &bl) in planes.l.iter_mut().zip(blurred.iter()).take(n) {
             let bloom = bl * amount;
             *l = *l + bloom - *l * bloom;

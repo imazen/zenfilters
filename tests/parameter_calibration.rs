@@ -461,3 +461,82 @@ fn black_point_calibration() {
     check_25("BlackPoint@25%", s25);
     check_75("BlackPoint@75%", s75);
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// NEW AUTO FILTERS
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn auto_tone_calibration() {
+    if !corpus_available() { eprintln!("SKIP: corpus not found"); return; }
+    let s25 = median_score(|| Box::new(mk!(AutoTone, strength = 0.25, preserve_intent = 0.3)));
+    let s75 = median_score(|| Box::new(mk!(AutoTone, strength = 0.75, preserve_intent = 0.3)));
+    check_25("AutoTone@25%", s25);
+    check_75("AutoTone@75%", s75);
+}
+
+#[test]
+fn auto_white_balance_calibration() {
+    if !corpus_available() { eprintln!("SKIP: corpus not found"); return; }
+    // Auto WB is content-dependent: only corrects images with color cast.
+    // Verify it runs without error at all strength levels and produces
+    // monotonic response (higher strength = more correction or same).
+    let s25 = median_score(|| Box::new(mk!(AutoWhiteBalance, strength = 0.25)));
+    let s75 = median_score(|| Box::new(mk!(AutoWhiteBalance, strength = 0.75)));
+    let s100 = median_score(|| Box::new(mk!(AutoWhiteBalance, strength = 1.0)));
+    eprintln!("  AutoWhiteBalance: 25%={s25:.2} 75%={s75:.2} 100%={s100:.2}");
+    // Monotonic: stronger strength should produce equal or more change
+    assert!(s75 <= s25 + 1.0, "AutoWhiteBalance response should be monotonic: 25%={s25:.2} 75%={s75:.2}");
+    check_75("AutoWhiteBalance@75%", s75);
+}
+
+#[test]
+fn auto_contrast_calibration() {
+    if !corpus_available() { eprintln!("SKIP: corpus not found"); return; }
+    // Auto Contrast is content-dependent: only corrects flat or over-contrasty images.
+    // CID22 images are well-exposed, so the effect may be minimal.
+    let s25 = median_score(|| Box::new(mk!(AutoContrast, strength = 0.25)));
+    let s75 = median_score(|| Box::new(mk!(AutoContrast, strength = 0.75)));
+    let s100 = median_score(|| Box::new(mk!(AutoContrast, strength = 1.0)));
+    eprintln!("  AutoContrast: 25%={s25:.2} 75%={s75:.2} 100%={s100:.2}");
+    assert!(s75 <= s25 + 1.0, "AutoContrast response should be monotonic: 25%={s25:.2} 75%={s75:.2}");
+    check_75("AutoContrast@75%", s75);
+}
+
+#[test]
+fn auto_vibrance_calibration() {
+    if !corpus_available() { eprintln!("SKIP: corpus not found"); return; }
+    // Auto Vibrance is content-dependent: only boosts muted hue sectors.
+    let s25 = median_score(|| Box::new(mk!(AutoVibrance, strength = 0.25)));
+    let s75 = median_score(|| Box::new(mk!(AutoVibrance, strength = 0.75)));
+    let s100 = median_score(|| Box::new(mk!(AutoVibrance, strength = 1.0)));
+    eprintln!("  AutoVibrance: 25%={s25:.2} 75%={s75:.2} 100%={s100:.2}");
+    assert!(s75 <= s25 + 1.0, "AutoVibrance response should be monotonic: 25%={s25:.2} 75%={s75:.2}");
+    check_75("AutoVibrance@75%", s75);
+}
+
+#[test]
+fn whites_blacks_auto_calibration() {
+    if !corpus_available() { eprintln!("SKIP: corpus not found"); return; }
+    // Auto range is content-dependent: only expands narrow tonal ranges.
+    // Test on the dark image which likely has a narrow range.
+    let s25 = median_score_on(
+        || Box::new(mk!(WhitesBlacks, whites = 0.5, blacks = -0.5, auto_range = true)),
+        &["1028637.png"],
+    );
+    let s75 = median_score_on(
+        || Box::new(mk!(WhitesBlacks, whites = 1.0, blacks = -1.0, auto_range = true)),
+        &["1028637.png"],
+    );
+    eprintln!("  WhitesBlacks_auto (dark): 25%={s25:.2} 75%={s75:.2}");
+    check_75("WhitesBlacks_auto@75%", s75);
+}
+
+#[test]
+fn dehaze_auto_calibration() {
+    if !corpus_available() { eprintln!("SKIP: corpus not found"); return; }
+    let s25 = median_score(|| Box::new(mk!(Dehaze, strength = 0.25, auto_strength = true)));
+    let s75 = median_score(|| Box::new(mk!(Dehaze, strength = 0.75, auto_strength = true)));
+    check_25("Dehaze_auto@25%", s25);
+    check_75("Dehaze_auto@75%", s75);
+}

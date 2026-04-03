@@ -2117,6 +2117,7 @@ pub fn node_to_filter(
         "zenfilters.clarity" => Some(alloc::boxed::Box::new(Clarity {
             amount: f32_param(node, "amount"),
             sigma: f32_param(node, "sigma"),
+            adaptive: false,
         })),
         "zenfilters.sharpen" => Some(alloc::boxed::Box::new(Sharpen {
             amount: f32_param(node, "amount"),
@@ -2130,6 +2131,7 @@ pub fn node_to_filter(
             amount: f32_param(node, "amount"),
             sigma: f32_param(node, "sigma"),
             threshold: f32_param(node, "threshold"),
+            auto_threshold: false,
         })),
         "zenfilters.grain" => Some(alloc::boxed::Box::new(Grain {
             amount: f32_param(node, "amount"),
@@ -2184,6 +2186,7 @@ pub fn node_to_filter(
             spatial_sigma: f32_param(node, "spatial_sigma"),
             range_sigma: f32_param(node, "range_sigma"),
             strength: f32_param(node, "strength"),
+            auto_range: false,
         })),
         "zenfilters.blur" => Some(alloc::boxed::Box::new(Blur {
             sigma: f32_param(node, "sigma"),

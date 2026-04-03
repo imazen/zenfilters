@@ -590,6 +590,7 @@ mod tests {
         pipeline.push(Box::new(filters::Clarity {
             sigma: 3.0,
             amount: 0.4,
+            adaptive: false,
         }));
         pipeline.push(Box::new(filters::Sharpen {
             sigma: 1.0,
@@ -643,6 +644,7 @@ mod tests {
         let clarity = filters::Clarity {
             sigma: 4.0,
             amount: 0.3,
+            adaptive: false,
         };
         let clarity_radius = clarity.neighborhood_radius(64, 64);
         pipeline.push(Box::new(clarity));
