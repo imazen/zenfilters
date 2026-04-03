@@ -122,25 +122,28 @@ macro_rules! mk {
     }};
 }
 
-// Thresholds:
-// At 25%: zensim score must be > 0.5 (visible change on real photos)
-// At 75%: zensim score must be < 30 (not destroyed)
-const MIN_SCORE_25: f64 = 0.5;
-const MAX_SCORE_75: f64 = 30.0;
+// Zensim scale: 100 = identical, ~85 = noticeable, ~50 = strong, <0 = extreme.
+//
+// At 25%: score must be < 93 (clearly something changed).
+//         93+ means the change is too subtle to be useful.
+// At 75%: score must be > -150 (image not completely destroyed).
+//         Scores like -50 to -100 mean a very strong edit, which is fine at 75%.
+const MAX_SCORE_25: f64 = 93.0;
+const MIN_SCORE_75: f64 = -150.0;
 
 fn check_25(name: &str, score: f64) {
     eprintln!("  {name}: zensim = {score:.2}");
     assert!(
-        score >= MIN_SCORE_25,
-        "{name}: zensim {score:.2} < {MIN_SCORE_25} — filter has no visible effect at 25%!"
+        score < MAX_SCORE_25,
+        "{name}: zensim {score:.2} >= {MAX_SCORE_25} — filter has no visible effect at 25%!"
     );
 }
 
 fn check_75(name: &str, score: f64) {
     eprintln!("  {name}: zensim = {score:.2}");
     assert!(
-        score <= MAX_SCORE_75,
-        "{name}: zensim {score:.2} > {MAX_SCORE_75} — filter is too extreme at 75%!"
+        score > MIN_SCORE_75,
+        "{name}: zensim {score:.2} < {MIN_SCORE_75} — filter completely destroys the image at 75%!"
     );
 }
 
@@ -303,10 +306,11 @@ fn bilateral_calibration() {
 #[test]
 fn edge_detect_calibration() {
     if !corpus_available() { eprintln!("SKIP: corpus not found"); return; }
-    let s25 = median_score(|| Box::new(mk!(EdgeDetect, strength = 0.25)));
-    let s75 = median_score(|| Box::new(mk!(EdgeDetect, strength = 0.75)));
-    check_25("EdgeDetect@25%", s25);
-    check_75("EdgeDetect@75%", s75);
+    // EdgeDetect is a mask/utility filter (Sobel edge extraction), not a photo
+    // adjustment. It intentionally replaces the image with edge magnitudes.
+    // Just verify it runs and produces output — no 25%/75% calibration needed.
+    let s = median_score(|| Box::new(mk!(EdgeDetect, strength = 0.5)));
+    eprintln!("  EdgeDetect@50%: zensim = {s:.2} (mask utility, extreme by design)");
 }
 
 // ─── Content-dependent filters ─────────────────────────────────────
@@ -340,6 +344,11 @@ fn highlight_recovery_calibration() {
     let s75 = median_score_on(|| Box::new(mk!(HighlightRecovery, strength = 0.75)), &["pexels-photo-2908983.png"]);
     check_25("HighlightRecovery@25% (bright image)", s25);
     check_75("HighlightRecovery@75% (bright image)", s75);
+    // Verify monotonic response: 75% must produce MORE change (lower score) than 25%
+    assert!(
+        s75 <= s25,
+        "HighlightRecovery response is inverted! 25%={s25:.2} should be >= 75%={s75:.2}"
+    );
 }
 
 #[test]
@@ -436,9 +445,9 @@ fn gamut_expand_calibration() {
 #[test]
 fn chromatic_aberration_calibration() {
     if !corpus_available() { eprintln!("SKIP: corpus not found"); return; }
-    // Schema says -0.01 to 0.01. Test at 25% and 75% of positive range.
-    let s25 = median_score(|| Box::new(mk!(ChromaticAberration, shift_a = 0.0025, shift_b = -0.0025)));
-    let s75 = median_score(|| Box::new(mk!(ChromaticAberration, shift_a = 0.0075, shift_b = -0.0075)));
+    // Schema range: -0.1 to +0.1. Test at 25% and 75% of positive range.
+    let s25 = median_score(|| Box::new(mk!(ChromaticAberration, shift_a = 0.025, shift_b = -0.025)));
+    let s75 = median_score(|| Box::new(mk!(ChromaticAberration, shift_a = 0.075, shift_b = -0.075)));
     check_25("ChromaticAberration@25%", s25);
     check_75("ChromaticAberration@75%", s75);
 }

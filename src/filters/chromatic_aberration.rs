@@ -12,7 +12,9 @@ use crate::planes::OklabPlanes;
 /// chroma planes radially to re-align them with luminance.
 ///
 /// Positive values shift the plane outward, negative shifts inward.
-/// Typical corrections are very small (±0.001 to ±0.005).
+/// The shift is fractional relative to the image diagonal:
+/// a shift of 0.05 moves edge pixels by ~2.5% of the diagonal.
+/// Typical corrections: ±0.01 to ±0.05. Creative effects: up to ±0.1.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -51,11 +53,11 @@ static CHROMATIC_ABERRATION_SCHEMA: FilterSchema = FilterSchema {
             label: "Green-Red Shift",
             description: "Radial shift for the a (green-red) channel",
             kind: ParamKind::Float {
-                min: -0.02,
-                max: 0.02,
+                min: -0.1,
+                max: 0.1,
                 default: 0.0,
                 identity: 0.0,
-                step: 0.001,
+                step: 0.005,
             },
             unit: "",
             section: "Main",
@@ -66,11 +68,11 @@ static CHROMATIC_ABERRATION_SCHEMA: FilterSchema = FilterSchema {
             label: "Blue-Yellow Shift",
             description: "Radial shift for the b (blue-yellow) channel",
             kind: ParamKind::Float {
-                min: -0.02,
-                max: 0.02,
+                min: -0.1,
+                max: 0.1,
                 default: 0.0,
                 identity: 0.0,
-                step: 0.001,
+                step: 0.005,
             },
             unit: "",
             section: "Main",

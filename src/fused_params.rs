@@ -42,8 +42,8 @@ impl FusedAdjustParams {
         let contrast_scale = CONTRAST_PIVOT.powf(-adj.contrast);
         let dehaze_contrast = 1.0 + adj.dehaze * 0.3;
         let dehaze_chroma = 1.0 + adj.dehaze * 0.2;
-        let temp_offset = adj.temperature * 0.08;
-        let tint_offset = adj.tint * 0.08;
+        let temp_offset = adj.temperature * 0.12;
+        let tint_offset = adj.tint * 0.12;
 
         Self {
             bp,

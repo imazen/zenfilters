@@ -25,9 +25,9 @@ impl Filter for Tint {
         if self.shift.abs() < 1e-6 {
             return;
         }
-        // Same 0.08 scale as temperature — ±1.0 shift maps to ±0.08 Oklab a offset.
+        // Same 0.12 scale as temperature — ±1.0 shift maps to ±0.12 Oklab a offset.
         // Oklab a axis: positive = magenta/red, negative = green.
-        let offset = self.shift * 0.08;
+        let offset = self.shift * 0.12;
         simd::offset_plane(&mut planes.a, offset);
     }
 }

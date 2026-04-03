@@ -66,12 +66,20 @@ impl Filter for ShadowLift {
         // If p5 ≈ p1 (shadows are hard-clipped), use a higher toe for more recovery.
         // If p5 >> p1 (gradual shadow rolloff), use a lower toe.
         let shadow_density = (0.3 - p5).max(0.0) / 0.3; // 0-1: how crushed are shadows
-        let toe = (p5 + (0.3 - p5) * self.strength * shadow_density).clamp(0.02, 0.4);
 
+        // Toe point: always use a meaningful range above p5 so the gamma
+        // curve has room to lift. A fixed minimum toe of 0.15 ensures that
+        // even mildly dark images (p5 near 0.3) have enough headroom for
+        // visible shadow opening.
+        let toe = (0.15 + 0.25 * self.strength).clamp(0.1, 0.4);
+
+        // Lift intensity: combine user strength with adaptive shadow density.
+        // Use sqrt of density so even mild shadows get meaningful correction.
+        let density_curve = shadow_density.max(0.2).sqrt();
         // Toe lift: gamma curve below toe point
         // L' = toe * (L/toe)^gamma where gamma = 1/(1 + lift)
         // lift = 0 → gamma = 1 (identity), lift > 0 → gamma < 1 (brighten)
-        let lift = self.strength * shadow_density * 0.8; // tuned for natural results
+        let lift = self.strength * density_curve * 2.5; // tuned: visible at 25%, natural at 75%
         if lift < 1e-6 {
             return;
         }

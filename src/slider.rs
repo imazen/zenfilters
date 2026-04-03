@@ -112,14 +112,15 @@ pub fn dehaze_from_slider(slider: f32) -> f32 {
     slider * slider
 }
 
-/// Local tone map compression: raw range [0, 1], gamma-based compression
-/// is sensitive at high values. Sqrt mapping.
+/// Local tone map compression: raw range [0, 2], gamma-based compression
+/// is sensitive at high values. Sqrt mapping scales from [0,1] slider to
+/// [0, 2] internal so that slider=0.25 → 0.125 (visible on low-DR images).
 pub fn ltm_compression_to_slider(compression: f32) -> f32 {
-    compression.sqrt()
+    (compression * 0.5).sqrt()
 }
 
 pub fn ltm_compression_from_slider(slider: f32) -> f32 {
-    slider * slider
+    slider * slider * 2.0
 }
 
 /// Noise reduction strength: BayesShrink threshold scaling is compressive.

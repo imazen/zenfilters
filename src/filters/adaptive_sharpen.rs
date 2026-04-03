@@ -47,7 +47,7 @@ impl Default for AdaptiveSharpen {
         Self {
             amount: 0.0,
             sigma: 1.0,
-            noise_floor: 0.005,
+            noise_floor: 0.002,
             detail: 0.5,
             masking: 0.0,
         }

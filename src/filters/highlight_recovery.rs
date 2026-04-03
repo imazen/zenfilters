@@ -70,9 +70,15 @@ impl Filter for HighlightRecovery {
 
         // Soft knee compression: rational function above knee
         // L' = knee + (1-knee) * x / (x + s)
-        // where x = (L - knee) / (1 - knee), s = strength * compression_factor
+        // where x = (L - knee) / (1 - knee)
+        //
+        // Use a fixed compression factor so the knee position alone controls
+        // how much of the image is affected. Previously s scaled with strength,
+        // which caused an inverted response: at high strength the lower knee
+        // brought more pixels into range but the steeper compression pushed
+        // them all back toward the knee, producing less net change.
         let range = 1.0 - knee;
-        let s = self.strength * 0.5; // tuned: 0.5 gives natural rolloff at strength=1
+        let s = 0.4; // fixed compression shape: natural shoulder rolloff
 
         for v in planes.l.iter_mut() {
             if *v > knee {
@@ -244,12 +250,17 @@ mod tests {
         HighlightRecovery { strength: 0.3 }.apply(&mut planes_weak, &mut FilterContext::new());
         HighlightRecovery { strength: 1.0 }.apply(&mut planes_strong, &mut FilterContext::new());
 
-        // Strong recovery should compress more
-        let bright_weak = planes_weak.l[90];
-        let bright_strong = planes_strong.l[90];
+        // Stronger recovery should affect more pixels (lower knee brings
+        // more midtone pixels into the compression zone). Count total
+        // luminance change as a proxy: more affected pixels = bigger sum.
+        let original = make();
+        let delta_weak: f32 = original.l.iter().zip(planes_weak.l.iter())
+            .map(|(&a, &b)| (a - b).abs()).sum();
+        let delta_strong: f32 = original.l.iter().zip(planes_strong.l.iter())
+            .map(|(&a, &b)| (a - b).abs()).sum();
         assert!(
-            bright_strong < bright_weak,
-            "stronger recovery should compress more: weak={bright_weak} strong={bright_strong}"
+            delta_strong > delta_weak,
+            "stronger recovery should change more total luminance: weak={delta_weak} strong={delta_strong}"
         );
     }
 }
