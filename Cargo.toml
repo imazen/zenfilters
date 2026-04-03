@@ -37,17 +37,18 @@ zenpixels-convert = { version = "0.2.2" }
 imgref = "1.12"
 palette = { version = "0.7", default-features = false, features = ["std"] }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"] }
-zencodecs = { version = "0.1", default-features = false, features = ["jpeg", "png"] }
-zenraw = { version = "0.1", features = ["rawler", "darktable", "exif", "apple"] }
 enough = "0.4"
-zenbench = { version = "0.1.2", features = ["criterion-compat"] }
-libblur = { version = "0.23", default-features = true }
-zenresize = { version = "0.2", default-features = false, features = ["std"] }
 zensim = { version = "0.2.4", default-features = false }
 zenpixels = { version = "0.2.2", features = ["planar", "rgb"] }
 zenpixels-convert = { version = "0.2.2", features = ["planar"] }
 
-# Keep image only for tests that still need it (reference_validation, quality_validation)
+# Native-only: deps that don't compile for wasm32
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+zencodecs = { version = "0.1", default-features = false, features = ["jpeg", "png"] }
+zenraw = { version = "0.1", features = ["rawler", "darktable", "exif", "apple"] }
+zenbench = { version = "0.1.2", features = ["criterion-compat"] }
+libblur = { version = "0.23", default-features = true }
+zenresize = { version = "0.2", default-features = false, features = ["std"] }
 image = "0.25"
 codec-corpus = "1.0.3"
 
