@@ -357,11 +357,19 @@ fn main() {
         .get(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/mnt/v/output/zenfilters/audit"));
+    let dataset = args
+        .get(2)
+        .map(|s| s.as_str())
+        .unwrap_or("clic2025/final-test");
+    let skip_count: usize = args
+        .get(3)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
 
     // Get test images via codec-corpus
     let corpus = codec_corpus::Corpus::new().expect("failed to init codec-corpus");
-    let input_dir = corpus.get("clic2025/final-test").unwrap_or_else(|e| {
-        eprintln!("Failed to get dataset: {e}");
+    let input_dir = corpus.get(dataset).unwrap_or_else(|e| {
+        eprintln!("Failed to get dataset '{dataset}': {e}");
         std::process::exit(1);
     });
 
@@ -380,9 +388,13 @@ fn main() {
     // Skip known non-photographic images
     let skip_prefixes = ["2a760bf1", "86127fbd"];
     images.retain(|p| {
-        let stem = p.file_stem().unwrap().to_str().unwrap();
+        let stem = p.file_stem().unwrap().to_str().unwrap_or("");
         !skip_prefixes.iter().any(|pfx| stem.starts_with(pfx))
     });
+    // Skip first N images (for testing on a different subset)
+    if skip_count > 0 && skip_count < images.len() {
+        images = images.split_off(skip_count);
+    }
     images.truncate(MAX_IMAGES);
 
     if images.is_empty() {
