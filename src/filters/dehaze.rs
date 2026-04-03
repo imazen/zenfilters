@@ -30,6 +30,11 @@ pub struct Dehaze {
     /// have visible effect. For slider integration, use [`Dehaze::from_slider`]
     /// which applies sqrt remapping.
     pub strength: f32,
+    /// Auto-detect haze level and set strength accordingly.
+    /// When true, analyzes the transmission variance to estimate how much
+    /// haze is present. The `strength` field becomes a multiplier on the
+    /// auto-detected value.
+    pub auto_strength: bool,
 }
 
 impl Dehaze {
@@ -39,6 +44,7 @@ impl Dehaze {
     pub fn from_slider(slider: f32) -> Self {
         Self {
             strength: crate::slider::dehaze_from_slider(slider.clamp(0.0, 1.0)),
+            auto_strength: false,
         }
     }
 }
@@ -58,7 +64,7 @@ impl Filter for Dehaze {
     }
 
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
-        if self.strength.abs() < 1e-6 {
+        if self.strength.abs() < 1e-6 && !self.auto_strength {
             return;
         }
 
@@ -77,6 +83,35 @@ impl Filter for Dehaze {
         // Estimate global airlight from the top 0.1% brightest pixels in atmosphere map
         let airlight = estimate_airlight(&atmosphere);
         let airlight = airlight.max(0.3); // safety floor
+
+        // Auto-strength: estimate haze level from transmission variance
+        let s = if self.auto_strength {
+            // Compute mean and variance of estimated transmission
+            let inv_airlight = 1.0 / airlight;
+            let mut sum_t = 0.0f64;
+            for &atm in atmosphere.iter() {
+                sum_t += (1.0 - atm * inv_airlight).max(0.0) as f64;
+            }
+            let mean_t = sum_t / pc as f64;
+            let mut var_t = 0.0f64;
+            for &atm in atmosphere.iter() {
+                let t = (1.0 - atm * inv_airlight).max(0.0) as f64;
+                let d = t - mean_t;
+                var_t += d * d;
+            }
+            let std_t = (var_t / pc as f64).sqrt() as f32;
+            // Low transmission variance = uniform haze = higher auto strength
+            // High variance = selective haze or no haze = lower strength
+            let auto_s = (0.8 - std_t * 4.0).clamp(0.1, 0.7);
+            auto_s * s.max(0.5) // use strength as multiplier, minimum 0.5
+        } else {
+            s
+        };
+
+        if s.abs() < 1e-6 {
+            ctx.return_f32(atmosphere);
+            return;
+        }
 
         // Minimum transmission to avoid division explosion
         let t_min = 0.1f32;
@@ -188,7 +223,7 @@ mod tests {
         }
         let l_orig = planes.l.clone();
         let a_orig = planes.a.clone();
-        Dehaze { strength: 0.0 }.apply(&mut planes, &mut FilterContext::new());
+        Dehaze { strength: 0.0, auto_strength: false }.apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.l, l_orig);
         assert_eq!(planes.a, a_orig);
     }
@@ -204,7 +239,7 @@ mod tests {
             *v = 0.02;
         }
         let l_std_before = std_dev(&planes.l);
-        Dehaze { strength: 0.8 }.apply(&mut planes, &mut FilterContext::new());
+        Dehaze { strength: 0.8, auto_strength: false }.apply(&mut planes, &mut FilterContext::new());
         let l_std_after = std_dev(&planes.l);
         assert!(
             l_std_after > l_std_before,
@@ -225,7 +260,7 @@ mod tests {
             *v = -0.02;
         }
         let a_orig = planes.a.clone();
-        Dehaze { strength: 1.0 }.apply(&mut planes, &mut FilterContext::new());
+        Dehaze { strength: 1.0, auto_strength: false }.apply(&mut planes, &mut FilterContext::new());
         // Chroma should be boosted (absolute values increase)
         let a_sum_before: f32 = a_orig.iter().map(|v| v.abs()).sum();
         let a_sum_after: f32 = planes.a.iter().map(|v| v.abs()).sum();
@@ -241,7 +276,7 @@ mod tests {
         for v in &mut planes.l {
             *v = 0.1; // dark pixel in hazy scene
         }
-        Dehaze { strength: 1.0 }.apply(&mut planes, &mut FilterContext::new());
+        Dehaze { strength: 1.0, auto_strength: false }.apply(&mut planes, &mut FilterContext::new());
         for v in &planes.l {
             assert!(*v >= 0.0, "L should not go negative: {v}");
         }

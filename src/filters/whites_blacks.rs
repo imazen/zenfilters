@@ -22,6 +22,11 @@ pub struct WhitesBlacks {
     pub whites: f32,
     /// Blacks adjustment. Range: -1.0 to 1.0. Positive lifts dark areas.
     pub blacks: f32,
+    /// Auto-detect whites/blacks from histogram percentiles.
+    /// When true, analyzes the image and sets effective whites/blacks values
+    /// to expand the tonal range. The `whites` and `blacks` fields become
+    /// strength multipliers (0-1) that scale the auto-detected correction.
+    pub auto_range: bool,
 }
 
 /// Attempt to match Lightroom behaviour: the effect is strongest at the extremes
@@ -37,7 +42,7 @@ fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 
 impl WhitesBlacks {
     fn is_identity(&self) -> bool {
-        self.whites.abs() < 1e-6 && self.blacks.abs() < 1e-6
+        self.whites.abs() < 1e-6 && self.blacks.abs() < 1e-6 && !self.auto_range
     }
 }
 
@@ -49,13 +54,30 @@ impl Filter for WhitesBlacks {
     fn tag(&self) -> crate::filter_compat::FilterTag {
         crate::filter_compat::FilterTag::WhitesBlacks
     }
-    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
         if self.is_identity() {
             return;
         }
 
-        let whites = self.whites;
-        let blacks = self.blacks;
+        let (whites, blacks) = if self.auto_range {
+            // Auto mode: compute from percentiles, use whites/blacks as strength multipliers
+            let a = ctx.analyze(planes);
+            let p5 = a.p5();
+            let p95 = a.p95();
+            let range = p95 - p5;
+            if range > 0.85 {
+                // Image already spans most of [0,1], no auto correction needed
+                (self.whites, self.blacks)
+            } else {
+                // Push whites up based on how far p95 is from 1.0
+                let auto_whites = (1.0 - p95).clamp(0.0, 0.4) * self.whites.abs().max(0.5);
+                // Push blacks down based on how far p5 is from 0.0
+                let auto_blacks = -(p5.clamp(0.0, 0.4)) * self.blacks.abs().max(0.5);
+                (auto_whites, auto_blacks)
+            }
+        } else {
+            (self.whites, self.blacks)
+        };
 
         for v in &mut planes.l {
             let l = *v;
@@ -170,6 +192,7 @@ mod tests {
         WhitesBlacks {
             whites: 1.0,
             blacks: 0.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert!(
@@ -186,6 +209,7 @@ mod tests {
         WhitesBlacks {
             whites: -1.0,
             blacks: 0.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert!(
@@ -202,6 +226,7 @@ mod tests {
         WhitesBlacks {
             whites: 0.0,
             blacks: 1.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert!(
@@ -218,6 +243,7 @@ mod tests {
         WhitesBlacks {
             whites: 0.0,
             blacks: -1.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert!(
@@ -235,6 +261,7 @@ mod tests {
         WhitesBlacks {
             whites: 1.0,
             blacks: 0.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert!(
@@ -253,6 +280,7 @@ mod tests {
         WhitesBlacks {
             whites: 0.0,
             blacks: 1.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert!(
@@ -270,6 +298,7 @@ mod tests {
         WhitesBlacks {
             whites: -1.0,
             blacks: -1.0,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert!(planes.l[0] >= 0.0, "output should be non-negative");
@@ -289,6 +318,7 @@ mod tests {
         WhitesBlacks {
             whites: 0.5,
             blacks: 0.5,
+            auto_range: false,
         }
         .apply(&mut planes, &mut FilterContext::new());
         assert_eq!(planes.a, a_orig);

@@ -2124,6 +2124,7 @@ pub fn node_to_filter(
         })),
         "zenfilters.dehaze" => Some(alloc::boxed::Box::new(Dehaze {
             strength: f32_param(node, "strength"),
+            auto_strength: false,
         })),
         "zenfilters.bloom" => Some(alloc::boxed::Box::new(Bloom {
             amount: f32_param(node, "amount"),
@@ -2392,6 +2393,7 @@ pub fn node_to_filter(
         "zenfilters.whites_blacks" => Some(alloc::boxed::Box::new(WhitesBlacks {
             whites: f32_param(node, "whites"),
             blacks: f32_param(node, "blacks"),
+            auto_range: false,
         })),
         "zenfilters.parametric_curve" => {
             let split_shadows = {
