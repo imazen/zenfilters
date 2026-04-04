@@ -1424,6 +1424,94 @@ impl Default for AutoLevelsDef {
     }
 }
 
+/// One-button automatic tone and color correction.
+///
+/// Analyzes the image and applies exposure, highlight recovery, shadow lift,
+/// contrast, and color cast corrections as needed. Each sub-correction
+/// activates only when the image statistics warrant it.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.auto_tone", group = Auto, role = Filter)]
+#[node(label = "Auto Tone")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("auto", "tone", "exposure", "contrast", "cast"))]
+pub struct AutoToneDef {
+    /// Master correction strength (0 = off, 1 = full)
+    #[param(range(0.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub strength: f32,
+
+    /// Respect intentional exposure (0 = correct everything, 1 = only severe problems)
+    #[param(range(0.0..=1.0), default = 0.3, identity = 0.3, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub preserve_intent: f32,
+}
+
+impl Default for AutoToneDef {
+    fn default() -> Self {
+        Self {
+            strength: 0.0,
+            preserve_intent: 0.3,
+        }
+    }
+}
+
+/// Automatic white balance: removes color cast by neutralizing mean a/b.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.auto_white_balance", group = Auto, role = Filter)]
+#[node(label = "Auto White Balance")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("auto", "white-balance", "cast", "color"))]
+pub struct AutoWhiteBalanceDef {
+    /// Cast correction strength (0 = off, 1 = full)
+    #[param(range(0.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub strength: f32,
+}
+
+impl Default for AutoWhiteBalanceDef {
+    fn default() -> Self {
+        Self { strength: 0.0 }
+    }
+}
+
+/// Automatic contrast adjustment based on image statistics.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.auto_contrast", group = Auto, role = Filter)]
+#[node(label = "Auto Contrast")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("auto", "contrast"))]
+pub struct AutoContrastDef {
+    /// Correction strength (0 = off, 1 = full adaptive correction)
+    #[param(range(0.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub strength: f32,
+}
+
+impl Default for AutoContrastDef {
+    fn default() -> Self {
+        Self { strength: 0.0 }
+    }
+}
+
+/// Per-hue-sector adaptive saturation boost.
+#[derive(Node, Clone, Debug)]
+#[node(id = "zenfilters.auto_vibrance", group = Auto, role = Filter)]
+#[node(label = "Auto Vibrance")]
+#[node(format(preferred = OklabF32, alpha = Skip))]
+#[node(tags("auto", "vibrance", "saturation", "hue"))]
+pub struct AutoVibranceDef {
+    /// Adaptive boost strength (0 = off, 1 = full)
+    #[param(range(0.0..=1.0), default = 0.0, identity = 0.0, step = 0.05)]
+    #[param(unit = "", section = "Main", slider = Linear)]
+    pub strength: f32,
+}
+
+impl Default for AutoVibranceDef {
+    fn default() -> Self {
+        Self { strength: 0.0 }
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // ADDITIONAL DETAIL
 // ═══════════════════════════════════════════════════════════════════
@@ -2181,6 +2269,19 @@ pub fn node_to_filter(
                 },
             }))
         }
+        "zenfilters.auto_tone" => Some(alloc::boxed::Box::new(AutoTone {
+            strength: f32_param(node, "strength"),
+            preserve_intent: f32_param(node, "preserve_intent"),
+        })),
+        "zenfilters.auto_white_balance" => Some(alloc::boxed::Box::new(AutoWhiteBalance {
+            strength: f32_param(node, "strength"),
+        })),
+        "zenfilters.auto_contrast" => Some(alloc::boxed::Box::new(AutoContrast {
+            strength: f32_param(node, "strength"),
+        })),
+        "zenfilters.auto_vibrance" => Some(alloc::boxed::Box::new(AutoVibrance {
+            strength: f32_param(node, "strength"),
+        })),
         // Additional Detail
         "zenfilters.bilateral" => Some(alloc::boxed::Box::new(Bilateral {
             spatial_sigma: f32_param(node, "spatial_sigma"),
@@ -2554,6 +2655,7 @@ pub fn node_to_filter(
                     if v > 0.0 { v } else { 0.5 }
                 },
                 scales,
+                content_aware: false,
             }))
         }
         "zenfilters.texture" => Some(alloc::boxed::Box::new(Texture {
