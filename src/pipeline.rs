@@ -588,6 +588,7 @@ impl Pipeline {
     /// Use this when you want to manage scatter/gather yourself,
     /// or when chaining multiple pipelines on the same planar data.
     pub fn apply_planar(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
+        ctx.working_space = self.config.working_space;
         for filter in &self.filters {
             filter.apply(planes, ctx);
         }
