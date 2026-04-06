@@ -69,118 +69,99 @@ These operate in **linear RGB before Oklab scatter**. Options:
 
 ---
 
-## Priority 2: Generic Convolution API
+## Priority 2: Generic Convolution API ✅
 
-### Custom kernel filter ⬜
-```rust
-pub struct Convolve {
-    kernel: Vec<f32>,
-    width: u32,
-    height: u32,
-    normalize: bool,
-}
-```
-Extract from existing `GaussianKernel` and edge detection SIMD code.
-
-### Unlocks:
-| Effect | Kernel |
-|--------|--------|
-| Emboss | `[[-2,-1,0],[-1,1,1],[0,1,2]]` |
-| Ridge detect | `[[-1,-1,-1],[-1,8,-1],[-1,-1,-1]]` |
-| Custom sharpen | User-defined NxN |
+### Custom kernel filter ✅ (`worktree-feature-requests`)
+`Convolve` filter with `ConvolutionKernel` enum:
+- `Separable { h_coeffs, v_coeffs }` — two-pass O(w+h) per pixel
+- `Matrix { coeffs, width, height }` — direct O(N*M) per pixel
+- Factory kernels: `gaussian()`, `box_blur()`, `emboss()`, `emboss_angle()`, `ridge_detect()`, `sharpen_3x3()`
+- Configurable normalize, bias, target channels
 
 ---
 
-## Priority 3: Directional Blur
+## Priority 3: Directional Blur ✅
 
-### MotionBlur ⬜
-Blur along a direction (angle + length).
-- Implementation: line kernel at angle, convolve
-- SIMD: extend existing blur infrastructure
+### MotionBlur ✅ (`worktree-feature-requests`)
+Uniform-weighted line kernel at arbitrary angle + length.
+
+### ZoomBlur ✅ (`worktree-feature-requests`)
+Radial zoom blur from configurable center point with distance-based falloff.
+
+### GaussianMotionBlur ✅ (`srgb_compat` module)
+Gaussian-weighted line kernel matching IM's `-motion-blur`.
 
 ### RotationalBlur ⬜
-Radial blur from center point.
-- Sample along circular arcs, weighted average
-- Uses warp infrastructure for sampling
-
-### ZoomBlur ⬜
-Radial blur toward/from center.
-- Sample along radial lines from center
+Radial blur from center point. Sample along circular arcs, weighted average.
 
 ---
 
-## Priority 4: Polar Warp Extensions
+## Priority 4: Polar Warp Extensions ✅
 
-Extend existing `Warp` struct with new coordinate mapping functions:
+### PolarWarp ✅ (`worktree-feature-requests`, behind `experimental`)
+`PolarWarp` enum with 4 variants, each computing custom (sx, sy) per pixel:
 
-```rust
-pub enum WarpFunction {
-    Matrix([f32; 9]),                            // existing affine/projective
-    Swirl { strength: f32, radius: f32 },        // θ += strength * (1 - r/radius)
-    Implode { factor: f32 },                     // r' = r^factor
-    Wave { amplitude: f32, frequency: f32 },     // y' = y + A*sin(x*f)
-    Barrel { k1: f32, k2: f32, k3: f32 },       // lens distortion polynomial
-}
-```
+- **Swirl** ✅ — `θ += strength * (1 - r/radius)`
+- **Implode** ✅ — `r' = r^factor`
+- **Wave** ✅ — `y' = y + A*sin(x*f)` with direction control
+- **Barrel** ✅ — `r' = r*(1 + k1*r² + k2*r⁴ + k3*r⁶)` lens distortion
 
-All reuse the existing SIMD warp infrastructure — only the coordinate mapping function changes.
-
-### Barrel/Pincushion ⬜
-Lens distortion correction. Critical for:
-- Camera lens correction profiles
-- Document scanner lens correction
-
-### Swirl ⬜
-ImageMagick `-swirl`. Rotation angle varies with distance from center.
-
-### Wave ⬜
-ImageMagick `-wave`. Sinusoidal displacement.
-
-### Implode/Explode ⬜
-ImageMagick `-implode`. Radial displacement.
+All use existing bicubic interpolation infrastructure with clamped edges.
 
 ---
 
-## Priority 5: Morphology
+## Priority 5: Morphology ✅
 
-### Basic morphological operations ⬜
-Windowed min/max filter with structuring element (similar to MedianBlur):
-
-```rust
-pub enum MorphOp {
-    Erode,     // min within kernel — shrink bright regions
-    Dilate,    // max within kernel — expand bright regions
-    Open,      // erode → dilate — remove small bright noise
-    Close,     // dilate → erode — fill small dark holes
-    Gradient,  // dilate - erode — edge detection
-    TopHat,    // original - open — extract small bright details
-    BlackHat,  // close - original — extract small dark details
-}
-
-pub struct Morphology {
-    op: MorphOp,
-    kernel: MorphKernel, // Diamond, Disk(radius), Square(size), Cross, Custom
-    iterations: u32,
-}
-```
-
-Use case: document cleanup, text extraction preprocessing.
+### Basic morphological operations ✅ (`worktree-feature-requests`)
+`Morphology` filter with `MorphOp` enum:
+- Erode, Dilate, Open, Close, TopHat, BlackHat
+- Square structuring element, configurable radius 1-5
+- Optional chroma processing
+- 99+ zensim agreement with ImageMagick
 
 ---
 
-## Priority 6: Artistic Filter Chains
+## Priority 6: Artistic Effects ✅ (partial)
 
-Composite presets built from existing filters (no new algorithms):
+### Implemented ✅ (`worktree-feature-requests`):
+| Effect | Implementation |
+|--------|---------------|
+| Posterize | `Posterize` (Oklab L/chroma) + `ChannelPosterize` (sRGB all-channel) |
+| Solarize | `Solarize` (Oklab) + `ChannelSolarize` (sRGB) |
+| Emboss | `Convolve::emboss()` (3×3 kernel) + `DifferenceEmboss` (IM-compat blur→diff) |
 
+### Not started ⬜:
 | Effect | Recipe |
 |--------|--------|
 | Charcoal | `Grayscale → EdgeDetect(Sobel) → Invert → Blur(0.5)` |
 | Sketch | `Grayscale → EdgeDetect(Canny) → Invert → Grain(0.1)` |
-| Posterize | `Levels` with quantized steps per channel |
-| Solarize | Invert pixels above threshold (simple PixelOp) |
 | OilPaint | Kuwahara filter (new algorithm, ~200 lines) |
 
-Implementation: `ArtisticPreset` enum that expands to a `Pipeline` of existing filters.
+## Priority 6b: ImageMagick Compatibility ✅
+
+### Architecture ✅ (`worktree-feature-requests`)
+- `WorkingSpace::Srgb` on `PipelineConfig` — sRGB passthrough scatter/gather
+- `PlaneSemantics` enum on Filter trait — push-time validation
+- Separate filter types in `srgb_compat.rs` — each does one thing, no dual-behavior
+
+### sRGB compat filters ✅ (10 filters):
+`LinearContrast`, `LinearBrightness`, `SigmoidalContrast`, `HslSaturate`,
+`LumaGrayscale`, `ChannelPosterize`, `ChannelSolarize`, `ChannelSharpen`,
+`DifferenceEmboss`, `GaussianMotionBlur`
+
+### Zensim agreement vs IM 6.9.11 (5 images):
+| Operation | Score | Notes |
+|-----------|-------|-------|
+| Morphology | 99 | Pixel-perfect |
+| Solarize | 99 | Pixel-perfect |
+| Brightness | 95-99 | Additive offset |
+| Contrast | 95 | tan(π*(1+C/100)/4) slope |
+| Saturation | 94-95 | HSL with unclamped S |
+| Grayscale | 94 | Rec.709 luma |
+| Blur | 72 | Kernel radius convention differs |
+| Sharpen | 67-69 | USM on all channels |
+| Posterize | 40 | Rounding edge cases |
+| Emboss/Edge/MotionBlur | <0 | Fundamentally different algorithms |
 
 ---
 
@@ -223,7 +204,11 @@ sRGB → Display P3 / BT.2020 with intelligent chroma expansion.
 
 ## Testing
 
-### Current: 443 tests (all passing)
+### Current: 443+ lib tests, 1 integration test (all passing)
+### Added (`worktree-feature-requests`):
+- 29 unit tests for new filters (convolve, morphology, motion blur, posterize, solarize, polar warp)
+- 9 unit tests for sRGB compat filters
+- `imageflow_comparison` integration test — 21 operations × 5 images vs ImageMagick, zensim scoring
 ### Needed:
 - Warp round-trip tests (rotate → inverse rotate → compare)
 - Document pipeline integration tests (full quad→rectify→deskew→crop→enhance chain)

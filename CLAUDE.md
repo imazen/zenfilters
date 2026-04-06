@@ -50,6 +50,56 @@ Replace or supplement the 64-cluster K-means model with a proper neural network 
 
 **TODO:** Integrate into parity/comparison examples, validate against zensim on real data
 
+### 4. ImageMagick Compatibility (`worktree-feature-requests` branch)
+
+**Architecture**: `WorkingSpace::Srgb` on `PipelineConfig` controls scatter/gather only (sRGB passthrough instead of Oklab conversion). Separate filter types for sRGB math — each filter does one thing, no dual-behavior branching.
+
+**`PlaneSemantics`** enum on `Filter` trait: `Any` (generic spatial ops), `Oklab` (default, Oklab-native), `Rgb` (sRGB compat). Pipeline validates at push time.
+
+**sRGB compat filters** (`src/filters/srgb_compat.rs`):
+- `LinearContrast` — `(v-0.5)*factor+0.5` per plane
+- `LinearBrightness` — `v+offset` per plane
+- `SigmoidalContrast` — S-curve for `-sigmoidal-contrast`
+- `HslSaturate` — RGB→HSL→scale S→RGB (unclamped S, RGB clamp)
+- `LumaGrayscale` — Rec.709 luma
+- `ChannelPosterize` — quantize all planes uniformly
+- `ChannelSolarize` — threshold inversion on all planes
+- `ChannelSharpen` — USM on all planes
+- `DifferenceEmboss` — blur→directional difference→bias
+- `GaussianMotionBlur` — Gaussian-weighted line kernel
+
+**New generic filters** (Issues #2, #6):
+- `Convolve` — separable + matrix convolution with factory kernels
+- `MotionBlur` / `ZoomBlur` — directional and radial blur
+- `Posterize` / `Solarize` — Oklab-native versions (L-only or L+chroma)
+- `Morphology` — erode, dilate, open, close, tophat, blackhat
+- `PolarWarp` — swirl, implode, wave, barrel distortion
+
+**IM formula notes** (empirically verified against IM 6.9.11 Q16):
+- `-brightness-contrast BxC`: brightness = additive `B/100`, contrast = `slope = tan(π*(1+C/100)/4)` then `output = slope*(input-0.5)+0.5` clamped
+- `-modulate 100,S,100`: HSL with **unclamped S** — let S exceed 1.0, clamp final RGB
+- `-posterize N`: `round(v*(N-1))/(N-1)` per channel — our formula matches exactly
+- `-solarize N%`: `if v > threshold { 1-v }` per channel — matches exactly
+- `-emboss N`: NOT a 3x3 kernel — blur(sigma=N) then directional difference + bias
+- `-edge N`: morphological edge detection, not Sobel gradient
+
+**Zensim agreement scores** (100=identical, 5 test images):
+
+| Operation | srgb_vs_im |
+|-----------|-----------|
+| Morphology | 99 |
+| Solarize | 99 |
+| Brightness | 95-99 |
+| Contrast | 95 |
+| Saturation | 94-95 |
+| Grayscale | 94 |
+| Blur | 72 |
+| Sharpen | 67-69 |
+| Posterize | 40 |
+
+Remaining gaps: blur/sharpen kernel radius convention (our `ceil(3σ)` vs IM's ~`ceil(2.5σ)`), posterize rounding on some images, emboss/edge use fundamentally different algorithms.
+
 ## Known Issues
 
-- No git remote configured yet
+- zencodecs local build broken (missing `ImageFormat::Jp2` variant) — worktree strips it from dev-deps (same as CI via superwork)
+- Issue #5 (auto-filter banding) still open — needs two-pass architecture for strip processing
