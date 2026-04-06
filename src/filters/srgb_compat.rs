@@ -439,7 +439,8 @@ impl Filter for ChannelSharpen {
     }
 
     fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
-        (self.sigma * 3.0).ceil() as u32
+        // IM's kernel radius: ceil(2*sigma + 0.5)
+        (2.0 * self.sigma + 0.5).ceil() as u32
     }
 
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
@@ -506,7 +507,8 @@ impl Filter for GaussianMotionBlur {
     }
 
     fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
-        (self.sigma * 3.0).ceil() as u32
+        // IM's kernel radius: ceil(2*sigma + 0.5)
+        (2.0 * self.sigma + 0.5).ceil() as u32
     }
 
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
@@ -519,7 +521,8 @@ impl Filter for GaussianMotionBlur {
         let a = self.angle.to_radians();
         let dx = a.cos();
         let dy = a.sin();
-        let radius = (self.sigma * 3.0).ceil() as usize;
+        // IM's kernel radius formula
+        let radius = (2.0 * self.sigma + 0.5).ceil() as usize;
 
         // Precompute Gaussian-weighted sample positions
         let mut weights = alloc::vec::Vec::new();
@@ -605,31 +608,51 @@ impl Filter for DifferenceEmboss {
     }
 
     fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
-        use crate::blur::{GaussianKernel, gaussian_blur_plane};
+        // Construct IM's emboss kernel: Gaussian-weighted diagonal derivative.
+        // For 3x3 with sigma, the diagonal corners get -gaussian(sqrt(2), sigma),
+        // center gets 1 + 2*|corner| to preserve DC (kernel sum = 1).
+        let sigma2 = 2.0 * self.sigma * self.sigma;
+        let corner = (-(2.0f32) / sigma2).exp(); // gaussian at distance sqrt(2)
+        let center = 1.0 + 2.0 * corner;
+
+        // Kernel layout (diagonal emboss, +45° direction):
+        //  0      0     -corner
+        //  0    center    0
+        // -corner  0      0
+        let kw = 3usize;
+        let kh = 3usize;
+        let rx = kw / 2;
+        let ry = kh / 2;
+        let coeffs = [
+            0.0, 0.0, -corner,
+            0.0, center, 0.0,
+            -corner, 0.0, 0.0,
+        ];
 
         let w = planes.width as usize;
         let h = planes.height as usize;
-        let n = w * h;
-        let kernel = GaussianKernel::new(self.sigma);
 
         for plane in [&mut planes.l, &mut planes.a, &mut planes.b] {
-            // Blur
-            let mut blurred = ctx.take_f32(n);
-            gaussian_blur_plane(plane, &mut blurred, planes.width, planes.height, &kernel, ctx);
-
-            // Directional difference: shifted(+1,+1) - shifted(-1,-1) of blurred
-            // Then bias by 0.5
+            let n = w * h;
+            let mut dst = ctx.take_f32(n);
             for y in 0..h {
                 for x in 0..w {
-                    let x1 = (x + 1).min(w - 1);
-                    let y1 = (y + 1).min(h - 1);
-                    let x0 = x.saturating_sub(1);
-                    let y0 = y.saturating_sub(1);
-                    let diff = blurred[y1 * w + x1] - blurred[y0 * w + x0];
-                    plane[y * w + x] = (diff + 0.5).clamp(0.0, 1.0);
+                    let mut sum = 0.0f32;
+                    for ky in 0..kh {
+                        for kx in 0..kw {
+                            let sy = (y as isize + ky as isize - ry as isize)
+                                .clamp(0, h as isize - 1) as usize;
+                            let sx = (x as isize + kx as isize - rx as isize)
+                                .clamp(0, w as isize - 1) as usize;
+                            sum += plane[sy * w + sx] * coeffs[ky * kw + kx];
+                        }
+                    }
+                    // +0.5 bias: maps derivative-centered output to [0, 1]
+                    dst[y * w + x] = (sum + 0.5).clamp(0.0, 1.0);
                 }
             }
-            ctx.return_f32(blurred);
+            let old = core::mem::replace(plane, dst);
+            ctx.return_f32(old);
         }
     }
 }
