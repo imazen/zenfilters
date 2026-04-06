@@ -302,7 +302,7 @@ fn run_suite(
     if let Some(r) = compare_op(
         source, source_path, image_name, "grayscale",
         Some(&|| Box::new(Grayscale::default())),
-        &|| Box::new(LumaGrayscale),
+        &|| Box::new(LumaGrayscale::default()),
         &["-colorspace", "Gray"],
         output_dir,
     ) { results.push(r); }
@@ -448,13 +448,35 @@ fn compare_zenfilters_vs_imagemagick() {
 
     assert!(images_tested >= 3, "Need at least 3 test images, got {images_tested}");
 
-    // Spatial filters in sRGB mode should closely match ImageMagick
+    // Morphology in sRGB mode should be pixel-perfect with ImageMagick
     for r in all_results.iter().filter(|r| {
-        r.filter_name.starts_with("blur") || r.filter_name.starts_with("dilate") || r.filter_name.starts_with("erode")
+        r.filter_name.starts_with("dilate") || r.filter_name.starts_with("erode")
     }) {
         assert!(
-            r.srgb_vs_im > 80.0,
-            "{}/{}: srgb_vs_im={:.1} should be >80 for spatial filters",
+            r.srgb_vs_im > 90.0,
+            "{}/{}: srgb_vs_im={:.1} should be >90 for morphology",
+            r.image_name, r.filter_name, r.srgb_vs_im
+        );
+    }
+
+    // Desaturation and grayscale should closely match IM
+    for r in all_results.iter().filter(|r| {
+        r.filter_name == "grayscale" || r.filter_name == "saturation_0.0" || r.filter_name == "saturation_0.5"
+    }) {
+        assert!(
+            r.srgb_vs_im > 85.0,
+            "{}/{}: srgb_vs_im={:.1} should be >85 for desaturation/grayscale",
+            r.image_name, r.filter_name, r.srgb_vs_im
+        );
+    }
+
+    // Posterize and solarize should be near-perfect (same formula, same space)
+    for r in all_results.iter().filter(|r| {
+        r.filter_name.starts_with("posterize") || r.filter_name.starts_with("solarize")
+    }) {
+        assert!(
+            r.srgb_vs_im > 90.0,
+            "{}/{}: srgb_vs_im={:.1} should be >90 for posterize/solarize",
             r.image_name, r.filter_name, r.srgb_vs_im
         );
     }
