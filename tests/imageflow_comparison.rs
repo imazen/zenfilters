@@ -54,9 +54,15 @@ fn make_motion_blur(angle: f32, length: f32) -> Box<dyn Filter> {
     Box::new(mb)
 }
 
-fn make_sigmoidal_contrast(amount: f32) -> Box<dyn Filter> {
-    let mut c = SigmoidalContrast::default();
-    c.amount = amount;
+/// Map an ImageMagick contrast percentage (-100..100) to a LinearContrast amount.
+///
+/// IM 6.x uses `slope = tan(π * (1 + C/100) / 4)` then
+/// `output = slope * (input - 0.5) + 0.5`, clamped to [0, 1].
+/// Our LinearContrast uses `factor = 1 + amount` with equivalent math.
+fn make_im_contrast(im_percent: f32) -> Box<dyn Filter> {
+    let slope = (core::f32::consts::FRAC_PI_4 * (1.0 + im_percent / 100.0)).tan();
+    let mut c = LinearContrast::default();
+    c.amount = slope - 1.0;
     Box::new(c)
 }
 
@@ -262,25 +268,26 @@ fn run_suite(
     eprintln!("\n=== {image_name} ({}x{}) ===", source.width(), source.height());
     eprintln!("  {:25}  {:>6}  {:>6}  {:>10}", "filter", "oklab", "im", "srgb_vs_im");
 
-    // ─── Contrast: Oklab power curve vs sRGB linear ────────────
-    for &(amount, im_pct) in &[(0.3f32, "30"), (0.6, "60"), (-0.3, "-30")] {
-        let label = format!("contrast_{amount:+.1}");
+    // ─── Contrast: Oklab power curve vs sRGB linear (IM tan-slope) ──
+    for &(im_pct_f, im_pct) in &[(30.0f32, "30"), (60.0, "60"), (-30.0, "-30")] {
+        let label = format!("contrast_{im_pct}");
         if let Some(r) = compare_op(
             source, source_path, image_name, &label,
-            Some(&|| { let mut c = Contrast::default(); c.amount = amount; Box::new(c) }),
-            &|| make_sigmoidal_contrast(amount),
+            Some(&|| { let mut c = Contrast::default(); c.amount = im_pct_f / 100.0; Box::new(c) }),
+            &|| make_im_contrast(im_pct_f),
             &["-brightness-contrast", &format!("0x{im_pct}")],
             output_dir,
         ) { results.push(r); }
     }
 
     // ─── Brightness: Oklab exposure vs sRGB additive ───────────
-    for &(stops, im_pct) in &[(0.5f32, "15"), (1.0, "30"), (-0.5, "-15")] {
-        let label = format!("brightness_{stops:+.1}");
+    // IM's brightness=N% adds N/100 to each channel (slope=1, intercept=N/100)
+    for &(im_pct_f, im_pct) in &[(15.0f32, "15"), (30.0, "30"), (-15.0, "-15")] {
+        let label = format!("brightness_{im_pct}");
         if let Some(r) = compare_op(
             source, source_path, image_name, &label,
-            Some(&|| { let mut e = Exposure::default(); e.stops = stops; Box::new(e) }),
-            &|| make_linear_brightness(stops * 0.15),
+            Some(&|| { let mut e = Exposure::default(); e.stops = im_pct_f / 30.0; Box::new(e) }),
+            &|| make_linear_brightness(im_pct_f / 100.0),
             &["-brightness-contrast", &format!("{im_pct}x0")],
             output_dir,
         ) { results.push(r); }
@@ -470,13 +477,29 @@ fn compare_zenfilters_vs_imagemagick() {
         );
     }
 
-    // Posterize and solarize should be near-perfect (same formula, same space)
-    for r in all_results.iter().filter(|r| {
-        r.filter_name.starts_with("posterize") || r.filter_name.starts_with("solarize")
-    }) {
+    // Solarize should be near-perfect (same formula, same space)
+    for r in all_results.iter().filter(|r| r.filter_name.starts_with("solarize")) {
         assert!(
             r.srgb_vs_im > 90.0,
-            "{}/{}: srgb_vs_im={:.1} should be >90 for posterize/solarize",
+            "{}/{}: srgb_vs_im={:.1} should be >90 for solarize",
+            r.image_name, r.filter_name, r.srgb_vs_im
+        );
+    }
+
+    // Contrast should closely match IM (tan-slope formula)
+    for r in all_results.iter().filter(|r| r.filter_name.starts_with("contrast")) {
+        assert!(
+            r.srgb_vs_im > 85.0,
+            "{}/{}: srgb_vs_im={:.1} should be >85 for contrast",
+            r.image_name, r.filter_name, r.srgb_vs_im
+        );
+    }
+
+    // Brightness should closely match IM (additive offset)
+    for r in all_results.iter().filter(|r| r.filter_name.starts_with("brightness")) {
+        assert!(
+            r.srgb_vs_im > 85.0,
+            "{}/{}: srgb_vs_im={:.1} should be >85 for brightness",
             r.image_name, r.filter_name, r.srgb_vs_im
         );
     }
