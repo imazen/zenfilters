@@ -148,8 +148,11 @@ pub fn apply_to_buffer(
     let m1_inv = zenpixels_convert::oklab::lms_to_rgb_matrix(primaries)
         .ok_or_else(|| at!(ConvenienceError::UnsupportedPrimaries(primaries)))?;
 
+    #[cfg(feature = "srgb-compat")]
     let is_srgb_passthrough =
         pipeline.config().working_space == crate::pipeline::WorkingSpace::Srgb;
+    #[cfg(not(feature = "srgb-compat"))]
+    let is_srgb_passthrough = false;
 
     // Detect if we can use the fused sRGB u8 path (eliminates intermediate
     // linear f32 buffer — ~48MB savings at 2048² RGB).
@@ -162,6 +165,7 @@ pub fn apply_to_buffer(
 
     // sRGB passthrough: normalize u8→f32, filter in sRGB, denormalize back.
     // No linearization, no Oklab conversion — matches ImageMagick's behavior.
+    #[cfg(feature = "srgb-compat")]
     if is_srgb_passthrough && convert_back {
         return apply_srgb_passthrough(pipeline, input, ctx, desc, width, height, channels, has_alpha, color_ctx.as_ref())
             .map_err(|e| at!(e));
@@ -286,6 +290,7 @@ pub fn apply_to_buffer(
 }
 
 /// Fused sRGB u8 roundtrip with L3-friendly strip processing.
+#[cfg(feature = "srgb-compat")]
 /// sRGB passthrough: normalize u8→f32 [0,1], filter in sRGB, denormalize back.
 ///
 /// This is the ImageMagick-compatible path. No linearization, no Oklab conversion.

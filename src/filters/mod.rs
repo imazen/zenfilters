@@ -54,6 +54,7 @@ mod shadow_lift;
 mod sharpen;
 mod sigmoid;
 mod solarize;
+#[cfg(feature = "srgb-compat")]
 pub mod srgb_compat;
 mod temperature;
 mod texture;
@@ -125,6 +126,7 @@ pub use shadow_lift::ShadowLift;
 pub use sharpen::Sharpen;
 pub use sigmoid::Sigmoid;
 pub use solarize::Solarize;
+#[cfg(feature = "srgb-compat")]
 pub use srgb_compat::{
     ChannelPosterize, ChannelSharpen, ChannelSolarize, DifferenceEmboss, GaussianMotionBlur,
     HslSaturate, LinearBrightness, LinearContrast, LumaGrayscale, SigmoidalContrast,

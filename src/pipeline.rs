@@ -96,6 +96,9 @@ impl PipelineConfig {
     /// Use sRGB-compatible filter types (`LinearContrast`, `HslSaturate`,
     /// `LumaGrayscale`) instead of Oklab-specific filters (`Contrast`,
     /// `Saturation`, `Grayscale`). The pipeline validates at push time.
+    ///
+    /// Requires the `srgb-compat` feature.
+    #[cfg(feature = "srgb-compat")]
     pub fn srgb_compat() -> Self {
         Self {
             working_space: WorkingSpace::Srgb,

@@ -16,6 +16,7 @@ unexpected_cfgs = { level = "allow" }
 [features]
 default = []
 experimental = []
+srgb-compat = []
 serde = ["dep:serde", "dep:serde-big-array"]
 srgb-filters = ["dep:rgb", "zenpixels/rgb"]
 zennode = ["dep:zennode"]
@@ -96,6 +97,7 @@ name = "quality_validation"
 
 [[test]]
 name = "imageflow_comparison"
+required-features = ["srgb-compat"]
 
 [[bench]]
 name = "row_batch"
