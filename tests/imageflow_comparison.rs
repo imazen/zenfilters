@@ -316,13 +316,19 @@ fn run_suite(
 
     // ─── Generic filters (same filter for both paths) ──────────
 
-    // Sharpen (generic — works in any space)
-    for &(amount, im_sigma) in &[(0.5f32, "0x1"), (1.0, "0x2")] {
-        let label = format!("sharpen_{amount:.1}");
+    // Sharpen: Oklab L-only vs sRGB all-channel
+    // IM's -sharpen 0xSIGMA is USM with amount=1.0 on all channels
+    for &(sigma, im_sigma) in &[(1.0f32, "0x1"), (2.0, "0x2")] {
+        let label = format!("sharpen_s{sigma:.0}");
         if let Some(r) = compare_op(
             source, source_path, image_name, &label,
-            Some(&|| make_sharpen(amount, 1.0)),
-            &|| make_sharpen(amount, 1.0),
+            Some(&|| make_sharpen(1.0, sigma)),
+            &|| {
+                let mut s = ChannelSharpen::default();
+                s.sigma = sigma;
+                s.amount = 1.0;
+                Box::new(s)
+            },
             &["-sharpen", im_sigma],
             output_dir,
         ) { results.push(r); }

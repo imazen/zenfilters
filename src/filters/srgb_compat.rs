@@ -245,7 +245,9 @@ impl Filter for HslSaturate {
             } else {
                 delta / (2.0 - max - min).max(1e-6)
             };
-            let new_sat = (sat * s).clamp(0.0, 1.0);
+            // Don't clamp S — let it exceed 1.0, clamp final RGB instead.
+            // This matches ImageMagick's behavior for already-saturated pixels.
+            let new_sat = sat * s;
 
             // Hue (0-6)
             let hue = if (max - r).abs() < 1e-6 {
@@ -391,6 +393,75 @@ impl Filter for ChannelSolarize {
                     *v = 1.0 - *v;
                 }
             }
+        }
+    }
+}
+
+// ─── ChannelSharpen ────────────────────────────────────────────────
+
+/// Unsharp mask sharpening on all planes (R, G, B).
+///
+/// Matches ImageMagick's `-sharpen 0xSIGMA` which applies Gaussian
+/// unsharp mask to all channels. Amount is always 1.0 (IM convention).
+///
+/// Unlike Oklab `Sharpen` (L-only, avoids color fringing), this
+/// sharpens each channel independently.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct ChannelSharpen {
+    /// Gaussian sigma for the blur used in unsharp mask.
+    pub sigma: f32,
+    /// Sharpening amount. IM's `-sharpen` uses 1.0.
+    pub amount: f32,
+}
+
+impl Default for ChannelSharpen {
+    fn default() -> Self {
+        Self {
+            sigma: 1.0,
+            amount: 1.0,
+        }
+    }
+}
+
+impl Filter for ChannelSharpen {
+    fn channel_access(&self) -> ChannelAccess {
+        ChannelAccess::L_AND_CHROMA
+    }
+
+    fn plane_semantics(&self) -> PlaneSemantics {
+        PlaneSemantics::Rgb
+    }
+
+    fn is_neighborhood(&self) -> bool {
+        true
+    }
+
+    fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
+        (self.sigma * 3.0).ceil() as u32
+    }
+
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
+        use crate::blur::{GaussianKernel, gaussian_blur_plane};
+        use crate::simd;
+
+        if self.amount.abs() < 1e-6 {
+            return;
+        }
+        let kernel = GaussianKernel::new(self.sigma);
+        let n = planes.pixel_count();
+        let w = planes.width;
+        let h = planes.height;
+
+        for plane in [&mut planes.l, &mut planes.a, &mut planes.b] {
+            let mut blurred = ctx.take_f32(n);
+            gaussian_blur_plane(plane, &mut blurred, w, h, &kernel, ctx);
+            let mut dst = ctx.take_f32(n);
+            simd::unsharp_fuse(plane, &blurred, &mut dst, self.amount);
+            ctx.return_f32(blurred);
+            let old = core::mem::replace(plane, dst);
+            ctx.return_f32(old);
         }
     }
 }
