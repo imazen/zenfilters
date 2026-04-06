@@ -127,6 +127,8 @@ fn source_path(name: &str) -> Option<String> {
 fn imagemagick_op(source_path: &str, args: &[&str], output_path: &Path) -> Option<RgbImage> {
     let mut cmd = Command::new("convert");
     cmd.arg(source_path);
+    // Strip alpha before processing to match our RGB-only pipeline
+    cmd.args(["-alpha", "remove", "-alpha", "off"]);
     for arg in args {
         cmd.arg(arg);
     }
@@ -350,7 +352,7 @@ fn run_suite(
     if let Some(r) = compare_op(
         source, source_path, image_name, "emboss",
         Some(&|| Box::new(Convolve::new(ConvolutionKernel::emboss()).with_bias(0.5).with_target(ConvolveTarget::All))),
-        &|| Box::new(Convolve::new(ConvolutionKernel::emboss()).with_bias(0.5).with_target(ConvolveTarget::All)),
+        &|| Box::new(DifferenceEmboss { sigma: 1.0 }),
         &["-emboss", "1"],
         output_dir,
     ) { results.push(r); }
@@ -399,11 +401,16 @@ fn run_suite(
         output_dir,
     ) { results.push(r); }
 
-    // Motion blur (generic)
+    // Motion blur: Oklab uniform vs sRGB Gaussian (IM compat)
     if let Some(r) = compare_op(
-        source, source_path, image_name, "motion_blur_0_15",
+        source, source_path, image_name, "motion_blur_s15",
         Some(&|| make_motion_blur(0.0, 15.0)),
-        &|| make_motion_blur(0.0, 15.0),
+        &|| {
+            let mut mb = GaussianMotionBlur::default();
+            mb.sigma = 15.0;
+            mb.angle = 0.0;
+            Box::new(mb)
+        },
         &["-motion-blur", "0x15+0"],
         output_dir,
     ) { results.push(r); }

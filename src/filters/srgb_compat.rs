@@ -466,6 +466,174 @@ impl Filter for ChannelSharpen {
     }
 }
 
+// ─── GaussianMotionBlur ────────────────────────────────────────────
+
+/// Gaussian-weighted directional blur matching ImageMagick's `-motion-blur`.
+///
+/// IM's `-motion-blur 0xSIGMA+ANGLE` uses a Gaussian-weighted line kernel
+/// along the specified angle. Unlike our `MotionBlur` (uniform weights),
+/// this uses proper Gaussian falloff for smoother results.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct GaussianMotionBlur {
+    /// Gaussian sigma for the blur kernel.
+    pub sigma: f32,
+    /// Blur angle in degrees (0 = horizontal right, 90 = down).
+    pub angle: f32,
+}
+
+impl Default for GaussianMotionBlur {
+    fn default() -> Self {
+        Self {
+            sigma: 5.0,
+            angle: 0.0,
+        }
+    }
+}
+
+impl Filter for GaussianMotionBlur {
+    fn channel_access(&self) -> ChannelAccess {
+        ChannelAccess::L_AND_CHROMA
+    }
+
+    fn plane_semantics(&self) -> PlaneSemantics {
+        PlaneSemantics::Any
+    }
+
+    fn is_neighborhood(&self) -> bool {
+        true
+    }
+
+    fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
+        (self.sigma * 3.0).ceil() as u32
+    }
+
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
+        if self.sigma < 0.5 {
+            return;
+        }
+
+        let w = planes.width as usize;
+        let h = planes.height as usize;
+        let a = self.angle.to_radians();
+        let dx = a.cos();
+        let dy = a.sin();
+        let radius = (self.sigma * 3.0).ceil() as usize;
+
+        // Precompute Gaussian-weighted sample positions
+        let mut weights = alloc::vec::Vec::new();
+        let mut total = 0.0f32;
+        let sigma2 = 2.0 * self.sigma * self.sigma;
+        for i in 0..=(2 * radius) {
+            let t = i as f32 - radius as f32;
+            let w = (-t * t / sigma2).exp();
+            weights.push((t * dx, t * dy, w));
+            total += w;
+        }
+        let inv_total = 1.0 / total;
+
+        for plane in [&mut planes.l, &mut planes.a, &mut planes.b] {
+            let src = plane.clone();
+            for y in 0..h {
+                for x in 0..w {
+                    let mut sum = 0.0f32;
+                    for &(ox, oy, wt) in &weights {
+                        let sx = (x as f32 + ox).round().clamp(0.0, (w - 1) as f32) as usize;
+                        let sy = (y as f32 + oy).round().clamp(0.0, (h - 1) as f32) as usize;
+                        sum += src[sy * w + sx] * wt;
+                    }
+                    plane[y * w + x] = (sum * inv_total).clamp(0.0, 1.0);
+                }
+            }
+        }
+
+        if let Some(alpha) = &mut planes.alpha {
+            let src = alpha.clone();
+            for y in 0..h {
+                for x in 0..w {
+                    let mut sum = 0.0f32;
+                    for &(ox, oy, wt) in &weights {
+                        let sx = (x as f32 + ox).round().clamp(0.0, (w - 1) as f32) as usize;
+                        let sy = (y as f32 + oy).round().clamp(0.0, (h - 1) as f32) as usize;
+                        sum += src[sy * w + sx] * wt;
+                    }
+                    alpha[y * w + x] = (sum * inv_total).clamp(0.0, 1.0);
+                }
+            }
+        }
+    }
+}
+
+// ─── DifferenceEmboss ──────────────────────────────────────────────
+
+/// Difference-based emboss matching ImageMagick's `-emboss`.
+///
+/// IM's `-emboss N` operates as: blur(sigma=N) → compute directional
+/// difference (shifted copy minus original) → scale + bias to [0,1].
+/// This is NOT a standard 3x3 emboss kernel — it produces a relief
+/// effect based on the blurred directional derivative.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct DifferenceEmboss {
+    /// Blur sigma. Larger = broader emboss effect.
+    pub sigma: f32,
+}
+
+impl Default for DifferenceEmboss {
+    fn default() -> Self {
+        Self { sigma: 1.0 }
+    }
+}
+
+impl Filter for DifferenceEmboss {
+    fn channel_access(&self) -> ChannelAccess {
+        ChannelAccess::L_AND_CHROMA
+    }
+
+    fn plane_semantics(&self) -> PlaneSemantics {
+        PlaneSemantics::Any
+    }
+
+    fn is_neighborhood(&self) -> bool {
+        true
+    }
+
+    fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
+        (self.sigma * 3.0).ceil() as u32 + 1
+    }
+
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
+        use crate::blur::{GaussianKernel, gaussian_blur_plane};
+
+        let w = planes.width as usize;
+        let h = planes.height as usize;
+        let n = w * h;
+        let kernel = GaussianKernel::new(self.sigma);
+
+        for plane in [&mut planes.l, &mut planes.a, &mut planes.b] {
+            // Blur
+            let mut blurred = ctx.take_f32(n);
+            gaussian_blur_plane(plane, &mut blurred, planes.width, planes.height, &kernel, ctx);
+
+            // Directional difference: shifted(+1,+1) - shifted(-1,-1) of blurred
+            // Then bias by 0.5
+            for y in 0..h {
+                for x in 0..w {
+                    let x1 = (x + 1).min(w - 1);
+                    let y1 = (y + 1).min(h - 1);
+                    let x0 = x.saturating_sub(1);
+                    let y0 = y.saturating_sub(1);
+                    let diff = blurred[y1 * w + x1] - blurred[y0 * w + x0];
+                    plane[y * w + x] = (diff + 0.5).clamp(0.0, 1.0);
+                }
+            }
+            ctx.return_f32(blurred);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
