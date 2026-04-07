@@ -413,6 +413,29 @@ fn run_suite(
         output_dir,
     ) { results.push(r); }
 
+    // Normalize: per-channel stretch vs IM's -normalize
+    if let Some(r) = compare_op(
+        source, source_path, image_name, "normalize",
+        None,
+        &|| Box::new(Normalize::default()),
+        &["-normalize"],
+        output_dir,
+    ) { results.push(r); }
+
+    // CLAHE (zen only — IM 6 doesn't have -clahe)
+    {
+        let zen_result = apply_srgb(source, {
+            let mut c = Clahe::default();
+            c.tile_width = 8;
+            c.tile_height = 8;
+            Box::new(c)
+        });
+        let path = output_dir.join(image_name).join("clahe_zen.png");
+        save_image(&zen_result, &path);
+        let score = zensim_score(source, &zen_result);
+        eprintln!("  {:25}  zen={score:6.1}  (zen only, no IM 6 equiv)", "clahe_8x8");
+    }
+
     results
 }
 
