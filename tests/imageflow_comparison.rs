@@ -355,11 +355,11 @@ fn run_suite(
         output_dir,
     ) { results.push(r); }
 
-    // Edge detect (generic)
+    // Edge detect: Oklab Sobel vs sRGB Laplacian (IM compat)
     if let Some(r) = compare_op(
         source, source_path, image_name, "edge_detect",
         Some(&|| make_edge_detect(EdgeMode::Sobel, 1.0)),
-        &|| make_edge_detect(EdgeMode::Sobel, 1.0),
+        &|| { let mut e = LaplacianEdge::default(); e.radius = 1; Box::new(e) },
         &["-edge", "1"],
         output_dir,
     ) { results.push(r); }

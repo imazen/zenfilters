@@ -924,6 +924,89 @@ impl Filter for Clahe {
     }
 }
 
+// ─── LaplacianEdge ─────────────────────────────────────────────────
+
+/// Laplacian edge detection matching ImageMagick's `-edge`.
+///
+/// IM's `-edge N` constructs a (2N+1)×(2N+1) kernel with all -1s and
+/// center = count_of_neighbors. This is an isotropic Laplacian that
+/// detects edges in all directions. The output is the absolute value
+/// of the convolution, clamped to [0, 1].
+///
+/// Unlike our Oklab `EdgeDetect` (Sobel gradient on L only), this
+/// operates on all channels and uses a different kernel shape.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct LaplacianEdge {
+    /// Kernel radius. 1 = 3×3, 2 = 5×5. Default: 1.
+    pub radius: u32,
+}
+
+impl Default for LaplacianEdge {
+    fn default() -> Self {
+        Self { radius: 1 }
+    }
+}
+
+impl Filter for LaplacianEdge {
+    fn channel_access(&self) -> ChannelAccess {
+        ChannelAccess::L_AND_CHROMA
+    }
+
+    fn plane_semantics(&self) -> PlaneSemantics {
+        PlaneSemantics::Any
+    }
+
+    fn is_neighborhood(&self) -> bool {
+        true
+    }
+
+    fn neighborhood_radius(&self, _width: u32, _height: u32) -> u32 {
+        self.radius
+    }
+
+    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
+        if self.radius == 0 {
+            return;
+        }
+        let w = planes.width as usize;
+        let h = planes.height as usize;
+        let r = self.radius as usize;
+        let ksize = 2 * r + 1;
+        let neighbors = (ksize * ksize - 1) as f32; // center excluded
+
+        for plane in [&mut planes.l, &mut planes.a, &mut planes.b] {
+            let n = w * h;
+            let mut dst = ctx.take_f32(n);
+
+            for y in 0..h {
+                for x in 0..w {
+                    let center = plane[y * w + x];
+                    let mut sum = center * neighbors;
+                    for ky in 0..ksize {
+                        for kx in 0..ksize {
+                            if ky == r && kx == r {
+                                continue; // skip center
+                            }
+                            let sy = (y as isize + ky as isize - r as isize)
+                                .clamp(0, h as isize - 1) as usize;
+                            let sx = (x as isize + kx as isize - r as isize)
+                                .clamp(0, w as isize - 1) as usize;
+                            sum -= plane[sy * w + sx];
+                        }
+                    }
+                    // Absolute value — edges are positive regardless of direction
+                    dst[y * w + x] = sum.abs().clamp(0.0, 1.0);
+                }
+            }
+
+            let old = core::mem::replace(plane, dst);
+            ctx.return_f32(old);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
