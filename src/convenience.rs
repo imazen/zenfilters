@@ -148,6 +148,9 @@ pub fn apply_to_buffer(
     let m1_inv = zenpixels_convert::oklab::lms_to_rgb_matrix(primaries)
         .ok_or_else(|| at!(ConvenienceError::UnsupportedPrimaries(primaries)))?;
 
+    // sRGB passthrough: skip linearization, normalize u8→f32 directly.
+    // Only for WorkingSpace::Srgb. LinearRgb uses the standard linearization
+    // path + passthrough deinterleave in Pipeline::apply().
     #[cfg(feature = "srgb-compat")]
     let is_srgb_passthrough =
         pipeline.config().working_space == crate::pipeline::WorkingSpace::Srgb;

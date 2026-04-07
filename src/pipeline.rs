@@ -58,6 +58,16 @@ pub enum WorkingSpace {
     /// Known artifacts (same as ImageMagick): gamma-space blur darkens
     /// color boundaries, saturation shifts hue, contrast is non-perceptual.
     Srgb,
+    /// Linear RGB — physically correct light math.
+    ///
+    /// Matches ImageMagick's `-colorspace RGB` (linear) mode. Blur and
+    /// compositing are physically correct (no gamma darkening), but
+    /// per-pixel adjustments operate on linear values which are not
+    /// perceptually uniform (shadows are compressed, highlights expanded).
+    ///
+    /// The pipeline linearizes sRGB input, deinterleaves to planes, and
+    /// re-encodes on gather. No Oklab conversion.
+    LinearRgb,
 }
 
 /// Configuration for the filter pipeline.
@@ -102,6 +112,23 @@ impl PipelineConfig {
     pub fn srgb_compat() -> Self {
         Self {
             working_space: WorkingSpace::Srgb,
+            gamut_mapping: GamutMapping::Bypass,
+            ..Default::default()
+        }
+    }
+
+    /// Linear RGB working space — physically correct light math.
+    ///
+    /// Matches ImageMagick's `-colorspace RGB` mode. Blur, compositing,
+    /// and spatial filters are physically correct (no gamma darkening).
+    /// Use for operations where linear light accuracy matters more than
+    /// perceptual uniformity.
+    ///
+    /// Requires the `srgb-compat` feature.
+    #[cfg(feature = "srgb-compat")]
+    pub fn linear_rgb() -> Self {
+        Self {
+            working_space: WorkingSpace::LinearRgb,
             gamut_mapping: GamutMapping::Bypass,
             ..Default::default()
         }
@@ -200,7 +227,7 @@ impl Pipeline {
         let compatible = match semantics {
             PlaneSemantics::Any => true,
             PlaneSemantics::Oklab => space == WorkingSpace::Oklab,
-            PlaneSemantics::Rgb => space == WorkingSpace::Srgb,
+            PlaneSemantics::Rgb => matches!(space, WorkingSpace::Srgb | WorkingSpace::LinearRgb),
         };
         assert!(
             compatible,
@@ -439,7 +466,10 @@ impl Pipeline {
             OklabPlanes::from_ctx(ctx, width, height)
         };
 
-        let is_srgb = self.config.working_space == WorkingSpace::Srgb;
+        let is_passthrough = matches!(
+            self.config.working_space,
+            WorkingSpace::Srgb | WorkingSpace::LinearRgb
+        );
 
         // Scatter in strips for cache locality
         let scatter_strip = strip_height(width, ch == 4, 0);
@@ -450,7 +480,7 @@ impl Pipeline {
             let plane_off = y * w;
             let plane_len = rows * w;
 
-            if is_srgb {
+            if is_passthrough {
                 // sRGB passthrough: deinterleave R→L, G→a, B→b
                 for i in 0..plane_len {
                     planes.l[plane_off + i] = src[src_off + i * ch];
@@ -488,7 +518,7 @@ impl Pipeline {
             let plane_off = y * w;
             let plane_len = rows * w;
 
-            if is_srgb {
+            if is_passthrough {
                 // sRGB passthrough: interleave L→R, a→G, b→B
                 for i in 0..plane_len {
                     dst[dst_off + i * ch] = planes.l[plane_off + i];
@@ -558,7 +588,7 @@ impl Pipeline {
                 OklabPlanes::from_ctx(ctx, width, ext_rows as u32)
             };
 
-            if self.config.working_space == WorkingSpace::Srgb {
+            if matches!(self.config.working_space, WorkingSpace::Srgb | WorkingSpace::LinearRgb) {
                 crate::scatter_gather::scatter_srgb_passthrough(
                     &src[ext_src_offset..ext_src_offset + ext_src_len],
                     &mut planes,
@@ -581,7 +611,7 @@ impl Pipeline {
             let plane_start = core_offset * w;
             let plane_end = plane_start + core_rows * w;
 
-            if self.config.working_space == WorkingSpace::Srgb {
+            if matches!(self.config.working_space, WorkingSpace::Srgb | WorkingSpace::LinearRgb) {
                 let n = core_rows * w;
                 for i in 0..n {
                     dst[dst_offset + i * ch] = planes.l[plane_start + i];
