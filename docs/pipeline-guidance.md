@@ -91,20 +91,69 @@ Already implemented in `filter_compat.rs`:
 - Redundant filter warning (two Contrast filters — intentional or mistake?)
 - Resize phase validation (PostResize filter before resize operation)
 
+## Debug Mode
+
+`Pipeline::set_debug(true)` disables all unconditional optimizations. Filters run exactly as pushed — no identity elimination, no coalescing, no reordering. Every filter's `apply()` is called even if `is_identity()` returns true.
+
+Use for:
+- Test suites that verify individual filter behavior
+- Benchmarking individual filter cost (not fused)
+- Debugging unexpected output (is the optimization changing something?)
+- Regression testing against non-optimized output
+
+The debug flag is on `Pipeline`, not global. Production and test pipelines can coexist.
+
 ## Correction (user error fixing)
 
-These change filter order, which may change output. The caller must opt in.
+These change filter order, which changes the pipeline. The caller must opt in.
 
-### Constraint-based reordering
+### Level 1: Minimum fix — satisfy constraints
 
-Topological sort using `ORDER_CONSTRAINTS`. Stable sort preserves relative order of unconstrained filters. Returns the changes made so the UI can reflect them.
+Move the fewest filters possible to satisfy `ORDER_CONSTRAINTS`. Preserve user intent as much as possible — if the user put sharpen before denoise, just swap those two. Don't reorganize everything.
 
 ```
-Input:  [Sharpen, NoiseReduction, Contrast]
-Output: [NoiseReduction, Sharpen, Contrast]  (denoise moved before sharpen)
+Input:  [Exposure, Sharpen, NoiseReduction, Contrast]
+Output: [Exposure, NoiseReduction, Sharpen, Contrast]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                   swapped: 1 move to fix the constraint violation
 ```
 
-**Only when requested** — `Pipeline::reorder()` method, not automatic. The caller (UI, graph compiler) decides whether to apply.
+**Algorithm:** Walk constraints, find violations, bubble the offending filter to satisfy the constraint. Minimal displacement. Returns a list of moves made.
+
+**When to use:** URL/KV parameter parsing where order isn't specified. Automated pipelines that compose filters from different sources. "Fix my mistakes but don't rethink my pipeline."
+
+### Level 2: Optimal reorder — canonical ordering
+
+Reorder the entire pipeline to match the recommended order (§ below). This produces the best quality output regardless of how the filters were originally arranged.
+
+```
+Input:  [Saturation, Sharpen, Exposure, NoiseReduction, Grain]
+Output: [NoiseReduction, Exposure, Saturation, Sharpen, Grain]
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+         full reorder to canonical: denoise → tone → color → detail → effects
+```
+
+**Algorithm:** Assign each filter a canonical position based on its `FilterTag` and the recommended order table. Stable sort by position. Neighborhood filters stay in their relative order within the same position group.
+
+**When to use:** "Build me the best pipeline from these filters." Node graph compilation. First-time setup from a preset.
+
+### Recommended filter order (canonical)
+
+```
+ 1. Tone mapping     (Sigmoid, DtSigmoid, Basecurve)
+ 2. Noise reduction  (NoiseReduction, Bilateral, MedianBlur)
+ 3. Recovery         (HighlightRecovery, ShadowLift)
+ 4. Tone             (Exposure, BlackPoint, WhitePoint, Levels)
+ 5. Contrast         (Contrast, ParametricCurve, ToneCurve)
+ 6. Tone range       (HighlightsShadows, WhitesBlacks, ToneEqualizer)
+ 7. Local detail     (LocalToneMap, Clarity, Texture, Brilliance)
+ 8. Color            (Temperature, Tint, Saturation, Vibrance, HslAdjust)
+ 9. Color grading    (ColorGrading, HueCurves, ChannelCurves, FilmLook)
+10. Detail           (Sharpen, AdaptiveSharpen)
+    ─── resize ───
+11. Output effects   (Grain, Vignette, Bloom, ChromaticAberration)
+12. Geometric        (Warp, Rotate, PolarWarp)
+```
 
 ### ResizePhase auto-split
 
