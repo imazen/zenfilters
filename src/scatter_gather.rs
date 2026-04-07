@@ -185,30 +185,6 @@ pub fn scatter_srgb_passthrough(
     }
 }
 
-/// Gather planes back to interleaved linear RGB f32 (no Oklab conversion).
-pub fn gather_srgb_passthrough(
-    planes: &OklabPlanes,
-    dst: &mut [f32],
-    channels: u32,
-) {
-    let n = planes.pixel_count();
-    let ch = channels as usize;
-    debug_assert!(ch == 3 || ch == 4);
-    debug_assert!(dst.len() >= n * ch);
-
-    for i in 0..n {
-        dst[i * ch] = planes.l[i];
-        dst[i * ch + 1] = planes.a[i];
-        dst[i * ch + 2] = planes.b[i];
-    }
-
-    if ch == 4 {
-        for i in 0..n {
-            dst[i * ch + 3] = planes.alpha.as_ref().map_or(1.0, |alpha| alpha[i]);
-        }
-    }
-}
-
 /// Scatter interleaved sRGB u8 directly to f32 planes (no Oklab conversion).
 ///
 /// Normalizes u8 [0-255] to f32 [0.0-1.0]. Maps R→L, G→a, B→b.

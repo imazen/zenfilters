@@ -511,7 +511,7 @@ impl Filter for GaussianMotionBlur {
         (2.0 * self.sigma + 0.5).ceil() as u32
     }
 
-    fn apply(&self, planes: &mut OklabPlanes, ctx: &mut FilterContext) {
+    fn apply(&self, planes: &mut OklabPlanes, _ctx: &mut FilterContext) {
         if self.sigma < 0.5 {
             return;
         }
