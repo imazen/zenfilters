@@ -45,3 +45,14 @@ Thumbs.db
 .vscode/
 *.iml
 .claude/
+
+# Tooling noise
+.superwork/
+copter-report/
+.zenbench/
+.external-cache/
+Cargo.toml.original.txt
+*.rs.local
+*.profraw
+*.profdata
+fuzz-*.log

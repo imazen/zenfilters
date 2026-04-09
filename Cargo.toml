@@ -8,6 +8,7 @@ description = "Photo filter operations on planar Oklab f32 data with SIMD accele
 repository = "https://github.com/imazen/zenfilters"
 keywords = ["image", "filter", "oklab", "simd", "photo"]
 categories = ["multimedia::images", "graphics"]
+exclude = ["CLAUDE.md", "CONTEXT-HANDOFF.md", "FEEDBACK.md", ".claude/", ".superwork/", ".zenbench/", "copter-report/", ".github/", "Cross.toml", "justfile", "Cargo.toml.original.txt", "fuzz/"]
 
 [lints.rust]
 # CI strips some features — allow their cfg references to remain
