@@ -12,8 +12,8 @@ fn make_oklab_planes(width: u32, height: u32) -> OklabPlanes {
     for i in 0..n {
         let t = i as f32 / n as f32;
         planes.l[i] = 0.1 + t * 0.8;
-        planes.a[i] = (t * 6.28).sin() * 0.1;
-        planes.b[i] = (t * 6.28).cos() * 0.08;
+        planes.a[i] = (t * core::f32::consts::TAU).sin() * 0.1;
+        planes.b[i] = (t * core::f32::consts::TAU).cos() * 0.08;
     }
     planes
 }

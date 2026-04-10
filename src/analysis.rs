@@ -5,7 +5,6 @@
 //! pixel data. Each analysis costs ~2 passes over all planes (~3ms at 4K).
 
 use crate::planes::OklabPlanes;
-use crate::prelude::*;
 
 /// Cached image analysis results.
 ///
@@ -73,7 +72,7 @@ impl ImageAnalysis {
         let mut log_sum = 0.0f64;
 
         for &v in &planes.l {
-            let clamped = v.max(0.0).min(1.0);
+            let clamped = v.clamp(0.0, 1.0);
             let bin = (clamped * (HIST_BINS - 1) as f32) as usize;
             histogram_l[bin.min(HIST_BINS - 1)] += 1;
             sum_l += v as f64;

@@ -99,7 +99,7 @@ fn main() {
     let rounds = 3;
 
     let bases = make_inputs(n, 0.01, 2.0);
-    let angles = make_inputs(n, -3.14, 3.14);
+    let angles = make_inputs(n, -core::f32::consts::PI, core::f32::consts::PI);
     let ab_vals = make_inputs(n, -0.2, 0.2);
 
     for round in 0..rounds {
