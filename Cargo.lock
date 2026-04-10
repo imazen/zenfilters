@@ -63,15 +63,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
-name = "almost-enough"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c8f3e651142e773f3eab1b8314ade013d5a3eef6dc2cd2af6dad9b0ede58f23"
-dependencies = [
- "enough",
-]
-
-[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2098,21 +2089,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tinyvec"
-version = "1.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e61e67053d25a4e82c844e8424039d9745781b3fc4f32b8d55ed50f5f667ef3"
-dependencies = [
- "tinyvec_macros",
-]
-
-[[package]]
-name = "tinyvec_macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
-
-[[package]]
 name = "toml"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2221,19 +2197,6 @@ dependencies = [
  "enough",
  "half",
  "linear-srgb",
- "thiserror",
- "wide",
-]
-
-[[package]]
-name = "ultrahdr-core"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "964a038e0f75524ef9bd01ee6bda6d2457a3b6c1ca8df22478b9bb94b3547669"
-dependencies = [
- "bytemuck",
- "enough",
- "half",
  "thiserror",
  "wide",
 ]
@@ -2769,15 +2732,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5a4b21e1a62b67a2970e6831bc091d7b87e119e7f9791aef9702e3bef04448"
 
 [[package]]
-name = "yuv"
-version = "0.8.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47d3a7e2cda3061858987ee2fb028f61695f5ee13f9490d75be6c3900df9a4ea"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "zaft"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2816,36 +2770,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zencodec"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "882aeed23dcf360faded3a50b468b3bc6226da46b2d62e39d72f98f68bb6835b"
-dependencies = [
- "almost-enough",
- "enough",
- "whereat",
- "zenpixels",
-]
-
-[[package]]
-name = "zencodecs"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "enough",
- "imgref",
- "linear-srgb",
- "rgb",
- "thiserror",
- "whereat",
- "zencodec",
- "zenjpeg",
- "zenpixels",
- "zenpixels-convert",
- "zenpng",
-]
-
-[[package]]
 name = "zenfilters"
 version = "0.1.1"
 dependencies = [
@@ -2864,49 +2788,12 @@ dependencies = [
  "serde-big-array",
  "whereat",
  "zenbench",
- "zencodecs",
  "zennode",
  "zenpixels",
  "zenpixels-convert",
  "zenraw",
  "zenresize",
  "zensim",
-]
-
-[[package]]
-name = "zenflate"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38d663deb0758827d61d678fc30ed9f16bfec51ec0c1bf8748cc8ad8691d0838"
-dependencies = [
- "archmage",
- "enough",
- "libm",
-]
-
-[[package]]
-name = "zenjpeg"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "234cde6246c6168bff9330d6fd196d1b92bec76945cd5666e492acaaf9421468"
-dependencies = [
- "aligned-vec",
- "archmage",
- "bytemuck",
- "enough",
- "imgref",
- "linear-srgb",
- "magetypes",
- "rgb",
- "safe_unaligned_simd",
- "thiserror",
- "tinyvec",
- "ultrahdr-core 0.4.1",
- "whereat",
- "wide",
- "yuv",
- "zencodec",
- "zenpixels",
 ]
 
 [[package]]
@@ -2945,7 +2832,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94439a80006e7c0667781a60ebb73145db6e6792e546f187933bcc472b36dece"
 dependencies = [
  "bytemuck",
- "imgref",
  "rgb",
  "whereat",
 ]
@@ -2960,47 +2846,8 @@ dependencies = [
  "bytemuck",
  "garb",
  "linear-srgb",
- "rgb",
  "whereat",
  "zenpixels",
-]
-
-[[package]]
-name = "zenpng"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7d65f6410c427ca743d7428e397cc1659418506fad7df5e337f5993a830dcd0"
-dependencies = [
- "almost-enough",
- "archmage",
- "bytemuck",
- "enough",
- "imgref",
- "linear-srgb",
- "rgb",
- "safe_unaligned_simd",
- "thiserror",
- "whereat",
- "zencodec",
- "zenflate",
- "zenpixels",
- "zenpixels-convert",
- "zenquant",
-]
-
-[[package]]
-name = "zenquant"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "440257260e03abacc233712332cd164f59afb98e8385e49ca5a0581ef0c7269d"
-dependencies = [
- "archmage",
- "imgref",
- "linear-srgb",
- "magetypes",
- "num-traits",
- "rgb",
- "thiserror",
 ]
 
 [[package]]
@@ -3017,7 +2864,7 @@ dependencies = [
  "rawler",
  "rawloader",
  "thiserror",
- "ultrahdr-core 0.3.4",
+ "ultrahdr-core",
  "whereat",
  "zenpixels",
 ]
