@@ -276,27 +276,23 @@ impl Rotate {
 /// that fits entirely inside the rotated rectangle.
 ///
 /// Returns `(crop_w, crop_h)` in pixels, always ≤ `(w, h)`.
+///
+/// The inscribed rect (sw, sh) with sh = sw·h/w must satisfy both edge-pair
+/// constraints of the rotated frame:
+///   sw·cos + sh·sin ≤ w  →  sw ≤ w² / (w·cos + h·sin)
+///   sw·sin + sh·cos ≤ h  →  sw ≤ w·h / (w·sin + h·cos)
+/// The tighter constraint simplifies to `scale = short / (long·sin + short·cos)`.
 fn inscribed_crop_dimensions(w: f32, h: f32, angle_rad: f32) -> (f32, f32) {
     let theta = angle_rad.abs() % (core::f32::consts::PI / 2.0);
     if theta < 1e-6 {
         return (w, h);
     }
-    let cos_t = theta.cos();
     let sin_t = theta.sin();
-
-    // Two constraints from the four edges of the rotated rectangle.
-    // The inscribed rectangle preserves the original aspect ratio.
-    let w1 = (w * w) / (w * cos_t + h * sin_t);
-    let denom2 = (h * cos_t - w * sin_t).abs();
-    let w2 = if denom2 > 1e-6 {
-        (w * h) / denom2
-    } else {
-        f32::MAX
-    };
-
-    let crop_w = w1.min(w2).min(w);
-    let crop_h = (crop_w * h / w).min(h);
-    (crop_w, crop_h)
+    let cos_t = theta.cos();
+    let long = w.max(h);
+    let short = w.min(h);
+    let scale = short / (long * sin_t + short * cos_t);
+    (w * scale, h * scale)
 }
 
 /// Crop `planes` to a centered sub-rectangle of size `(new_w, new_h)`.
